@@ -93,6 +93,7 @@ StatsSnapshot _statsSnapshotWithTracks(int count) {
         maxDecodeMs: 4.0 + index,
         bufferCount: 4,
         bufferCapacity: 4,
+        bufferPrerollTarget: 4,
         bufferState: 0,
         cpuFrameMemoryBytes: index * 1024 * 1024,
         packetQueueMemoryBytes: (index + 1) * 1024 * 1024,
@@ -107,6 +108,7 @@ void main() {
   testWidgets('floating side panels leave uncovered viewport interactive', (
     tester,
   ) async {
+    _setViewportSize(tester, const Size(1366, 768));
     var taps = 0;
     await tester.pumpWidget(
       MaterialApp(
@@ -135,7 +137,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 190));
 
-    await tester.tapAt(const Offset(760, 64));
+    await tester.tapAt(const Offset(1100, 64));
 
     expect(taps, 1);
   });
@@ -172,7 +174,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 190));
 
-    await tester.dragFrom(const Offset(760, 360), const Offset(80, 0));
+    await tester.dragFrom(const Offset(1100, 360), const Offset(80, 0));
 
     expect(dragUpdates, greaterThan(0));
   });
@@ -239,6 +241,59 @@ void main() {
       final fourthTrackRect = tester.getRect(find.text('1004'));
       expect(statsRect.height, greaterThan(320));
       expect(fourthTrackRect.bottom, lessThanOrEqualTo(statsRect.bottom));
+    },
+  );
+
+  testWidgets(
+    'performance monitor expands to its readable width when space is available',
+    (tester) async {
+      _setViewportSize(tester, const Size(1920, 1080));
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: Stack(
+              children: [
+                FloatingSidePanelsSlot(
+                  mediaInfoVisible: false,
+                  profilerVisible: true,
+                  tracks: _twoTracks,
+                  statsDataSource: _FakeStatsDataSource(
+                    _statsSnapshotWithTracks(4),
+                  ),
+                  onCloseMediaInfo: () {},
+                  onCloseProfiler: () {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 190));
+
+      expect(
+        tester.getSize(find.byType(StatsPage)).width,
+        closeTo(StatsPage.preferredWidth, 0.1),
+      );
+      final horizontalScrollables = tester.widgetList<SingleChildScrollView>(
+        find.descendant(
+          of: find.byType(StatsPage),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is SingleChildScrollView &&
+                widget.scrollDirection == Axis.horizontal,
+          ),
+        ),
+      );
+      expect(horizontalScrollables, isNotEmpty);
+      for (final scrollable in horizontalScrollables) {
+        final controller = scrollable.controller;
+        if (controller != null && controller.hasClients) {
+          expect(controller.position.maxScrollExtent, 0);
+        }
+      }
     },
   );
 

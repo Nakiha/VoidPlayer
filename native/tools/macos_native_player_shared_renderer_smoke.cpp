@@ -108,7 +108,7 @@ bool wait_for_presented_frame(VPMacOSNativePlayer* player,
                               std::chrono::milliseconds timeout) {
     char error[1024] = {};
     const int timeout_ms = static_cast<int>(timeout.count());
-    if (VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
+    if (VPMacOSNativePlayerRequestNativeTargetFrameRefresh(
             player, timeout_ms, &info, error, sizeof(error)) != 0) {
         std::cerr << "timed out waiting for shared renderer frame";
         if (error[0] != '\0') {
@@ -137,7 +137,7 @@ bool wait_for_playback_presented_frame(VPMacOSNativePlayer* player,
                                        std::chrono::milliseconds timeout) {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     do {
-        if (VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(player, &info) == 0 &&
+        if (VPMacOSNativePlayerCopyLastNativeTargetFrameInfo(player, &info) == 0 &&
             info.pts_us > min_pts_us) {
             non_black = non_black_ratio_pixel_buffer(target);
             if (non_black > 0.5) {
@@ -156,10 +156,10 @@ bool request_refresh_expect_success(VPMacOSNativePlayer* player,
                                     std::chrono::milliseconds timeout) {
     info = {};
     char error[1024] = {};
-    const int ret = VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
+    const int ret = VPMacOSNativePlayerRequestNativeTargetFrameRefresh(
         player, static_cast<int>(timeout.count()), &info, error, sizeof(error));
     if (ret != 0) {
-        std::cerr << "renderer-owned refresh failed unexpectedly: "
+        std::cerr << "native-target refresh failed unexpectedly: "
                   << error << "\n";
         return false;
     }
@@ -167,9 +167,9 @@ bool request_refresh_expect_success(VPMacOSNativePlayer* player,
 }
 
 bool copy_presentation_state(VPMacOSNativePlayer* player,
-                             VPMacOSNativeRendererOwnedPresentationState& state) {
+                             VPMacOSNativeTargetPresentationState& state) {
     state = {};
-    return VPMacOSNativePlayerCopyRendererOwnedPresentationState(player, &state) == 0;
+    return VPMacOSNativePlayerCopyNativeTargetPresentationState(player, &state) == 0;
 }
 
 bool copy_track_diagnostics(VPMacOSNativePlayer* player,
@@ -219,7 +219,7 @@ int main() {
         std::cerr << "failed to install shared renderer Metal target\n";
         return 1;
     }
-    VPMacOSNativeRendererOwnedPresentationState state = {};
+    VPMacOSNativeTargetPresentationState state = {};
     if (!copy_presentation_state(player.get(), state) ||
         state.renderer_initialized != 0 ||
         state.target_installed == 0 ||

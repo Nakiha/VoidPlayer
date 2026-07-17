@@ -36,32 +36,34 @@ void main() {
   });
 
   group('native player payloads', () {
-    test('CreatePlayerResult validates texture and track payloads', () {
-      final result = CreatePlayerResult.fromMap({
-        'textureId': 42,
-        'tracks': [
-          {
-            'fileId': 7,
-            'slot': 1,
-            'path': r'D:\media\a.mp4',
-            'width': 1920,
-            'height': 1080,
-            'durationUs': 123,
-          },
-        ],
-      });
+    test(
+      'CreatePlayerResult accepts native player without Flutter texture',
+      () {
+        final result = CreatePlayerResult.fromMap({
+          'playerId': 42,
+          'tracks': [
+            {
+              'fileId': 7,
+              'slot': 1,
+              'path': r'D:\media\a.mp4',
+              'width': 1920,
+              'height': 1080,
+              'durationUs': 123,
+            },
+          ],
+        });
 
-      expect(result.textureId, 42);
-      expect(result.tracks.single.fileId, 7);
-      expect(result.tracks.single.durationUs, 123);
-    });
+        expect(result.playerId, 42);
+        expect(result.textureId, isNull);
+        expect(result.tracks.single.fileId, 7);
+        expect(result.tracks.single.durationUs, 123);
+      },
+    );
 
     test('CreatePlayerResult rejects invalid track list payload', () {
       expect(
-        () => CreatePlayerResult.fromMap({
-          'textureId': 1,
-          'tracks': 'not-a-list',
-        }),
+        () =>
+            CreatePlayerResult.fromMap({'playerId': 1, 'tracks': 'not-a-list'}),
         throwsA(isA<NativeProtocolException>()),
       );
     });
@@ -172,7 +174,7 @@ class _FakeNativePlayerApi implements NativePlayerApi {
     calls.add(
       'createPlayer:${width}x$height:${videoPaths.join('|')}$backgroundSuffix',
     );
-    return const CreatePlayerResult(textureId: 1, tracks: []);
+    return const CreatePlayerResult(playerId: 1, tracks: []);
   }
 
   @override
@@ -269,14 +271,6 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> debugSimulateWindowsDeviceLoss({
-    required String target,
-    required String reason,
-  }) async {
-    calls.add('debugSimulateWindowsDeviceLoss:$target:$reason');
-  }
-
-  @override
   Future<void> resetNativePerfCounters() async {
     calls.add('resetNativePerfCounters');
   }
@@ -292,47 +286,7 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  }) async {
-    calls.add(
-      'setNativeCompositorViewportTransform:$enabled scale=$scaleX,$scaleY translate=$translateX,$translateY mode=$mode tracks=$activeTrackCount',
-    );
-  }
-
-  @override
-  Future<void> prepareNativeCompositorSourceCache({
-    required List<int> sourceSlots,
-    required List<int> sourceOrder,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-    required List<double> displayOffsetX,
-    required List<double> displayOffsetY,
-    required List<double> invDisplaySizeX,
-    required List<double> invDisplaySizeY,
-    required List<double> viewOffsetUvX,
-    required List<double> viewOffsetUvY,
-  }) async {
-    calls.add('prepareNativeCompositorSourceCache:${sourceSlots.join('|')}');
-  }
-
-  @override
   Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) async {}
-
-  @override
-  Future<void> clearNativeCompositorSourceCache({
-    required String reason,
-  }) async {
-    calls.add('clearNativeCompositorSourceCache:$reason');
-  }
 
   @override
   Future<void> setViewportBackgroundColor(int colorValue) async {

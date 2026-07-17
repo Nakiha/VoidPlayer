@@ -23,6 +23,7 @@ using RendererDrawTrackSnapshotList =
 
 struct RendererDrawSnapshot {
     PresentDecision decision;
+    uint64_t layout_revision = 0;
     LayoutState layout;
     LayoutTrackGeometryList track_geometry{};
     RendererDrawTrackSnapshotList tracks{};

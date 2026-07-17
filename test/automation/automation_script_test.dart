@@ -29,7 +29,7 @@ void main() {
 0.3,ADD_SSH_MEDIA,user@example.com:/videos/clip.mp4
 0.7,ASSERT_PLAYING
 0.75,CAPTURE_VIEWPORT_REGION,roi,1,2,30,40,50,build/roi.png
-0.76,DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL,120,-60,nativeCompositorSourceCacheActive,true,18,8,2
+0.76,DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL,120,-60,nativeCompositorLastCompositeSucceeded,true,18,8,2
 0.77,DEBUG_NATIVE_TIMING
 0.78,DEBUG_FLUTTER_TIMING
 0.79,CLICK_FLUTTER_POINT,250,365
@@ -142,7 +142,11 @@ void main() {
         isA<DragViewportSampleNativeDiagnosticBool>()
             .having((a) => a.dx, 'dx', 120)
             .having((a) => a.dy, 'dy', -60)
-            .having((a) => a.key, 'key', 'nativeCompositorSourceCacheActive')
+            .having(
+              (a) => a.key,
+              'key',
+              'nativeCompositorLastCompositeSucceeded',
+            )
             .having((a) => a.value, 'value', isTrue)
             .having((a) => a.steps, 'steps', 18)
             .having((a) => a.stepMs, 'stepMs', 8)
@@ -282,6 +286,34 @@ void main() {
     expect(
       instructions[22],
       isA<ScriptQuit>().having((i) => i.exitCode, 'exitCode', 0),
+    );
+  });
+
+  test('parses Windows AXTree assertions with required UIA names', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}'
+      'void_player_axtree_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync(
+      '0.1,ASSERT_WINDOWS_AXTREE,playbackControls,timelineSeek,play\n',
+    );
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(
+      instructions.single,
+      isA<ScriptAutomationAction>().having(
+        (instruction) => instruction.action,
+        'action',
+        isA<AssertWindowsAxTree>().having(
+          (action) => action.requiredNames,
+          'requiredNames',
+          const ['playbackControls', 'timelineSeek', 'play'],
+        ),
+      ),
     );
   });
 
@@ -452,6 +484,43 @@ void main() {
     expect(
       (instructions.single as ScriptAutomationAction).action,
       isA<ToggleMarksSidebar>(),
+    );
+  });
+
+  test('parses native shortcut tracing actions', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_native_shortcut_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync('''
+0.1,INVOKE_WINDOWS_AX_ACTION,cuPartitions
+0.2,PRESS_KEY_NATIVE,space
+''');
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(instructions, hasLength(2));
+    expect(
+      instructions[0],
+      isA<ScriptAutomationAction>().having(
+        (i) => i.action,
+        'action',
+        isA<InvokeWindowsAxAction>().having(
+          (a) => a.actionName,
+          'actionName',
+          'cuPartitions',
+        ),
+      ),
+    );
+    expect(
+      instructions[1],
+      isA<ScriptAutomationAction>().having(
+        (i) => i.action,
+        'action',
+        isA<PressKeyNative>().having((a) => a.key, 'key', 'space'),
+      ),
     );
   });
 }

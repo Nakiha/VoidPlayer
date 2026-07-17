@@ -1,3924 +1,1792 @@
 #include "video_renderer_plugin.h"
 
-#include "common/win_utf8.h"
-#include "analysis_ffi.h"
+#include "analysis/analysis_ffi_abi.h"
 #include "native_player_channel_names.h"
+#include "common/logging.h"
+#include "common/win_utf8.h"
+#include "renderer/capture/bgra_capture_metrics.h"
+#include "windows/presentation/windows_d3d11_target_ring.h"
 
-#include "renderer/layout/layout_validation.h"
-#include "renderer/renderer_config_validation.h"
-#include "windows/presentation/windows_dcomp_composite.h"
-#include "windows/shared/shared_texture_ring_types.h"
-#include "utils.h"
 #include <flutter/event_channel.h>
 #include <flutter/event_stream_handler_functions.h>
-#include <flutter_windows.h>
-#include <spdlog/spdlog.h>
-#include <dxgi1_4.h>
-#include <wrl/client.h>
-#include <exception>
-#include <cmath>
-#include <chrono>
-#include <functional>
-#include <mutex>
-#include <queue>
-#include <thread>
-#include <variant>
-#include <limits>
-#include <utility>
+#include <flutter/method_channel.h>
+
 #include <algorithm>
-#include <cctype>
+#include <cmath>
+#include <cstdint>
+#include <iomanip>
+#include <limits>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <variant>
+#include <vector>
+#include <wincodec.h>
+#include <psapi.h>
+#include <wrl/client.h>
 
-extern "C" {
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libavutil/avutil.h>
-#include <libswresample/swresample.h>
-}
-
-#pragma comment(lib, "ole32.lib")
-#pragma comment(lib, "shell32.lib")
-#pragma comment(lib, "windowscodecs.lib")
-#pragma comment(lib, "dxgi.lib")
+#include <spdlog/spdlog.h>
 
 namespace {
-using PluginResult = flutter::MethodResult<flutter::EncodableValue>;
-constexpr UINT_PTR kDisplayPolicyRefreshTimer = 0x56504844;
-constexpr UINT kDisplayPolicyRefreshDelayMs = 120;
-constexpr UINT kPlatformTaskMessage = WM_APP + 0x564;
 
-void ReportMethodException(
-    PluginResult* result,
-    const std::string& method,
-    const char* code,
-    const std::string& message) {
-    spdlog::warn("[VideoRendererPlugin] {} failed with {}: {}", method, code, message);
-    if (result) {
-        result->Error(code, message);
+using EncodableMap = flutter::EncodableMap;
+using EncodableValue = flutter::EncodableValue;
+
+constexpr UINT_PTR kPresentationPolicyRefreshTimer = 0x56504844;
+constexpr UINT kPresentationPolicyRefreshDelayMs = 120;
+
+const EncodableMap* AsMap(const EncodableValue* arguments) {
+  return arguments ? std::get_if<EncodableMap>(arguments) : nullptr;
+}
+
+const EncodableValue* Find(const EncodableValue* arguments, const char* key) {
+  const auto* map = AsMap(arguments);
+  if (!map) {
+    return nullptr;
+  }
+  const auto found = map->find(EncodableValue(key));
+  return found == map->end() ? nullptr : &found->second;
+}
+
+int64_t ReadInt(const EncodableValue* arguments,
+                const char* key,
+                int64_t fallback = 0) {
+  const auto* value = Find(arguments, key);
+  if (!value) {
+    return fallback;
+  }
+  if (const auto* result = std::get_if<int32_t>(value)) {
+    return *result;
+  }
+  if (const auto* result = std::get_if<int64_t>(value)) {
+    return *result;
+  }
+  if (const auto* result = std::get_if<double>(value)) {
+    return static_cast<int64_t>(*result);
+  }
+  return fallback;
+}
+
+double ReadDouble(const EncodableValue* arguments,
+                  const char* key,
+                  double fallback = 0.0) {
+  const auto* value = Find(arguments, key);
+  if (!value) {
+    return fallback;
+  }
+  if (const auto* result = std::get_if<double>(value)) {
+    return *result;
+  }
+  if (const auto* result = std::get_if<int32_t>(value)) {
+    return static_cast<double>(*result);
+  }
+  if (const auto* result = std::get_if<int64_t>(value)) {
+    return static_cast<double>(*result);
+  }
+  return fallback;
+}
+
+bool ReadBool(const EncodableValue* arguments,
+              const char* key,
+              bool fallback = false) {
+  const auto* value = Find(arguments, key);
+  const auto* result = value ? std::get_if<bool>(value) : nullptr;
+  return result ? *result : fallback;
+}
+
+std::string ReadString(const EncodableValue* arguments, const char* key) {
+  const auto* value = Find(arguments, key);
+  const auto* result = value ? std::get_if<std::string>(value) : nullptr;
+  return result ? *result : std::string();
+}
+
+std::vector<std::string> ReadStringList(const EncodableValue* arguments,
+                                        const char* key) {
+  std::vector<std::string> result;
+  const auto* value = Find(arguments, key);
+  const auto* list = value ? std::get_if<flutter::EncodableList>(value) : nullptr;
+  if (!list) {
+    return result;
+  }
+  for (const auto& entry : *list) {
+    if (const auto* path = std::get_if<std::string>(&entry)) {
+      result.push_back(*path);
     }
+  }
+  return result;
 }
 
-void ReportMethodException(
-    PluginResult* result,
-    const std::string& method,
-    const std::bad_variant_access& e) {
-    ReportMethodException(result, method, "BAD_ARGS", e.what());
+int64_t SaturatingInt64(uint64_t value) {
+  return static_cast<int64_t>(std::min<uint64_t>(
+      value, static_cast<uint64_t>(std::numeric_limits<int64_t>::max())));
 }
 
-void ReportMethodException(
-    PluginResult* result,
-    const std::string& method,
-    const std::exception& e) {
-    ReportMethodException(result, method, "NATIVE_EXCEPTION", e.what());
-}
-
-void ReportUnknownMethodException(PluginResult* result, const std::string& method) {
-    ReportMethodException(result, method, "NATIVE_EXCEPTION", "Unknown native exception");
-}
-
-flutter::EncodableValue enc_i64(int64_t value) {
-    return flutter::EncodableValue(static_cast<int64_t>(value));
-}
-
-flutter::EncodableValue enc_i32(int32_t value) {
-    return flutter::EncodableValue(static_cast<int32_t>(value));
-}
-
-std::string presented_anchor_mode_name(vr::RendererPresentedAnchorMode mode) {
-    switch (mode) {
-        case vr::RendererPresentedAnchorMode::ViewportPresent:
-            return "viewport-present";
-        case vr::RendererPresentedAnchorMode::SourceCachePublish:
-            return "source-cache-publish";
-        case vr::RendererPresentedAnchorMode::None:
-        default:
-            return "none";
-    }
-}
-
-struct WindowsRenderBackendSelection {
-    vr::RendererBackendType type = vr::RendererBackendType::WgpuD3D12;
-    std::string name = "wgpu-d3d12";
-    std::string reason = "default";
+struct ProcessMemorySnapshot {
+  uint64_t rss_bytes = 0;
+  uint64_t private_bytes = 0;
 };
 
-std::string normalize_backend_request(std::string request) {
-    request.erase(
-        request.begin(),
-        std::find_if(
-            request.begin(),
-            request.end(),
-            [](unsigned char ch) { return !std::isspace(ch); }));
-    request.erase(
-        std::find_if(
-            request.rbegin(),
-            request.rend(),
-            [](unsigned char ch) { return !std::isspace(ch); }).base(),
-        request.end());
-    std::transform(
-        request.begin(),
-        request.end(),
-        request.begin(),
-        [](unsigned char ch) {
-            return static_cast<char>(std::tolower(ch));
-        });
-    return request;
-}
-
-WindowsRenderBackendSelection resolve_windows_render_backend(
-    const std::string& request) {
-    const std::string normalized = normalize_backend_request(request);
-    if (normalized.empty() || normalized == "auto") {
-        return {};
-    }
-    if (normalized == "wgpu" || normalized == "wgpu-d3d12" ||
-        normalized == "d3d12") {
-        return {
-            vr::RendererBackendType::WgpuD3D12,
-            "wgpu-d3d12",
-            "env-override",
-        };
-    }
-    spdlog::warn(
-        "[WindowsRenderBackend] unsupported VOIDPLAYER_WINDOWS_RENDER_BACKEND='{}'; "
-        "using wgpu-d3d12",
-        request);
+ProcessMemorySnapshot QueryProcessMemory() {
+  PROCESS_MEMORY_COUNTERS_EX counters = {};
+  counters.cb = sizeof(counters);
+  if (!GetProcessMemoryInfo(
+          GetCurrentProcess(),
+          reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters),
+          sizeof(counters))) {
     return {};
+  }
+  return {static_cast<uint64_t>(counters.WorkingSetSize),
+          static_cast<uint64_t>(counters.PrivateUsage)};
 }
 
-flutter::EncodableMap make_track_map(const vr::TrackInfo& info) {
-    flutter::EncodableMap map;
-    map[flutter::EncodableValue("fileId")] = flutter::EncodableValue(info.file_id);
-    map[flutter::EncodableValue("slot")] = flutter::EncodableValue(info.slot);
-    map[flutter::EncodableValue("path")] = flutter::EncodableValue(info.file_path);
-    map[flutter::EncodableValue("width")] = flutter::EncodableValue(info.width);
-    map[flutter::EncodableValue("height")] = flutter::EncodableValue(info.height);
-    map[flutter::EncodableValue("durationUs")] = flutter::EncodableValue(static_cast<int64_t>(info.duration_us));
-    map[flutter::EncodableValue("startTimeUs")] = flutter::EncodableValue(static_cast<int64_t>(info.start_time_us));
-    map[flutter::EncodableValue("bitRate")] = flutter::EncodableValue(static_cast<int64_t>(info.bit_rate));
-    map[flutter::EncodableValue("formatName")] = flutter::EncodableValue(info.format_name);
-    map[flutter::EncodableValue("codecName")] = flutter::EncodableValue(info.codec_name);
-    map[flutter::EncodableValue("codecLongName")] = flutter::EncodableValue(info.codec_long_name);
-    map[flutter::EncodableValue("decoderName")] = flutter::EncodableValue(info.decoder_name);
-    return map;
+uint64_t QueryDedicatedGpuUsage(ID3D11Device* device) {
+  if (!device) {
+    return 0;
+  }
+  Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
+  Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+  Microsoft::WRL::ComPtr<IDXGIAdapter3> adapter3;
+  DXGI_QUERY_VIDEO_MEMORY_INFO info = {};
+  if (FAILED(device->QueryInterface(IID_PPV_ARGS(&dxgi_device))) ||
+      FAILED(dxgi_device->GetAdapter(&adapter)) ||
+      FAILED(adapter.As(&adapter3)) ||
+      FAILED(adapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
+                                            &info))) {
+    return 0;
+  }
+  return info.CurrentUsage;
+}
+
+EncodableMap TrackMap(const vr::TrackInfo& track) {
+  return {
+      {EncodableValue("fileId"), EncodableValue(track.file_id)},
+      {EncodableValue("slot"), EncodableValue(track.slot)},
+      {EncodableValue("path"), EncodableValue(track.file_path)},
+      {EncodableValue("width"), EncodableValue(track.width)},
+      {EncodableValue("height"), EncodableValue(track.height)},
+      {EncodableValue("durationUs"), EncodableValue(track.duration_us)},
+      {EncodableValue("startTimeUs"), EncodableValue(track.start_time_us)},
+      {EncodableValue("bitRate"), EncodableValue(track.bit_rate)},
+      {EncodableValue("formatName"), EncodableValue(track.format_name)},
+      {EncodableValue("codecName"), EncodableValue(track.codec_name)},
+      {EncodableValue("codecLongName"), EncodableValue(track.codec_long_name)},
+      {EncodableValue("decoderName"), EncodableValue(track.decoder_name)},
+      {EncodableValue("colorRange"), EncodableValue(track.color.range)},
+      {EncodableValue("colorMatrix"), EncodableValue(track.color.matrix)},
+      {EncodableValue("colorTransfer"), EncodableValue(track.color.transfer)},
+      {EncodableValue("colorPrimaries"), EncodableValue(track.color.primaries)},
+  };
+}
+
+flutter::EncodableList TrackList(const std::vector<vr::TrackInfo>& tracks) {
+  flutter::EncodableList result;
+  result.reserve(tracks.size());
+  for (const auto& track : tracks) {
+    result.emplace_back(TrackMap(track));
+  }
+  return result;
+}
+
+flutter::EncodableList TrackDiagnosticList(
+    const vr::WindowsNativePlayer& player,
+    const std::vector<vr::TrackInfo>& tracks,
+    const std::vector<vr::TrackPerfStats>& perf_stats,
+    const vr::RendererGpuMemoryStats& memory_stats) {
+  flutter::EncodableList result;
+  result.reserve(perf_stats.size());
+  for (const auto& perf : perf_stats) {
+    const auto track = std::find_if(tracks.begin(), tracks.end(),
+                                    [&perf](const auto& candidate) {
+                                      return candidate.file_id == perf.file_id;
+                                    });
+    const auto memory =
+        std::find_if(memory_stats.tracks.begin(), memory_stats.tracks.end(),
+                     [&perf](const auto& candidate) {
+                       return candidate.file_id == perf.file_id;
+                     });
+    const uint64_t cpu_frame_bytes =
+        memory == memory_stats.tracks.end() ? 0 : memory->total_cpu_frame_bytes;
+    const uint64_t packet_queue_bytes =
+        memory == memory_stats.tracks.end() ? 0 : memory->packet_queue_bytes;
+    const bool hardware_decode =
+        memory != memory_stats.tracks.end() && memory->hardware_enabled;
+    const bool hardware_download =
+        memory != memory_stats.tracks.end() && memory->hardware_download_to_cpu;
+    EncodableMap item = {
+        {EncodableValue("fileId"), EncodableValue(perf.file_id)},
+        {EncodableValue("slot"), EncodableValue(perf.slot)},
+        {EncodableValue("durationUs"),
+         EncodableValue(track == tracks.end() ? int64_t{0}
+                                              : track->duration_us)},
+        {EncodableValue("offsetUs"),
+         EncodableValue(player.track_offset_us(perf.file_id))},
+        {EncodableValue("hardwareDecodeActive"),
+         EncodableValue(hardware_decode)},
+        {EncodableValue("hardwareDecodeDownloadsToCpu"),
+         EncodableValue(hardware_download)},
+        {EncodableValue("framesDecoded"),
+         EncodableValue(SaturatingInt64(perf.frames_decoded))},
+        {EncodableValue("fps"), EncodableValue(perf.fps)},
+        {EncodableValue("decodeFps"), EncodableValue(perf.fps)},
+        {EncodableValue("decodeAvgMs"), EncodableValue(perf.avg_decode_ms)},
+        {EncodableValue("decodeMaxMs"), EncodableValue(perf.max_decode_ms)},
+        {EncodableValue("decodeStagePacketSendCount"),
+         EncodableValue(SaturatingInt64(perf.decode_stage_packet_send_count))},
+        {EncodableValue("decodeStagePacketSendAvgMs"),
+         EncodableValue(perf.decode_stage_packet_send_avg_ms)},
+        {EncodableValue("decodeStagePacketSendMaxMs"),
+         EncodableValue(perf.decode_stage_packet_send_max_ms)},
+        {EncodableValue("decodeStageReceiveFrameCount"),
+         EncodableValue(
+             SaturatingInt64(perf.decode_stage_receive_frame_count))},
+        {EncodableValue("decodeStageReceiveAvgMs"),
+         EncodableValue(perf.decode_stage_receive_avg_ms)},
+        {EncodableValue("decodeStageReceiveMaxMs"),
+         EncodableValue(perf.decode_stage_receive_max_ms)},
+        {EncodableValue("decodeStageConvertCount"),
+         EncodableValue(SaturatingInt64(perf.decode_stage_convert_count))},
+        {EncodableValue("decodeStageConvertAvgMs"),
+         EncodableValue(perf.decode_stage_convert_avg_ms)},
+        {EncodableValue("decodeStageConvertMaxMs"),
+         EncodableValue(perf.decode_stage_convert_max_ms)},
+        {EncodableValue("decodeStagePublishCount"),
+         EncodableValue(SaturatingInt64(perf.decode_stage_publish_count))},
+        {EncodableValue("decodeStagePublishAvgMs"),
+         EncodableValue(perf.decode_stage_publish_avg_ms)},
+        {EncodableValue("decodeStagePublishMaxMs"),
+         EncodableValue(perf.decode_stage_publish_max_ms)},
+        {EncodableValue("decodeStagePublishWaitAvgMs"),
+         EncodableValue(perf.decode_stage_publish_wait_avg_ms)},
+        {EncodableValue("decodeStagePublishWaitMaxMs"),
+         EncodableValue(perf.decode_stage_publish_wait_max_ms)},
+        {EncodableValue("bufferState"),
+         EncodableValue(static_cast<int32_t>(perf.buffer_state))},
+        {EncodableValue("bufferCount"),
+         EncodableValue(static_cast<int64_t>(perf.buffer_count))},
+        {EncodableValue("bufferCapacity"),
+         EncodableValue(static_cast<int64_t>(perf.buffer_capacity))},
+        {EncodableValue("bufferPrerollTarget"),
+         EncodableValue(static_cast<int64_t>(perf.buffer_preroll_target))},
+        {EncodableValue("cpuFrameMemoryBytes"),
+         EncodableValue(SaturatingInt64(cpu_frame_bytes))},
+        {EncodableValue("packetQueueMemoryBytes"),
+         EncodableValue(SaturatingInt64(packet_queue_bytes))},
+        {EncodableValue("snapshotCompletionWaitCount"),
+         EncodableValue(SaturatingInt64(
+             memory == memory_stats.tracks.end()
+                 ? 0
+                 : memory->snapshot_completion_wait_count))},
+        {EncodableValue("snapshotCompletionWaitMaxUs"),
+         EncodableValue(SaturatingInt64(
+             memory == memory_stats.tracks.end()
+                 ? 0
+                 : memory->snapshot_completion_wait_max_us))},
+        {EncodableValue("snapshotCompletionWaitOverBudgetCount"),
+         EncodableValue(SaturatingInt64(
+             memory == memory_stats.tracks.end()
+                 ? 0
+                 : memory->snapshot_completion_wait_over_budget_count))},
+        {EncodableValue("snapshotCompletionWaitTimeoutCount"),
+         EncodableValue(SaturatingInt64(
+             memory == memory_stats.tracks.end()
+                 ? 0
+                 : memory->snapshot_completion_wait_timeout_count))},
+        {EncodableValue("currentPtsUs"), EncodableValue(perf.current_pts_us)},
+        {EncodableValue("currentDtsUs"), EncodableValue(perf.current_dts_us)},
+    };
+    result.emplace_back(std::move(item));
+  }
+  return result;
+}
+
+vr::LayoutState ReadLayout(const EncodableValue* arguments) {
+  vr::LayoutState layout;
+  layout.mode = static_cast<int>(ReadInt(arguments, "mode", layout.mode));
+  layout.split_pos = ReadDouble(arguments, "splitPos", layout.split_pos);
+  layout.zoom_ratio = ReadDouble(arguments, "zoomRatio", layout.zoom_ratio);
+  layout.view_offset[0] =
+      ReadDouble(arguments, "viewOffsetX", layout.view_offset[0]);
+  layout.view_offset[1] =
+      ReadDouble(arguments, "viewOffsetY", layout.view_offset[1]);
+  layout.pixel_size_mode = static_cast<int>(
+      ReadInt(arguments, "pixelSizeMode", layout.pixel_size_mode));
+  const auto* order_value = Find(arguments, "order");
+  const auto* order = order_value
+      ? std::get_if<flutter::EncodableList>(order_value)
+      : nullptr;
+  if (order) {
+    for (size_t index = 0; index < std::min<size_t>(4, order->size()); ++index) {
+      const auto& entry = (*order)[index];
+      if (const auto* value = std::get_if<int32_t>(&entry)) {
+        layout.order[index] = *value;
+      } else if (const auto* value = std::get_if<int64_t>(&entry)) {
+        layout.order[index] = static_cast<int>(*value);
+      }
+    }
+  }
+  return layout;
+}
+
+EncodableMap LayoutMap(const vr::LayoutState& layout) {
+  flutter::EncodableList order;
+  for (int entry : layout.order) {
+    order.emplace_back(entry);
+  }
+  return {
+      {EncodableValue("mode"), EncodableValue(layout.mode)},
+      {EncodableValue("splitPos"), EncodableValue(layout.split_pos)},
+      {EncodableValue("zoomRatio"), EncodableValue(layout.zoom_ratio)},
+      {EncodableValue("viewOffsetX"), EncodableValue(layout.view_offset[0])},
+      {EncodableValue("viewOffsetY"), EncodableValue(layout.view_offset[1])},
+      {EncodableValue("pixelSizeMode"),
+       EncodableValue(layout.pixel_size_mode)},
+      {EncodableValue("order"), EncodableValue(std::move(order))},
+  };
+}
+
+EncodableMap FrameMap(int file_id,
+                      const vr::PresentationBackendFrameInfo& frame) {
+  return {
+      {EncodableValue("fileId"), EncodableValue(file_id)},
+      {EncodableValue("ptsUs"), EncodableValue(frame.pts_us)},
+      {EncodableValue("dtsUs"), EncodableValue(frame.dts_us)},
+      {EncodableValue("durationUs"), EncodableValue(frame.duration_us)},
+      {EncodableValue("analysisFrameIndex"),
+       EncodableValue(frame.analysis_frame_index)},
+      {EncodableValue("frameIdentityMode"),
+       EncodableValue(frame.frame_identity_mode)},
+      {EncodableValue("sourcePacketIndex"),
+       EncodableValue(frame.source_packet_index)},
+      {EncodableValue("sourcePacketSize"),
+       EncodableValue(frame.source_packet_size)},
+      {EncodableValue("sourcePacketPos"),
+       EncodableValue(frame.source_packet_pos)},
+      {EncodableValue("sourcePacketPtsUs"),
+       EncodableValue(frame.source_packet_pts)},
+      {EncodableValue("sourcePacketDtsUs"),
+       EncodableValue(frame.source_packet_dts)},
+  };
+}
+
+std::string Fnv1a64(const std::vector<uint8_t>& bytes) {
+  uint64_t hash = 14695981039346656037ull;
+  for (uint8_t byte : bytes) {
+    hash ^= byte;
+    hash *= 1099511628211ull;
+  }
+  std::ostringstream output;
+  output << std::hex << std::setfill('0') << std::setw(16) << hash;
+  return output.str();
+}
+
+bool SaveBgraPng(const std::vector<uint8_t>& bgra,
+                 int width,
+                 int height,
+                 const std::string& path) {
+  if (bgra.empty() || width <= 0 || height <= 0 || path.empty()) {
+    return path.empty();
+  }
+  Microsoft::WRL::ComPtr<IWICImagingFactory> factory;
+  if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                              CLSCTX_INPROC_SERVER,
+                              IID_PPV_ARGS(&factory))) ||
+      !factory) {
+    return false;
+  }
+  Microsoft::WRL::ComPtr<IWICStream> stream;
+  if (FAILED(factory->CreateStream(&stream)) || !stream) {
+    return false;
+  }
+  const auto wide_path = vr::win_utf8::utf16_from_utf8(path);
+  if (FAILED(stream->InitializeFromFilename(wide_path.c_str(), GENERIC_WRITE))) {
+    return false;
+  }
+  Microsoft::WRL::ComPtr<IWICBitmapEncoder> encoder;
+  if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr,
+                                    &encoder)) ||
+      FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache))) {
+    return false;
+  }
+  Microsoft::WRL::ComPtr<IWICBitmapFrameEncode> frame;
+  Microsoft::WRL::ComPtr<IPropertyBag2> properties;
+  if (FAILED(encoder->CreateNewFrame(&frame, &properties)) || !frame ||
+      FAILED(frame->Initialize(properties.Get())) ||
+      FAILED(frame->SetSize(static_cast<UINT>(width),
+                            static_cast<UINT>(height)))) {
+    return false;
+  }
+  WICPixelFormatGUID pixel_format = GUID_WICPixelFormat32bppBGRA;
+  if (FAILED(frame->SetPixelFormat(&pixel_format))) {
+    return false;
+  }
+  const UINT stride = static_cast<UINT>(width * 4);
+  const UINT image_size = stride * static_cast<UINT>(height);
+  return SUCCEEDED(frame->WritePixels(
+             static_cast<UINT>(height), stride, image_size,
+             const_cast<BYTE*>(bgra.data()))) &&
+         SUCCEEDED(frame->Commit()) && SUCCEEDED(encoder->Commit());
+}
+
+EncodableMap CaptureMap(const std::vector<uint8_t>& bgra,
+                        int width,
+                        int height,
+                        const std::string& output_path) {
+  uint64_t luma_sum = 0;
+  size_t non_black = 0;
+  const size_t pixels = bgra.size() / 4;
+  for (size_t index = 0; index < pixels; ++index) {
+    const uint8_t blue = bgra[index * 4];
+    const uint8_t green = bgra[index * 4 + 1];
+    const uint8_t red = bgra[index * 4 + 2];
+    luma_sum += static_cast<uint64_t>(
+        (77 * red + 150 * green + 29 * blue) >> 8);
+    if (red > 8 || green > 8 || blue > 8) {
+      ++non_black;
+    }
+  }
+  const double average =
+      pixels == 0 ? 0.0
+                  : static_cast<double>(luma_sum) / static_cast<double>(pixels);
+  const double ratio = pixels == 0
+      ? 0.0
+      : static_cast<double>(non_black) / static_cast<double>(pixels);
+  const vr::BgraOverlayLineStyleMetrics overlay_line_style =
+      vr::measure_bgra_overlay_line_style(
+          bgra.data(), width, height, width * 4);
+  const bool saved = SaveBgraPng(bgra, width, height, output_path);
+  return {
+      {EncodableValue("hash"), EncodableValue(Fnv1a64(bgra))},
+      {EncodableValue("width"), EncodableValue(width)},
+      {EncodableValue("height"), EncodableValue(height)},
+      {EncodableValue("avgLuma"), EncodableValue(average)},
+      {EncodableValue("nonBlackRatio"), EncodableValue(ratio)},
+      {EncodableValue("overlayLinePairedCenters"),
+       EncodableValue(static_cast<int64_t>(overlay_line_style.paired_centers))},
+      {EncodableValue("overlayLineWeakWhiteCenters"),
+       EncodableValue(
+           static_cast<int64_t>(overlay_line_style.weak_white_centers))},
+      {EncodableValue("overlayLineBlackOnlyCenters"),
+       EncodableValue(
+           static_cast<int64_t>(overlay_line_style.black_only_centers))},
+      {EncodableValue("outputPath"), EncodableValue(output_path)},
+      {EncodableValue("saved"), EncodableValue(saved)},
+  };
+}
+
+void ScaleBgraToMaxSize(std::vector<uint8_t>& bgra,
+                        int& width,
+                        int& height,
+                        int max_size) {
+  if (max_size <= 0 || width <= 0 || height <= 0 ||
+      std::max(width, height) <= max_size) {
+    return;
+  }
+  const double scale = static_cast<double>(max_size) /
+                       static_cast<double>(std::max(width, height));
+  const int output_width =
+      std::max(1, static_cast<int>(std::lround(width * scale)));
+  const int output_height =
+      std::max(1, static_cast<int>(std::lround(height * scale)));
+  std::vector<uint8_t> scaled(
+      static_cast<size_t>(output_width) * output_height * 4);
+  for (int output_y = 0; output_y < output_height; ++output_y) {
+    const int source_y = std::min(
+        height - 1,
+        static_cast<int>((static_cast<int64_t>(output_y) * height) /
+                         output_height));
+    for (int output_x = 0; output_x < output_width; ++output_x) {
+      const int source_x = std::min(
+          width - 1,
+          static_cast<int>((static_cast<int64_t>(output_x) * width) /
+                           output_width));
+      const size_t source_offset =
+          (static_cast<size_t>(source_y) * width + source_x) * 4;
+      const size_t output_offset =
+          (static_cast<size_t>(output_y) * output_width + output_x) * 4;
+      std::copy_n(bgra.data() + source_offset, 4,
+                  scaled.data() + output_offset);
+    }
+  }
+  bgra = std::move(scaled);
+  width = output_width;
+  height = output_height;
+}
+
+void AddCompositorDiagnostics(EncodableMap& diagnostics,
+                              const WindowsNativeCompositor* compositor,
+                              bool started,
+                              const WindowsViewportPresentationController*
+                                  viewport_controller) {
+  diagnostics[EncodableValue("nativeCompositorEnabled")] =
+      EncodableValue(started);
+  if (!compositor) {
+    return;
+  }
+  const auto state = compositor->diagnostics();
+  diagnostics[EncodableValue("windowsCompositorInitialized")] =
+      EncodableValue(state.initialized);
+  diagnostics[EncodableValue("windowsFlutterExportEnabled")] =
+      EncodableValue(state.flutter_export_enabled);
+  diagnostics[EncodableValue("windowsCompositeCount")] =
+      EncodableValue(static_cast<int64_t>(state.composite_count));
+  diagnostics[EncodableValue("windowsFlutterPublishCount")] =
+      EncodableValue(static_cast<int64_t>(state.flutter_publish_count));
+  diagnostics[EncodableValue("windowsFlutterPublishSampleCount")] =
+      EncodableValue(
+          static_cast<int64_t>(state.flutter_publish_sample_count));
+  diagnostics[EncodableValue("windowsFlutterExportRequestCount")] =
+      EncodableValue(
+          static_cast<int64_t>(state.flutter_export_request_count));
+  diagnostics[EncodableValue("windowsFlutterExportRequestDispatchCount")] =
+      EncodableValue(static_cast<int64_t>(
+          state.flutter_export_request_dispatch_count));
+  diagnostics[EncodableValue("windowsFlutterExportScheduleFrameCount")] =
+      EncodableValue(static_cast<int64_t>(
+          state.flutter_export_schedule_frame_count));
+  diagnostics[EncodableValue("windowsFlutterExportVsyncCount")] =
+      EncodableValue(static_cast<int64_t>(state.flutter_export_vsync_count));
+  diagnostics[EncodableValue("windowsFlutterExportPresentCount")] =
+      EncodableValue(static_cast<int64_t>(state.flutter_export_present_count));
+  diagnostics[EncodableValue("windowsFlutterExportBeginCount")] =
+      EncodableValue(static_cast<int64_t>(state.flutter_export_begin_count));
+  diagnostics[EncodableValue("windowsFlutterExportFlushCount")] =
+      EncodableValue(static_cast<int64_t>(state.flutter_export_flush_count));
+  diagnostics[EncodableValue("windowsFlutterExportFinishCount")] =
+      EncodableValue(static_cast<int64_t>(state.flutter_export_finish_count));
+  diagnostics[EncodableValue("windowsFlutterExportPendingPumpFrames")] =
+      EncodableValue(static_cast<int64_t>(
+          state.flutter_export_pending_pump_frames));
+  diagnostics[EncodableValue("windowsVideoPublishCount")] =
+      EncodableValue(static_cast<int64_t>(state.video_publish_count));
+  diagnostics[EncodableValue("windowsVideoPresentCount")] =
+      EncodableValue(static_cast<int64_t>(state.video_present_count));
+  diagnostics[EncodableValue("windowsVideoTargetRetainedReconfigureCount")] =
+      EncodableValue(
+          static_cast<int64_t>(state.video_target_retained_reconfigure_count));
+  diagnostics[EncodableValue("windowsVideoTargetRetainedHandoffCount")] =
+      EncodableValue(
+          static_cast<int64_t>(state.video_target_retained_handoff_count));
+  diagnostics[EncodableValue("windowsVideoTargetRetainedGeometrySyncCount")] =
+      EncodableValue(static_cast<int64_t>(
+          state.video_target_retained_geometry_sync_count));
+  diagnostics[EncodableValue("windowsVideoPresentRetryCount")] =
+      EncodableValue(static_cast<int64_t>(state.video_present_retry_count));
+  diagnostics[EncodableValue("windowsFlutterAcquireFailureCount")] =
+      EncodableValue(static_cast<int64_t>(state.acquire_failure_count));
+  diagnostics[EncodableValue("windowsFlutterKeyedMutexFailureCount")] =
+      EncodableValue(static_cast<int64_t>(state.keyed_mutex_failure_count));
+  diagnostics[EncodableValue("windowsPresentFailureCount")] =
+      EncodableValue(static_cast<int64_t>(state.present_failure_count));
+  diagnostics[EncodableValue("windowsLastFlutterFrameGeneration")] =
+      EncodableValue(
+          static_cast<int64_t>(state.last_flutter_frame_generation));
+  diagnostics[EncodableValue("windowsCompositorLastError")] =
+      EncodableValue(state.last_error);
+  diagnostics[EncodableValue("windowsCompositorOutputMode")] =
+      EncodableValue(state.output_mode);
+  diagnostics[EncodableValue("windowsCompositorScRGBEnabled")] =
+      EncodableValue(state.scrgb_output_enabled);
+  diagnostics[EncodableValue("windowsCompositorSwapChainFormat")] =
+      EncodableValue(state.swap_chain_format);
+  diagnostics[EncodableValue("windowsCompositorColorSpace")] =
+      EncodableValue(state.swap_chain_color_space);
+  diagnostics[EncodableValue("windowsFlutterSourceFormat")] =
+      EncodableValue(state.flutter_source_format);
+  diagnostics[EncodableValue("windowsVideoTargetFormat")] =
+      EncodableValue(state.video_target_format);
+  diagnostics[EncodableValue("windowsSDRWhiteLevelMilliNits")] =
+      EncodableValue(state.sdr_white_level_milli_nits);
+  diagnostics[EncodableValue("windowsCompositorBackgroundColorArgb")] =
+      EncodableValue(static_cast<int64_t>(state.background_color_argb));
+  diagnostics[EncodableValue("windowsCompositorOutputFallbackReason")] =
+      EncodableValue(state.output_fallback_reason);
+  if (!viewport_controller) {
+    return;
+  }
+  const auto viewport = viewport_controller->diagnostics();
+  diagnostics[EncodableValue("viewportClockSource")] =
+      EncodableValue("dxgi-present-vsync");
+  diagnostics[EncodableValue("displayRefreshHzEstimateX1000")] = EncodableValue(
+      static_cast<int64_t>(std::llround(viewport.nominal_refresh_hz * 1000.0)));
+  diagnostics[EncodableValue("displayRefreshHzEstimate")] =
+      EncodableValue(viewport.nominal_refresh_hz);
+  diagnostics[EncodableValue("displayTickHz")] =
+      EncodableValue(viewport.nominal_refresh_hz);
+  diagnostics[EncodableValue("layoutIntentCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_intent_count));
+  diagnostics[EncodableValue("layoutSubmitCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_submit_count));
+  diagnostics[EncodableValue("layoutDrawCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_presented_count));
+  diagnostics[EncodableValue("layoutPublishedCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_presented_count));
+  diagnostics[EncodableValue("interactionLayoutSubmitCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_submit_count));
+  diagnostics[EncodableValue("interactionLayoutSubmitHzX1000")] =
+      EncodableValue(static_cast<int64_t>(
+          std::llround(viewport.measured_submit_hz * 1000.0)));
+  diagnostics[EncodableValue("interactionLayoutSubmitHz")] =
+      EncodableValue(viewport.measured_submit_hz);
+  diagnostics[EncodableValue("layoutDrawHz")] =
+      EncodableValue(viewport.measured_submit_hz);
+  diagnostics[EncodableValue("layoutRefreshSupersededCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_superseded_count));
+  diagnostics[EncodableValue("layoutRefreshFailureCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_failed_count));
+  diagnostics[EncodableValue("layoutRefreshNotReadyCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_not_ready_count));
+  diagnostics[EncodableValue("layoutRefreshBackpressureCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_backpressure_count));
+  diagnostics[EncodableValue("interactionFramesInFlight")] = EncodableValue(
+      static_cast<int64_t>(viewport.interaction_frames_in_flight));
+  diagnostics[EncodableValue("maxInteractionFramesInFlight")] =
+      EncodableValue(int64_t{2});
+}
+
+void AddPresentationPolicyDiagnostics(
+    EncodableMap& diagnostics, const vr::WindowsPresentationPolicy& policy,
+    const vr::WindowsDisplayProbeResult& display, double sdr_white_level_nits) {
+  diagnostics[EncodableValue("windowsPresentationRequest")] =
+      EncodableValue(policy.request);
+  diagnostics[EncodableValue("windowsPresentationMode")] =
+      EncodableValue(policy.mode);
+  diagnostics[EncodableValue("windowsPresentationReason")] =
+      EncodableValue(policy.reason);
+  diagnostics[EncodableValue("windowsPresentationFallbackReason")] =
+      EncodableValue(policy.fallback_reason);
+  diagnostics[EncodableValue("windowsMediaHasHDRTrack")] =
+      EncodableValue(policy.has_hdr_track);
+  diagnostics[EncodableValue("windowsDisplayProbeStatus")] =
+      EncodableValue(display.status);
+  diagnostics[EncodableValue("windowsDisplayDeviceName")] =
+      EncodableValue(display.device_name);
+  diagnostics[EncodableValue("windowsDisplayAdapterDescription")] =
+      EncodableValue(display.adapter_description);
+  diagnostics[EncodableValue("windowsDisplayColorSpace")] =
+      EncodableValue(display.color_space);
+  diagnostics[EncodableValue("windowsDisplayHDRActive")] =
+      EncodableValue(display.hdr_active);
+  diagnostics[EncodableValue("windowsDisplayAdvancedColorActive")] =
+      EncodableValue(display.advanced_color_active);
+  diagnostics[EncodableValue("windowsDisplayMatchesPresentationAdapter")] =
+      EncodableValue(display.matches_presentation_adapter);
+  diagnostics[EncodableValue("windowsDisplayBitsPerColor")] =
+      EncodableValue(display.bits_per_color);
+  diagnostics[EncodableValue("windowsDisplaySDRWhiteLevelStatus")] =
+      EncodableValue(display.sdr_white_level_status);
+  diagnostics[EncodableValue("windowsPresentationSDRWhiteLevelMilliNits")] =
+      EncodableValue(
+          static_cast<int64_t>(std::llround(sdr_white_level_nits * 1000.0)));
 }
 
 }  // namespace
 
-struct PlatformTaskState {
-    explicit PlatformTaskState(HWND window) : window_handle(window) {}
-
-    HWND window_handle = nullptr;
-    std::mutex mutex;
-    std::queue<std::function<void()>> tasks;
-    bool alive = true;
-};
-
-namespace {
-
-HWND PlatformTaskTarget(HWND window_handle) {
-    if (!window_handle || !IsWindow(window_handle)) {
-        return nullptr;
-    }
-    HWND root = GetAncestor(window_handle, GA_ROOT);
-    return root ? root : window_handle;
-}
-
-void PostPlatformTaskToState(
-    const std::shared_ptr<PlatformTaskState>& state,
-    std::function<void()> task) {
-    if (!state) {
-        return;
-    }
-
-    HWND target = PlatformTaskTarget(state->window_handle);
-    {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        if (!state->alive || !target) {
-            return;
-        }
-        state->tasks.push(std::move(task));
-    }
-    PostMessage(target, kPlatformTaskMessage, 0, 0);
-}
-
-flutter::EncodableMap make_presented_frame_map(const vr::TrackPerfStats& stats) {
-    flutter::EncodableMap frame;
-    frame[flutter::EncodableValue("fileId")] =
-        flutter::EncodableValue(stats.file_id);
-    frame[flutter::EncodableValue("ptsUs")] =
-        enc_i64(stats.current_pts_us);
-    frame[flutter::EncodableValue("dtsUs")] =
-        enc_i64(stats.current_dts_us);
-    frame[flutter::EncodableValue("analysisFrameIndex")] =
-        enc_i32(stats.analysis_frame_index);
-    frame[flutter::EncodableValue("frameIdentityMode")] =
-        enc_i32(static_cast<int32_t>(stats.frame_identity_mode));
-    frame[flutter::EncodableValue("sourcePacketIndex")] =
-        enc_i32(stats.source_packet_index);
-    frame[flutter::EncodableValue("sourcePacketSize")] =
-        enc_i32(stats.source_packet_size);
-    frame[flutter::EncodableValue("sourcePacketPos")] =
-        enc_i64(stats.source_packet_pos);
-    frame[flutter::EncodableValue("sourcePacketPtsUs")] =
-        enc_i64(stats.source_packet_pts);
-    frame[flutter::EncodableValue("sourcePacketDtsUs")] =
-        enc_i64(stats.source_packet_dts);
-    return frame;
-}
-
-std::string format_ffmpeg_version(unsigned version) {
-    return std::to_string((version >> 16) & 0xFF) + "." +
-           std::to_string((version >> 8) & 0xFF) + "." +
-           std::to_string(version & 0xFF);
-}
-
-void log_ffmpeg_runtime_versions() {
-    spdlog::info(
-        "[FFmpeg] av_version_info={} avcodec={} avformat={} avutil={} swresample={}",
-        av_version_info(),
-        format_ffmpeg_version(avcodec_version()),
-        format_ffmpeg_version(avformat_version()),
-        format_ffmpeg_version(avutil_version()),
-        format_ffmpeg_version(swresample_version()));
-}
-
-std::shared_ptr<vr::NativePlayer> pin_diagnostics_player() {
-    auto session = GlobalNativeDiagnosticsSessionRegistry().PinSession();
-    return session ? session->PinPlayer() : nullptr;
-}
-
-bool require_player(const std::shared_ptr<vr::NativePlayer>& player, PluginResult* result) {
-    if (!player) {
-        result->Error("NO_PLAYER", "Player not created");
-        return false;
-    }
-    return true;
-}
-
-int64_t query_window_refresh_hz(HWND hwnd) {
-    if (!hwnd) {
-        return 60;
-    }
-    HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-    MONITORINFOEXW info = {};
-    info.cbSize = sizeof(info);
-    if (!monitor || !GetMonitorInfoW(monitor, &info)) {
-        return 60;
-    }
-    DEVMODEW mode = {};
-    mode.dmSize = sizeof(mode);
-    if (!EnumDisplaySettingsW(info.szDevice, ENUM_CURRENT_SETTINGS, &mode) ||
-        mode.dmDisplayFrequency == 0) {
-        return 60;
-    }
-    return static_cast<int64_t>(mode.dmDisplayFrequency);
-}
-
-} // namespace
-
-bool read_int64_arg(const flutter::EncodableValue& value, int64_t& out) {
-    if (std::holds_alternative<int>(value)) {
-        out = static_cast<int64_t>(std::get<int>(value));
-        return true;
-    }
-    if (std::holds_alternative<int64_t>(value)) {
-        out = std::get<int64_t>(value);
-        return true;
-    }
-    return false;
-}
-
-bool read_int_arg(const flutter::EncodableValue& value, int& out) {
-    int64_t raw = 0;
-    if (!read_int64_arg(value, raw) ||
-        raw < std::numeric_limits<int>::min() ||
-        raw > std::numeric_limits<int>::max()) {
-        return false;
-    }
-    out = static_cast<int>(raw);
-    return true;
-}
-
-bool read_double_arg(const flutter::EncodableValue& value, double& out) {
-    if (std::holds_alternative<double>(value)) {
-        out = std::get<double>(value);
-        return true;
-    }
-    if (std::holds_alternative<int>(value)) {
-        out = static_cast<double>(std::get<int>(value));
-        return true;
-    }
-    if (std::holds_alternative<int64_t>(value)) {
-        out = static_cast<double>(std::get<int64_t>(value));
-        return true;
-    }
-    return false;
-}
-
-bool read_bool_arg(const flutter::EncodableValue& value, bool& out) {
-    if (!std::holds_alternative<bool>(value)) {
-        return false;
-    }
-    out = std::get<bool>(value);
-    return true;
-}
-
-bool read_string_arg(const flutter::EncodableValue& value, std::string& out) {
-    if (!std::holds_alternative<std::string>(value)) {
-        return false;
-    }
-    out = std::get<std::string>(value);
-    return true;
-}
-
-extern "C" __declspec(dllexport)
-const NakiVrDiagnostics* naki_vr_get_diagnostics() {
-    thread_local NakiVrDiagnostics d{};
-    static const NativeDiagnosticsProvider diagnostics;
-    diagnostics.FillFfiDiagnostics(d, pin_diagnostics_player());
-    return &d;
-}
-
-// static
 void VideoRendererPlugin::RegisterWithRegistrar(
     flutter::PluginRegistrarWindows* registrar,
     FlutterDesktopPluginRegistrarRef core_registrar) {
-    auto channel = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-        registrar->messenger(), native_player_channels::kMethodChannel,
-        &flutter::StandardMethodCodec::GetInstance());
-    auto event_channel = std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
-        registrar->messenger(), native_player_channels::kEventChannel,
-        &flutter::StandardMethodCodec::GetInstance());
+  auto channel =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          registrar->messenger(), native_player_channels::kMethodChannel,
+          &flutter::StandardMethodCodec::GetInstance());
+  auto events =
+      std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
+          registrar->messenger(), native_player_channels::kEventChannel,
+          &flutter::StandardMethodCodec::GetInstance());
 
-    auto* texture_registrar = registrar->texture_registrar();
-
-    // Get DXGI adapter from the Flutter view
-    IDXGIAdapter* adapter = nullptr;
-    auto* view = registrar->GetView();
-    if (view) {
-        adapter = view->GetGraphicsAdapter();
-    }
-
-    HWND window_handle = nullptr;
-    void* flutter_view_handle = nullptr;
-    if (view) {
-        window_handle = view->GetNativeWindow();
-        flutter_view_handle =
-            FlutterDesktopPluginRegistrarGetView(core_registrar);
-    }
-    auto plugin = std::make_unique<VideoRendererPlugin>(
-        registrar, texture_registrar, adapter, window_handle,
-        flutter_view_handle);
-
-    channel->SetMethodCallHandler(
-        [plugin_ptr = plugin.get()](const auto& call, auto result) {
-            plugin_ptr->HandleMethodCall(call, std::move(result));
-        });
-    event_channel->SetStreamHandler(
-        std::make_unique<flutter::StreamHandlerFunctions<flutter::EncodableValue>>(
-            [plugin_ptr = plugin.get()](
-                const flutter::EncodableValue*,
-                std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&& events)
-                -> std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>> {
-                plugin_ptr->SetEventSink(std::move(events));
-                return nullptr;
-            },
-            [plugin_ptr = plugin.get()](const flutter::EncodableValue*)
-                -> std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>> {
-                plugin_ptr->ClearEventSink();
-                return nullptr;
-            }));
-    plugin->event_bridge_.RegisterDrainWindow();
-
-    registrar->AddPlugin(std::move(plugin));
+  FlutterDesktopViewRef flutter_view =
+      FlutterDesktopPluginRegistrarGetView(core_registrar);
+  HWND flutter_window = flutter_view ? FlutterDesktopViewGetHWND(flutter_view)
+                                     : nullptr;
+  HWND window_handle = flutter_window ? GetAncestor(flutter_window, GA_ROOT)
+                                      : nullptr;
+  auto plugin = std::make_unique<VideoRendererPlugin>(
+      registrar, window_handle, flutter_view);
+  channel->SetMethodCallHandler(
+      [plugin_ptr = plugin.get()](const auto& call, auto result) {
+        plugin_ptr->HandleMethodCall(call, std::move(result));
+      });
+  events->SetStreamHandler(std::make_unique<
+      flutter::StreamHandlerFunctions<flutter::EncodableValue>>(
+      [plugin_ptr = plugin.get()](
+          const flutter::EncodableValue*,
+          std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&& sink)
+          -> std::unique_ptr<
+              flutter::StreamHandlerError<flutter::EncodableValue>> {
+        plugin_ptr->SetEventSink(std::move(sink));
+        return nullptr;
+      },
+      [plugin_ptr = plugin.get()](const flutter::EncodableValue*)
+          -> std::unique_ptr<
+              flutter::StreamHandlerError<flutter::EncodableValue>> {
+        plugin_ptr->ClearEventSink();
+        return nullptr;
+      }));
+  plugin->event_bridge_.RegisterDrainWindow();
+  registrar->AddPlugin(std::move(plugin));
 }
 
 VideoRendererPlugin::VideoRendererPlugin(
     flutter::PluginRegistrarWindows* registrar,
-    flutter::TextureRegistrar* texture_registrar,
-    IDXGIAdapter* dxgi_adapter,
     HWND window_handle,
-    void* flutter_view_handle)
-    : texture_bridge_(texture_registrar),
-      diagnostics_session_(std::make_shared<NativeDiagnosticsSession>()),
-      registrar_(registrar),
-      platform_task_state_(std::make_shared<PlatformTaskState>(window_handle)),
-      window_handle_(window_handle),
-      flutter_view_handle_(flutter_view_handle) {
-    if (registrar_) {
-        window_proc_delegate_id_ = registrar_->RegisterTopLevelWindowProcDelegate(
-            [this](HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam)
-                -> std::optional<LRESULT> {
-                return HandleTopLevelWindowProc(hwnd, message, wparam, lparam);
-            });
-    }
-    RegisterMethodHandlers();
-    GlobalNativeDiagnosticsSessionRegistry().Publish(diagnostics_session_);
-
-    if (dxgi_adapter) {
-        dxgi_adapter->AddRef();
-        dxgi_adapter_.Attach(dxgi_adapter);
-    }
-
-    const auto logging = logging_bootstrap_.InitializeDefaults();
-
-    spdlog::info("[VideoRendererPlugin] Plugin constructed, native logging initialized: {}", logging.file_path);
-    spdlog::info("[VideoRendererPlugin] Crash handler installed (VEH + SEH), crash dir: {}", logging.logs_dir);
-    log_ffmpeg_runtime_versions();
-
-    // Register PTS callback for analysis FFI (avoids analysis_ffi depending on NativePlayer)
-    naki_analysis_register_pts_callback_for_owner(
-        diagnostics_session_.get(),
-        []() -> int64_t {
-            auto r = pin_diagnostics_player();
-            return r ? r->current_pts_us() : 0;
+    FlutterDesktopViewRef flutter_view)
+    : window_handle_(window_handle), registrar_(registrar) {
+  if (registrar_) {
+    window_proc_delegate_id_ = registrar_->RegisterTopLevelWindowProcDelegate(
+        [this](HWND hwnd, UINT message, WPARAM wparam,
+               LPARAM lparam) -> std::optional<LRESULT> {
+          return HandleTopLevelWindowProc(hwnd, message, wparam, lparam);
         });
+  }
+  if (window_handle_) {
+    viewport_presentation_controller_ =
+        std::make_unique<WindowsViewportPresentationController>(window_handle_);
+  }
+  if (window_handle_ && flutter_view) {
+    compositor_ = std::make_unique<WindowsNativeCompositor>(
+        window_handle_, flutter_view);
+    compositor_started_ = compositor_->Start();
+  }
 }
 
 VideoRendererPlugin::~VideoRendererPlugin() {
-    if (window_handle_) {
-        KillTimer(window_handle_, kDisplayPolicyRefreshTimer);
-    }
-    if (registrar_ && window_proc_delegate_id_ >= 0) {
-        registrar_->UnregisterTopLevelWindowProcDelegate(
-            window_proc_delegate_id_);
-        window_proc_delegate_id_ = -1;
-    }
-    if (native_compositor_) {
-        native_compositor_->Stop();
-        native_compositor_.reset();
-    }
-    if (platform_task_state_) {
-        std::lock_guard<std::mutex> lock(platform_task_state_->mutex);
-        platform_task_state_->alive = false;
-        std::queue<std::function<void()>> empty;
-        platform_task_state_->tasks.swap(empty);
-    }
-    event_bridge_.Shutdown();
-    if (diagnostics_session_) {
-        naki_analysis_clear_pts_callback_for_owner(diagnostics_session_.get());
-        diagnostics_session_->ClearPlayer();
-        GlobalNativeDiagnosticsSessionRegistry().Clear(diagnostics_session_);
-    }
-    texture_bridge_.DetachFrameCallback();
-    if (player_) {
-        player_->set_event_callback(nullptr);
-        player_->shutdown();
-    }
-    texture_bridge_.Unregister();
-    if (player_) {
-        player_.reset();
-    }
+  if (window_handle_) {
+    KillTimer(window_handle_, kPresentationPolicyRefreshTimer);
+  }
+  if (registrar_ && window_proc_delegate_id_ >= 0) {
+    registrar_->UnregisterTopLevelWindowProcDelegate(window_proc_delegate_id_);
+    window_proc_delegate_id_ = -1;
+  }
+  DestroyPlayer();
+  event_bridge_.Shutdown();
+  if (compositor_) {
+    compositor_->Stop();
+  }
 }
 
 std::optional<LRESULT> VideoRendererPlugin::HandleTopLevelWindowProc(
-    HWND hwnd,
-    UINT message,
-    WPARAM wparam,
-    LPARAM lparam) {
-    if (message == kPlatformTaskMessage) {
-        DrainPlatformTasks();
-        return 0;
+    HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+  (void)lparam;
+  switch (message) {
+  case WM_ERASEBKGND: {
+    RECT client = {};
+    GetClientRect(hwnd, &client);
+    HBRUSH brush = CreateSolidBrush(viewport_background_color_);
+    if (brush) {
+      FillRect(reinterpret_cast<HDC>(wparam), &client, brush);
+      DeleteObject(brush);
+      return 1;
     }
-
-    switch (message) {
-    case WM_SIZE:
-        if (wparam != SIZE_MINIMIZED && native_compositor_) {
-            const uint32_t width =
-                static_cast<uint32_t>(LOWORD(lparam));
-            const uint32_t height =
-                static_cast<uint32_t>(HIWORD(lparam));
-            native_compositor_->NotifyClientSizeChanged(width, height);
-        }
-        break;
-    case WM_DISPLAYCHANGE:
-    case WM_SETTINGCHANGE:
-    case WM_MOVE:
-    case WM_EXITSIZEMOVE:
-    case WM_DPICHANGED:
-        if (native_compositor_) {
-            RECT client_rect = {};
-            if (GetClientRect(hwnd, &client_rect)) {
-                native_compositor_->NotifyClientSizeChanged(
-                    static_cast<uint32_t>(
-                        std::max<LONG>(1, client_rect.right - client_rect.left)),
-                    static_cast<uint32_t>(
-                        std::max<LONG>(1, client_rect.bottom - client_rect.top)));
-            }
-        }
-        ScheduleDisplayPolicyRefresh();
-        break;
-    case WM_TIMER:
-        if (wparam == kDisplayPolicyRefreshTimer) {
-            KillTimer(window_handle_, kDisplayPolicyRefreshTimer);
-            (void)RefreshPresentationPolicy("window-display-change");
-        }
-        break;
-    default:
-        break;
+    break;
+  }
+  case WM_DISPLAYCHANGE:
+  case WM_SETTINGCHANGE:
+  case WM_MOVE:
+  case WM_EXITSIZEMOVE:
+  case WM_DPICHANGED:
+    SchedulePresentationPolicyRefresh();
+    break;
+  case WM_TIMER:
+    if (wparam == kPresentationPolicyRefreshTimer) {
+      KillTimer(window_handle_, kPresentationPolicyRefreshTimer);
+      std::string error;
+      if (!RefreshPresentationPolicy("window-display-change", error)) {
+        spdlog::warn("[WindowsPresentation] display refresh failed: {}", error);
+        FailClosedPresentation(std::move(error));
+      }
     }
-    return std::nullopt;
+    break;
+  default:
+    break;
+  }
+  return std::nullopt;
 }
 
-void VideoRendererPlugin::ScheduleDisplayPolicyRefresh() {
-    if (!window_handle_) {
-        return;
-    }
-    SetTimer(
-        window_handle_,
-        kDisplayPolicyRefreshTimer,
-        kDisplayPolicyRefreshDelayMs,
-        nullptr);
+void VideoRendererPlugin::ApplyViewportBackgroundColor(uint32_t color) {
+  const uint8_t red = static_cast<uint8_t>((color >> 16u) & 0xFFu);
+  const uint8_t green = static_cast<uint8_t>((color >> 8u) & 0xFFu);
+  const uint8_t blue = static_cast<uint8_t>(color & 0xFFu);
+  const uint8_t alpha = static_cast<uint8_t>((color >> 24u) & 0xFFu);
+  viewport_background_color_ = RGB(red, green, blue);
+  const float scale = 1.0f / 255.0f;
+  if (player_) {
+    player_->set_background_color(red * scale, green * scale, blue * scale,
+                                  alpha * scale);
+  }
+  if (compositor_) {
+    compositor_->SetBackgroundColor(red * scale, green * scale, blue * scale,
+                                    alpha * scale);
+  }
 }
 
-void VideoRendererPlugin::PostPlatformTask(std::function<void()> task) {
-    PostPlatformTaskToState(platform_task_state_, std::move(task));
+void VideoRendererPlugin::SchedulePresentationPolicyRefresh() {
+  if (window_handle_) {
+    SetTimer(window_handle_, kPresentationPolicyRefreshTimer,
+             kPresentationPolicyRefreshDelayMs, nullptr);
+  }
 }
 
-void VideoRendererPlugin::DrainPlatformTasks() {
-    auto state = platform_task_state_;
-    if (!state) {
-        return;
-    }
-
-    while (true) {
-        std::function<void()> task;
-        {
-            std::lock_guard<std::mutex> lock(state->mutex);
-            if (!state->alive || state->tasks.empty()) {
-                return;
-            }
-            task = std::move(state->tasks.front());
-            state->tasks.pop();
-        }
-        task();
-    }
+void VideoRendererPlugin::FailClosedPresentation(std::string failure) {
+  {
+    std::lock_guard<std::mutex> lock(presentation_state_mutex_);
+    first_frame_activation_gate_.cancel_session();
+    presentation_session_ = 0;
+  }
+  if (player_) {
+    player_->pause();
+  }
+  if (compositor_) {
+    compositor_->ClearVideoTargetRing();
+  }
+  presentation_policy_.mode = "unavailable";
+  presentation_policy_.reason = "presentation-fail-closed";
+  presentation_policy_.fallback_reason = std::move(failure);
+  spdlog::error("[WindowsPresentation] fail closed: {}",
+                presentation_policy_.fallback_reason);
+  event_bridge_.QueueNativeCompositorState(
+      false, true, presentation_policy_.mode, presentation_policy_.reason,
+      "windows-native-d3d11", presentation_policy_.fallback_reason);
 }
 
 void VideoRendererPlugin::SetEventSink(
     std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink) {
-    event_bridge_.SetSink(std::move(sink));
+  event_bridge_.SetSink(std::move(sink));
+  if (player_) {
+    QueueCurrentNativeCompositorState();
+  }
 }
 
 void VideoRendererPlugin::ClearEventSink() {
-    event_bridge_.ClearSink();
+  event_bridge_.ClearSink();
 }
 
-void VideoRendererPlugin::QueueRendererEvent(const vr::RendererEvent& event) {
-    event_bridge_.Queue(event);
+void VideoRendererPlugin::DestroyPlayer() {
+  {
+    std::lock_guard<std::mutex> lock(presentation_state_mutex_);
+    first_frame_activation_gate_.cancel_session();
+    presentation_session_ = 0;
+  }
+  if (viewport_presentation_controller_) {
+    viewport_presentation_controller_->DetachPlayerAndWait();
+  }
+  auto player = std::move(player_);
+  if (player) {
+    player->set_frame_callback({});
+    player->set_frame_failure_callback({});
+    player->set_event_callback({});
+    player->shutdown();
+    target_release_queue_.Drain();
+  }
+  if (compositor_) {
+    compositor_->ClearVideoTargetRing();
+  }
+  video_target_width_ = 0;
+  video_target_height_ = 0;
+  player_id_ = 0;
 }
 
-void VideoRendererPlugin::RegisterMethodHandlers() {
-    using MethodCall = NativePlayerMethodDispatcher::MethodCall;
-    using MethodResultPtr = NativePlayerMethodDispatcher::MethodResultPtr;
+bool VideoRendererPlugin::RefreshPresentationPolicy(const char* reason,
+                                                    std::string& error) {
+  error.clear();
+  if (!compositor_ || !compositor_started_) {
+    error = "Windows native compositor is unavailable";
+    return false;
+  }
+  Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
+  Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+  if (compositor_->device() &&
+      SUCCEEDED(
+          compositor_->device()->QueryInterface(IID_PPV_ARGS(&dxgi_device))) &&
+      dxgi_device) {
+    (void)dxgi_device->GetAdapter(&adapter);
+  }
+  display_probe_ = display_resolver_.Probe(window_handle_, adapter.Get());
+  const std::string requested_mode =
+      vr::win_utf8::get_env_utf8(L"VOIDPLAYER_WINDOWS_PRESENTATION_MODE");
+  const bool has_hdr_track =
+      player_ && vr::windows_tracks_have_hdr_transfer(player_->tracks());
+  auto policy = vr::resolve_windows_presentation_policy(
+      requested_mode.empty() ? "auto" : requested_mode, has_hdr_track,
+      display_probe_);
+  if (!policy.supported) {
+    error = policy.reason;
+    return false;
+  }
+  return ApplyPresentationPolicy(std::move(policy), display_probe_, reason,
+                                 error);
+}
 
-    method_dispatcher_.Register(
-        "initLogging",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            InitLogging(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "createPlayer",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            CreatePlayer(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "destroyPlayer",
-        [this](const MethodCall&, MethodResultPtr result) {
-            DestroyPlayer(std::move(result));
-        });
-    method_dispatcher_.Register(
-        "addTrack",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            AddTrack(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "removeTrack",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            RemoveTrack(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "setTrackOffset",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            SetTrackOffset(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "setLoopRange",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            SetLoopRange(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "setAudibleTrack",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            SetAudibleTrack(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "play",
-        [this](const MethodCall&, MethodResultPtr result) {
-            Play(std::move(result));
-        });
-    method_dispatcher_.Register(
-        "pause",
-        [this](const MethodCall&, MethodResultPtr result) {
-            Pause(std::move(result));
-        });
-    method_dispatcher_.Register(
-        "seek",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            Seek(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "resize",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            Resize(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "prewarmNativePresentationTargetSize",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            PrewarmNativePresentationTargetSize(
-                call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "setNativeCompositorViewportRect",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            SetNativeCompositorViewportRect(
-                call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "requestNativeCompositorFlutterFrame",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            RequestNativeCompositorFlutterFrame(
-                call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "boostNativeCompositorFlutterInteraction",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            BoostNativeCompositorFlutterInteraction(
-                call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "setNativeCompositorViewportTransform",
-        [](const MethodCall&, MethodResultPtr result) {
-            result->Success();
-        });
-    method_dispatcher_.Register(
-        "prepareNativeCompositorSourceCache",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            PrepareNativeCompositorSourceCache(
-                call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "clearNativeCompositorSourceCache",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            ClearNativeCompositorSourceCache(
-                call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "setNativeAnalysisOverlay",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            SetNativeAnalysisOverlay(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "ackNativeCompositorFlutterState",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            AckNativeCompositorFlutterState(
-                call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "debugFailNativeCompositor",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            DebugFailNativeCompositor(
-                call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "debugSimulateWindowsDeviceLoss",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            DebugSimulateWindowsDeviceLoss(
-                call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "resetNativePerfCounters",
-        [this](const MethodCall&, MethodResultPtr result) {
-            ResetNativePerfCounters(std::move(result));
-        });
-    method_dispatcher_.Register(
-        "beginNativeInteractionSample",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            BeginNativeInteractionSample(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "endNativeInteractionSample",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            EndNativeInteractionSample(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "setViewportBackgroundColor",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            SetViewportBackgroundColor(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "setSpeed",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            SetSpeed(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "stepForward",
-        [this](const MethodCall&, MethodResultPtr result) {
-            StepForward(std::move(result));
-        });
-    method_dispatcher_.Register(
-        "stepBackward",
-        [this](const MethodCall&, MethodResultPtr result) {
-            StepBackward(std::move(result));
-        });
-    method_dispatcher_.Register(
-        "currentPts",
-        [this](const MethodCall&, MethodResultPtr result) {
-            CurrentPts(std::move(result));
-        });
-    method_dispatcher_.Register(
-        "currentPresentedFrame",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            CurrentPresentedFrame(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "duration",
-        [this](const MethodCall&, MethodResultPtr result) {
-            Duration(std::move(result));
-        });
-    method_dispatcher_.Register(
-        "isPlaying",
-        [this](const MethodCall&, MethodResultPtr result) {
-            IsPlaying(std::move(result));
-        });
-    method_dispatcher_.Register(
-        "getPlaybackSnapshot",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            GetPlaybackSnapshot(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "applyLayout",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            ApplyLayout(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "getTracks",
-        [this](const MethodCall&, MethodResultPtr result) {
-            GetTracks(std::move(result));
-        });
-    method_dispatcher_.Register(
-        "getDiagnostics",
-        [this](const MethodCall&, MethodResultPtr result) {
-            GetDiagnostics(std::move(result));
-        });
-    method_dispatcher_.Register(
-        "pickFiles",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            PickFiles(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "captureViewport",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            CaptureViewport(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "captureViewportRegion",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            CaptureViewportRegion(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "captureWindow",
-        [this](const MethodCall& call, MethodResultPtr result) {
-            CaptureWindow(call.arguments(), std::move(result));
-        });
-    method_dispatcher_.Register(
-        "getLayout",
-        [this](const MethodCall&, MethodResultPtr result) {
-            GetLayout(std::move(result));
-        });
+bool VideoRendererPlugin::ApplyPresentationPolicy(
+    vr::WindowsPresentationPolicy policy,
+    const vr::WindowsDisplayProbeResult& display,
+    const char* reason,
+    std::string& error) {
+  error.clear();
+  const double white_nits =
+      display.sdr_white_level_milli_nits > 0
+          ? static_cast<double>(display.sdr_white_level_milli_nits) / 1000.0
+          : 80.0;
+  WindowsNativeCompositorOutputConfig compositor_config;
+  compositor_config.linear_scrgb =
+      policy.output_target == vr::ColorOutputTarget::kWindowsLinearScRGB;
+  compositor_config.sdr_white_level_nits = white_nits;
+  std::string compositor_error;
+  if (!compositor_->ConfigureOutput(compositor_config, compositor_error)) {
+    if (!compositor_config.linear_scrgb) {
+      error = compositor_error;
+      return false;
+    }
+    policy.mode = "native-compositor-sdr";
+    policy.reason = "scrgb-target-failed-native-sdr";
+    policy.fallback_reason = compositor_error.empty()
+                                 ? "scrgb-target-configuration-failed"
+                                 : compositor_error;
+    policy.output_target = vr::ColorOutputTarget::kSDRToneMappedBT709;
+    policy.hdr_output_requested = false;
+    compositor_config.linear_scrgb = false;
+    if (!compositor_->ConfigureOutput(compositor_config, compositor_error)) {
+      error = "scRGB and native SDR compositor configuration failed: " +
+              compositor_error;
+      return false;
+    }
+  }
+
+  const DXGI_FORMAT target_format = compositor_config.linear_scrgb
+                                        ? DXGI_FORMAT_R16G16B16A16_FLOAT
+                                        : DXGI_FORMAT_B8G8R8A8_UNORM;
+  const std::string desired_target_format =
+      compositor_config.linear_scrgb ? "rgba16f" : "bgra8";
+  const auto compositor_diagnostics = compositor_->diagnostics();
+  const bool target_format_changed =
+      compositor_diagnostics.video_target_format != desired_target_format;
+  if (player_ && player_->initialized() && target_format_changed) {
+    std::vector<void*> textures;
+    if (!compositor_->CreateVideoTargetRing(
+            static_cast<uint32_t>(video_target_width_),
+            static_cast<uint32_t>(video_target_height_), target_format, 6,
+            textures) ||
+        !player_->install_target_ring(
+            reinterpret_cast<const void* const*>(textures.data()),
+            textures.size(), nullptr, nullptr, video_target_width_,
+            video_target_height_, 4)) {
+      if (compositor_config.linear_scrgb) {
+        policy.mode = "native-compositor-sdr";
+        policy.reason = "scrgb-ring-failed-native-sdr";
+        policy.fallback_reason = player_->presentation_error();
+        policy.output_target = vr::ColorOutputTarget::kSDRToneMappedBT709;
+        policy.hdr_output_requested = false;
+        compositor_config.linear_scrgb = false;
+        std::string fallback_error;
+        std::vector<void*> fallback_textures;
+        if (!compositor_->ConfigureOutput(compositor_config, fallback_error) ||
+            !compositor_->CreateVideoTargetRing(
+                static_cast<uint32_t>(video_target_width_),
+                static_cast<uint32_t>(video_target_height_),
+                DXGI_FORMAT_B8G8R8A8_UNORM, 6, fallback_textures) ||
+            !player_->install_target_ring(
+                reinterpret_cast<const void* const*>(fallback_textures.data()),
+                fallback_textures.size(), nullptr, nullptr, video_target_width_,
+                video_target_height_, 4)) {
+          error = "scRGB target ring failed and native SDR fallback failed";
+          return false;
+        }
+      } else {
+        error = player_->presentation_error();
+        return false;
+      }
+    }
+  }
+  {
+    std::lock_guard<std::mutex> lock(presentation_state_mutex_);
+    presentation_policy_ = std::move(policy);
+    presentation_sdr_white_level_nits_ = white_nits;
+    if (presentation_session_ != 0) {
+      (void)first_frame_activation_gate_.mark_policy_ready(
+          presentation_session_);
+    }
+  }
+  if (player_ && player_->initialized()) {
+    (void)player_->update_presentation_sdr_white_level(white_nits);
+    player_->request_frame_refresh(reason ? reason : "windows-output-policy");
+  }
+  spdlog::info(
+      "[WindowsPresentation] request={} mode={} reason={} hdr_track={} "
+      "display_status={} display_hdr={} adapter_match={} target={} "
+      "sdr_white_nits={:.3f} white_status={} fallback={}",
+      presentation_policy_.request, presentation_policy_.mode,
+      presentation_policy_.reason, presentation_policy_.has_hdr_track,
+      display.status, display.hdr_active, display.matches_presentation_adapter,
+      compositor_config.linear_scrgb ? "rgba16f-linear-scrgb" : "bgra8-sdr",
+      white_nits, display.sdr_white_level_status,
+      presentation_policy_.fallback_reason);
+  QueueCurrentNativeCompositorState();
+  return true;
+}
+
+bool VideoRendererPlugin::ResizeVideoTargets(int width,
+                                             int height,
+                                             std::string& error) {
+  error.clear();
+  if (!compositor_ || !compositor_started_ || width <= 0 || height <= 0) {
+    error = "Windows native compositor is unavailable";
+    return false;
+  }
+  if (width == video_target_width_ && height == video_target_height_) {
+    return true;
+  }
+  std::vector<void*> textures;
+  const DXGI_FORMAT target_format =
+      presentation_policy_.output_target ==
+              vr::ColorOutputTarget::kWindowsLinearScRGB
+          ? DXGI_FORMAT_R16G16B16A16_FLOAT
+          : DXGI_FORMAT_B8G8R8A8_UNORM;
+  if (!compositor_->CreateVideoTargetRing(
+          static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+          target_format, 6, textures)) {
+    error = compositor_->diagnostics().last_error;
+    return false;
+  }
+  if (player_ && player_->initialized() &&
+      !player_->install_target_ring(
+          reinterpret_cast<const void* const*>(textures.data()),
+          textures.size(), nullptr, nullptr, width, height, 4)) {
+    error = player_->presentation_error();
+    return false;
+  }
+  video_target_width_ = width;
+  video_target_height_ = height;
+  return true;
+}
+
+void VideoRendererPlugin::QueueCurrentNativeCompositorState(
+    vr::WindowsFirstFrameActivationGate::Session expected_session) {
+  std::lock_guard<std::mutex> lock(presentation_state_mutex_);
+  if (expected_session != 0 && expected_session != presentation_session_) {
+    return;
+  }
+  const bool active =
+      first_frame_activation_gate_.active(presentation_session_);
+  event_bridge_.QueueNativeCompositorState(
+      active, true, presentation_policy_.mode, presentation_policy_.reason,
+      "windows-native-d3d11",
+      active && presentation_policy_.fallback_reason != "none"
+          ? presentation_policy_.fallback_reason
+          : "");
+}
+
+void VideoRendererPlugin::OnFrameAvailable(
+    const std::weak_ptr<vr::WindowsNativePlayer>& weak_player,
+    vr::WindowsFirstFrameActivationGate::Session presentation_session,
+    const vr::PresentationBackendFrameInfo* frame_info) {
+  auto player = weak_player.lock();
+  if (!player || !compositor_) {
+    return;
+  }
+  vr::PresentationBackendFrameInfo copied = {};
+  if (!frame_info) {
+    if (!player->copy_last_frame_info(&copied)) {
+      return;
+    }
+    frame_info = &copied;
+  }
+  auto* target = reinterpret_cast<ID3D11Texture2D*>(
+      frame_info->target_pixel_buffer_address);
+  if (!target) {
+    return;
+  }
+  // The shared renderer invokes this callback synchronously from interaction,
+  // preview, playback and step paths, some of which still own facade/lifecycle
+  // locks. The compositor has waited for its GPU copy; return every completed
+  // target through one native queue so no callback path can silently skip the
+  // same release protocol or depend on the Win32 UI message pump.
+  const bool presented = compositor_->PresentVideoTarget(target);
+  const bool current_target = compositor_->IsCurrentVideoTarget(target);
+  if (first_frame_activation_gate_.accept_present(
+          presentation_session, presented, current_target)) {
+    spdlog::info(
+        "[WindowsPresentation] first-frame activation session={} "
+        "current_ring=true",
+        presentation_session);
+    QueueCurrentNativeCompositorState(presentation_session);
+  }
+  target_release_queue_.Enqueue(player, target);
 }
 
 void VideoRendererPlugin::HandleMethodCall(
-    const flutter::MethodCall<flutter::EncodableValue>& method_call,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-    method_dispatcher_.Dispatch(method_call, std::move(result));
-}
+    const flutter::MethodCall<flutter::EncodableValue>& call,
+    std::unique_ptr<MethodResult> result) {
+  const std::string& method = call.method_name();
+  const auto* arguments = call.arguments();
 
-void VideoRendererPlugin::InitLogging(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    std::string level_str = "info";
-    std::string logs_dir;
-    std::string log_file_name;
-
-    if (arguments) {
-        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-        if (args) {
-            auto it = args->find(flutter::EncodableValue("logLevel"));
-            if (it != args->end()) {
-                level_str = std::get<std::string>(it->second);
-            }
-            it = args->find(flutter::EncodableValue("logsDir"));
-            if (it != args->end()) {
-                logs_dir = std::get<std::string>(it->second);
-            }
-            it = args->find(flutter::EncodableValue("logFileName"));
-            if (it != args->end()) {
-                log_file_name = std::get<std::string>(it->second);
-            }
-        }
+  if (method == "initLogging") {
+    const std::string logs_dir = ReadString(arguments, "logsDir");
+    const std::string file_name = ReadString(arguments, "logFileName");
+    vr::LogConfig config;
+    if (!logs_dir.empty()) {
+      config.file_path = logs_dir + "/" +
+          (file_name.empty() ? "native_main.log" : file_name);
     }
-
-    const auto logging = logging_bootstrap_.Reconfigure(level_str, logs_dir, log_file_name);
-
-    spdlog::info(
-        "[VideoRendererPlugin] Native logging reconfigured: level={}, file={}",
-        logging.level, logging.file_path);
-
+    const std::string level = ReadString(arguments, "logLevel");
+    config.level = spdlog::level::from_str(level.empty() ? "info" : level);
+    config.max_files = 5;
+    config.use_environment_level_override = true;
+    config.manage_global_flush = true;
+    vr::configure_logging(config);
+    spdlog::info("[WindowsNative] logging configured: {}", config.file_path);
     result->Success();
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "initLogging", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "initLogging", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "initLogging");
+    return;
+  }
+  if (method == "setNativeCompositorViewportRect") {
+    if (compositor_) {
+      compositor_->SetVideoViewportRect(
+          static_cast<int>(ReadInt(arguments, "left")),
+          static_cast<int>(ReadInt(arguments, "top")),
+          static_cast<int>(ReadInt(arguments, "width")),
+          static_cast<int>(ReadInt(arguments, "height")),
+          static_cast<int>(ReadInt(arguments, "surfaceWidth")),
+          static_cast<int>(ReadInt(arguments, "surfaceHeight")));
     }
-}
+    result->Success();
+    return;
+  }
+  if (method == "requestNativeCompositorFlutterFrame") {
+    // The final compositor is passive: Flutter's ordinary scheduler publishes
+    // UI changes. Native video presentation must never pump Flutter frames.
+    spdlog::debug("[WindowsCompositor] passive Flutter frame hint reason={}",
+                  ReadString(arguments, "reason"));
+    result->Success();
+    return;
+  }
+  if (method == "setNativeAnalysisOverlay") {
+    const auto* tracks_value = Find(arguments, "tracks");
+    const auto* tracks = tracks_value
+        ? std::get_if<flutter::EncodableList>(tracks_value)
+        : nullptr;
+    if (!tracks) {
+      result->Error("BAD_ARGS", "tracks must be a list");
+      return;
+    }
 
-void VideoRendererPlugin::CreatePlayer(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    naki_analysis_clear_overlay_tracks();
+    size_t loaded_track_count = 0;
+    for (const auto& entry : *tracks) {
+      const auto* track = std::get_if<EncodableMap>(&entry);
+      if (!track) {
+        naki_analysis_clear_overlay_tracks();
+        result->Error("BAD_ARGS", "analysis overlay track must be a map");
+        return;
+      }
+      const auto file = track->find(EncodableValue("fileId"));
+      const auto path = track->find(EncodableValue("analysisPath"));
+      int64_t file_id = -1;
+      if (file != track->end()) {
+        if (const auto* value = std::get_if<int32_t>(&file->second)) {
+          file_id = *value;
+        } else if (const auto* value = std::get_if<int64_t>(&file->second)) {
+          file_id = *value;
+        }
+      }
+      const auto* analysis_path = path != track->end()
+                                      ? std::get_if<std::string>(&path->second)
+                                      : nullptr;
+      if (file_id < 0 || !analysis_path || analysis_path->empty() ||
+          naki_analysis_set_overlay_track(
+              static_cast<int32_t>(file_id), analysis_path->c_str()) == 0) {
+        char message[256] = {};
+        naki_analysis_last_error(message, sizeof(message));
+        naki_analysis_clear_overlay_tracks();
+        result->Error("ANALYSIS_OVERLAY_TRACK",
+                      message[0] != '\0'
+                          ? message
+                          : "failed to load analysis overlay track");
+        return;
+      }
+      ++loaded_track_count;
+    }
 
-    try {
+    NakiOverlayState state{};
+    state.show_cu_grid = ReadBool(arguments, "showCuGrid") ? 1 : 0;
+    state.show_pred_mode = ReadBool(arguments, "showPredMode") ? 1 : 0;
+    state.show_qp_heatmap = ReadBool(arguments, "showQpHeatmap") ? 1 : 0;
+    state.show_pred_lines = ReadBool(arguments, "showPredLines") ? 1 : 0;
+    state.show_cu_bit_cost_heatmap =
+        ReadBool(arguments, "showCuBitCostHeatmap") ? 1 : 0;
+    state.opacity_permille = static_cast<int32_t>(
+        std::clamp<int64_t>(ReadInt(arguments, "opacityPermille", 550),
+                            0, 1000));
+    state.mode = static_cast<int32_t>(
+        std::max<int64_t>(0, ReadInt(arguments, "mode")));
+    state.track_file_id = static_cast<int32_t>(
+        ReadInt(arguments, "trackFileId", -1));
+    naki_analysis_set_overlay(&state);
     if (player_) {
-        result->Error("ALREADY_CREATED", "Player already exists");
-        return;
+      player_->request_frame_refresh("windows-analysis-overlay-state");
     }
-
-    if (!arguments) {
-        result->Error("INVALID_ARGS", "Arguments required");
-        return;
+    spdlog::info(
+        "[WindowsAnalysisOverlay] synchronized tracks={} cu={} pred={} qp={} "
+        "motion={} bit_cost={} mode={} opacity={}",
+        loaded_track_count, state.show_cu_grid, state.show_pred_mode,
+        state.show_qp_heatmap, state.show_pred_lines,
+        state.show_cu_bit_cost_heatmap, state.mode, state.opacity_permille);
+    result->Success();
+    return;
+  }
+  if (method == "resetNativePerfCounters") {
+    if (compositor_) {
+      compositor_->ResetFlutterPublishSample();
     }
-
-    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-    if (!args) {
-        result->Error("INVALID_ARGS", "Arguments must be a map");
-        return;
+    result->Success();
+    return;
+  }
+  if (method == "prewarmNativePresentationTargetSize" ||
+      method == "boostNativeCompositorFlutterInteraction" ||
+      method == "ackNativeCompositorFlutterState") {
+    result->Success();
+    return;
+  }
+  if (method == "pickFiles") {
+    flutter::EncodableList files;
+    for (const auto& path : file_picker_.PickVideoFiles(
+             ReadBool(arguments, "allowMultiple", true), window_handle_)) {
+      files.emplace_back(path);
     }
-
-    // Extract video paths
-    auto paths_it = args->find(flutter::EncodableValue("videoPaths"));
-    if (paths_it == args->end()) {
-        result->Error("INVALID_ARGS", "videoPaths required");
-        return;
+    result->Success(EncodableValue(std::move(files)));
+    return;
+  }
+  if (method == "createPlayer") {
+    DestroyPlayer();
+    const auto paths = ReadStringList(arguments, "videoPaths");
+    const int width = static_cast<int>(ReadInt(arguments, "width", 1920));
+    const int height = static_cast<int>(ReadInt(arguments, "height", 1080));
+    if (paths.empty()) {
+      result->Error("BAD_ARGS", "createPlayer requires at least one path");
+      return;
     }
-    if (!std::holds_alternative<flutter::EncodableList>(paths_it->second)) {
-        result->Error("BAD_ARGS", "videoPaths must be a list");
-        return;
+    if (!compositor_ || !compositor_started_ || width <= 0 || height <= 0) {
+      result->Error("TARGET_UNAVAILABLE",
+                    "Windows native compositor is unavailable");
+      return;
     }
-    const auto& paths_list = std::get<flutter::EncodableList>(paths_it->second);
-    if (paths_list.empty()) {
-        result->Error("BAD_ARGS", "videoPaths must not be empty");
-        return;
+    std::vector<void*> textures;
+    if (!compositor_->CreateVideoTargetRing(
+            static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+            DXGI_FORMAT_B8G8R8A8_UNORM, 4, textures)) {
+      result->Error("TARGET_UNAVAILABLE", compositor_->diagnostics().last_error);
+      return;
     }
-
-    int width = 1920;
-    int height = 1080;
-    auto w_it = args->find(flutter::EncodableValue("width"));
-    auto h_it = args->find(flutter::EncodableValue("height"));
-    if (w_it != args->end() && !read_int_arg(w_it->second, width)) {
-        result->Error("BAD_ARGS", "width must be an integer");
-        return;
-    }
-    if (h_it != args->end() && !read_int_arg(h_it->second, height)) {
-        result->Error("BAD_ARGS", "height must be an integer");
-        return;
-    }
-    if (auto validation = vr::validate_renderer_dimensions(width, height, "viewport size");
-        !validation.ok) {
-        result->Error("BAD_ARGS", validation.message);
-        return;
-    }
-    bool use_hardware_decode = true;
-    auto hw_it = args->find(flutter::EncodableValue("useHardwareDecode"));
-    if (hw_it != args->end() && !read_bool_arg(hw_it->second, use_hardware_decode)) {
-        result->Error("BAD_ARGS", "useHardwareDecode must be a boolean");
-        return;
-    }
-
-    // Create player in headless mode
+    video_target_width_ = width;
+    video_target_height_ = height;
+    vr::WindowsD3D11TargetRingInstall install;
+    install.textures = reinterpret_cast<const void* const*>(textures.data());
+    install.texture_count = textures.size();
+    install.width = width;
+    install.height = height;
+    install.format = DXGI_FORMAT_B8G8R8A8_UNORM;
     vr::RendererConfig config;
-    config.headless = true;
-    const std::string render_backend_request =
-        vr::win_utf8::get_env_utf8(L"VOIDPLAYER_WINDOWS_RENDER_BACKEND");
-    const auto render_backend =
-        resolve_windows_render_backend(render_backend_request);
-    const bool use_wgpu_d3d12_backend =
-        render_backend.type == vr::RendererBackendType::WgpuD3D12;
-    config.backend.type = render_backend.type;
-    config.backend.adapter = dxgi_adapter_.Get();
-    if (use_wgpu_d3d12_backend) {
-        config.backend.output = window_handle_;
-    }
+    config.video_paths = paths;
     config.width = width;
     config.height = height;
-    config.use_hardware_decode = use_hardware_decode;
-
-    if (!config.backend.adapter) {
-        result->Error(
-            "NO_DXGI_ADAPTER",
-            "Flutter DXGI adapter is unavailable; cannot start wgpu-d3d12 renderer");
-        return;
-    }
-
-    presentation_request_ = vr::win_utf8::get_env_utf8(
-        L"VOIDPLAYER_WINDOWS_PRESENTATION_MODE");
-    const auto locked_display = display_probe_tracker_.Update(
-        display_resolver_.Probe(window_handle_, dxgi_adapter_.Get()));
-    presentation_policy_ = vr::resolve_windows_presentation_policy(
-        presentation_request_, false, locked_display.probe);
-    if (!presentation_policy_.supported) {
-        result->Error(
-            "UNSUPPORTED_PRESENTATION_MODE",
-            "Windows presentation mode is unsupported; use auto, sdr, "
-            "native-compositor-sdr, or native-compositor-scrgb");
-        return;
-    }
-    config.backend.output_target = presentation_policy_.output_target;
-    config.backend.shared_fp16_output =
-        presentation_policy_.native_compositor_requested;
-    config.backend.sdr_white_level_nits =
-        presentation_policy_.hdr_output_requested
-            ? static_cast<double>(
-                  locked_display.probe.sdr_white_level_milli_nits) /
-                  1000.0
-            : 80.0;
-    presentation_sdr_white_level_status_ =
-        locked_display.probe.sdr_white_level_status;
-    spdlog::info(
-        "[WindowsPresentation] request={} mode={} output_target={} "
-        "sdr_white_nits={:.3f} white_status={} fallback={} render_backend={}",
-        presentation_policy_.request,
-        presentation_policy_.mode,
-        presentation_policy_.fp16_scrgb_requested ? "fp16-scrgb" : "sdr",
-        config.backend.sdr_white_level_nits,
-        presentation_sdr_white_level_status_,
-        presentation_policy_.fallback_reason,
-        render_backend.name);
-    spdlog::info(
-        "[WindowsRenderBackend] request='{}' selected={} reason={}",
-        render_backend_request,
-        render_backend.name,
-        render_backend.reason);
-
-    for (const auto& p : paths_list) {
-        std::string path;
-        if (!read_string_arg(p, path)) {
-            result->Error("BAD_ARGS", "video paths must be strings");
-            return;
-        }
-        config.video_paths.push_back(path);
-    }
-
-    if (auto validation = vr::validate_renderer_config(config); !validation.ok) {
-        result->Error("BAD_ARGS", validation.message);
-        return;
-    }
-
-    player_ = std::make_shared<vr::NativePlayer>();
-    diagnostics_session_->PublishPlayer(player_);
-    if (!player_->initialize(config)) {
-        diagnostics_session_->ClearPlayer();
-        player_.reset();
-        result->Error("INIT_FAILED", "Failed to initialize player");
-        return;
-    }
-
-    presentation_policy_ = vr::resolve_windows_presentation_policy(
-        presentation_request_,
-        vr::windows_tracks_have_hdr_transfer(player_->track_infos()),
-        locked_display.probe);
-    if (!presentation_policy_.supported) {
-        diagnostics_session_->ClearPlayer();
-        player_->shutdown();
-        player_.reset();
-        result->Error(
-            "UNSUPPORTED_PRESENTATION_MODE",
-            "Windows presentation mode is unsupported; use auto, sdr, "
-            "native-compositor-sdr, or native-compositor-scrgb");
-        return;
-    }
-    const double resolved_white_nits =
-        presentation_policy_.hdr_output_requested
-            ? static_cast<double>(
-                  locked_display.probe.sdr_white_level_milli_nits) /
-                  1000.0
-            : 80.0;
-    presentation_sdr_white_level_status_ =
-        presentation_policy_.hdr_output_requested
-            ? locked_display.probe.sdr_white_level_status
-            : "nominal-default";
-    (void)player_->update_presentation_sdr_white_level(
-        resolved_white_nits);
-    presentation_locked_display_generation_ =
-        locked_display.generation;
-    presentation_locked_sdr_white_level_milli_nits_ =
-        static_cast<int64_t>(
-            std::llround(resolved_white_nits * 1000.0));
-
-    if (!texture_bridge_.Register(player_)) {
-        diagnostics_session_->ClearPlayer();
-        player_->shutdown();
-        player_.reset();
-        result->Error("TEXTURE_FAILED", "Failed to register texture");
-        return;
-    }
-
-    player_->set_event_callback([this](const vr::RendererEvent& event) {
-        QueueRendererEvent(event);
-    });
-
-    if (presentation_policy_.native_compositor_requested) {
-        Microsoft::WRL::ComPtr<IDXGIAdapter> output_adapter;
-        if (!display_resolver_.OpenAdapterForProbe(
-                locked_display.probe, &output_adapter)) {
-            output_adapter = dxgi_adapter_;
-        }
-        native_compositor_ = std::make_unique<WindowsNativeCompositor>();
-        const bool compositor_started = native_compositor_->Start(
-            window_handle_,
-            flutter_view_handle_,
-            player_,
-            dxgi_adapter_.Get(),
-            output_adapter.Get(),
-            resolved_white_nits,
-            presentation_policy_.hdr_output_requested
-                ? WindowsNativeCompositor::OutputTarget::ScRGB
-                : WindowsNativeCompositor::OutputTarget::SDR,
-            [this](WindowsNativeCompositor::Phase phase,
-                   uint64_t serial,
-                   const std::string& reason) {
-                const auto compositor = native_compositor_
-                    ? native_compositor_->diagnostics()
-                    : WindowsNativeCompositor::Diagnostics{};
-                const bool scrgb_output =
-                    compositor.output_target == "scrgb";
-                const std::string compositor_mode =
-                    scrgb_output
-                        ? "native-compositor-scrgb"
-                        : "native-compositor-sdr";
-                const bool hole_requested =
-                    phase == WindowsNativeCompositor::Phase::Preparing ||
-                    phase == WindowsNativeCompositor::Phase::Active;
-                const bool failed =
-                    phase == WindowsNativeCompositor::Phase::Failed ||
-                    (phase == WindowsNativeCompositor::Phase::Inactive &&
-                     reason != "destroy-player" &&
-                     reason != "shutdown");
-                event_bridge_.QueueNativeCompositorState(
-                    hole_requested,
-                    true,
-                    scrgb_output,
-                    compositor_mode,
-                    phase == WindowsNativeCompositor::Phase::Preparing
-                        ? "preparing"
-                        : phase == WindowsNativeCompositor::Phase::Active
-                              ? "active"
-                              : phase == WindowsNativeCompositor::Phase::Failed
-                                    ? "failed"
-                                    : "inactive",
-                    static_cast<int64_t>(serial),
-                    reason,
-                    failed ? reason : "");
-            });
-        if (!compositor_started) {
-            const auto diagnostics = native_compositor_->diagnostics();
-            presentation_policy_.fallback_reason =
-                diagnostics.fallback_reason;
-            event_bridge_.QueueNativeCompositorState(
-                false, true, false, presentation_policy_.mode,
-                "inactive", 0,
-                "native-compositor-start-failed",
-                diagnostics.fallback_reason);
-            native_compositor_.reset();
-            texture_bridge_.Unregister();
-            diagnostics_session_->ClearPlayer();
-            player_->shutdown();
-            player_.reset();
-            result->Error(
-                "NATIVE_COMPOSITOR_UNAVAILABLE",
-                diagnostics.fallback_reason.empty()
-                    ? "Windows native compositor failed to start"
-                    : diagnostics.fallback_reason);
-            return;
-        }
-    }
-
-    spdlog::info(
-        "[VideoRendererPlugin] Created player, texture_id={}, tracks={}, hw_decode={}",
-        texture_bridge_.texture_id(),
-        player_->track_infos().size(),
-        use_hardware_decode);
-
-    // Build result map with textureId and track info
-    flutter::EncodableMap result_map;
-    result_map[flutter::EncodableValue("textureId")] =
-        flutter::EncodableValue(texture_bridge_.texture_id());
-
-    flutter::EncodableList tracks_list;
-    if (player_) {
-        for (const auto& info : player_->track_infos()) {
-            tracks_list.push_back(flutter::EncodableValue(make_track_map(info)));
-        }
-    }
-    result_map[flutter::EncodableValue("tracks")] = flutter::EncodableValue(tracks_list);
-
-    result->Success(flutter::EncodableValue(result_map));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "CreatePlayer", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "CreatePlayer", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "CreatePlayer");
-    }
-}
-
-void VideoRendererPlugin::DestroyPlayer(
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (native_compositor_) {
-        if (player_) {
-            player_->clear_source_cache("destroy-player");
-        }
-        native_compositor_source_signature_.clear();
-        native_compositor_source_failure_signature_.clear();
-        native_compositor_->Stop("destroy-player");
-        native_compositor_.reset();
-    }
-    if (player_) {
-        diagnostics_session_->ClearPlayer();
-        texture_bridge_.DetachFrameCallback();
-        player_->set_event_callback(nullptr);
-        player_->shutdown();
-    }
-    texture_bridge_.Unregister();
-    if (player_) {
-        player_.reset();
-    }
-
-    spdlog::info("[VideoRendererPlugin] Destroyed player");
-    result->Success(flutter::EncodableValue(std::monostate{}));
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "DestroyPlayer", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "DestroyPlayer");
-    }
-}
-
-void VideoRendererPlugin::AddTrack(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!player_) {
-        result->Error("NO_PLAYER", "Player not created");
-        return;
-    }
-    if (!arguments) {
-        result->Error("INVALID_ARGS", "Arguments required");
-        return;
-    }
-
-    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-    if (!args) {
-        result->Error("INVALID_ARGS", "Arguments must be a map");
-        return;
-    }
-
-    auto it = args->find(flutter::EncodableValue("path"));
-    if (it == args->end()) {
-        result->Error("INVALID_ARGS", "path required");
-        return;
-    }
-    std::string path;
-    if (!read_string_arg(it->second, path) || path.empty()) {
-        result->Error("BAD_ARGS", "path must be a non-empty string");
-        return;
-    }
-    bool use_hardware_decode = true;
-    auto hw_it = args->find(flutter::EncodableValue("useHardwareDecode"));
-    if (hw_it != args->end() && !read_bool_arg(hw_it->second, use_hardware_decode)) {
-        result->Error("BAD_ARGS", "useHardwareDecode must be a boolean");
-        return;
-    }
-
-    int slot = player_->add_track(path, use_hardware_decode);
-    if (slot < 0) {
-        result->Error("ADD_FAILED", "Failed to add track");
-        return;
-    }
-
-    auto infos = player_->track_infos();
-    const vr::TrackInfo* found = nullptr;
-    for (const auto& ti : infos) {
-        if (ti.slot == slot) { found = &ti; break; }
-    }
-    if (!found) {
-        result->Error("ADD_FAILED", "Track not found after add");
-        return;
-    }
-
-    spdlog::info(
-        "[VideoRendererPlugin] Added track: file_id={}, slot={}, hw_decode={}, path={}, tracks={}",
-        found->file_id,
-        slot,
-        use_hardware_decode,
-        path,
-        player_->track_infos().size());
-    (void)RefreshPresentationPolicy("track-added", false);
-    result->Success(flutter::EncodableValue(make_track_map(*found)));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "addTrack", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "addTrack", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "addTrack");
-    }
-}
-
-void VideoRendererPlugin::RemoveTrack(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!player_) {
-        result->Error("NO_PLAYER", "Player not created");
-        return;
-    }
-    if (!arguments) {
-        result->Error("INVALID_ARGS", "Arguments required");
-        return;
-    }
-
-    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-    if (!args) {
-        result->Error("INVALID_ARGS", "Arguments must be a map");
-        return;
-    }
-
-    auto it = args->find(flutter::EncodableValue("fileId"));
-    if (it == args->end()) {
-        result->Error("INVALID_ARGS", "fileId required");
-        return;
-    }
-    int file_id = 0;
-    if (!read_int_arg(it->second, file_id)) {
-        result->Error("BAD_ARGS", "fileId must be an integer");
-        return;
-    }
-
-    player_->remove_track(file_id);
-    if (player_->track_count() == 0) {
-        player_->clear_source_cache("all-tracks-removed");
-        native_compositor_source_signature_.clear();
-        native_compositor_source_failure_signature_.clear();
-    }
-    (void)RefreshPresentationPolicy("track-removed", false);
-    spdlog::info("[VideoRendererPlugin] Removed track: file_id={}", file_id);
-    result->Success(flutter::EncodableValue(std::monostate{}));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "removeTrack", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "removeTrack", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "removeTrack");
-    }
-}
-
-void VideoRendererPlugin::SetTrackOffset(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!player_) {
-        result->Error("NO_PLAYER", "Player not created");
-        return;
-    }
-    if (!arguments) {
-        result->Error("INVALID_ARGS", "Arguments required");
-        return;
-    }
-    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-    if (!args) {
-        result->Error("INVALID_ARGS", "Arguments must be a map");
-        return;
-    }
-
-    int file_id = 0;
-    int64_t offset_us = 0;
-    auto it = args->find(flutter::EncodableValue("fileId"));
-    if (it == args->end() || !read_int_arg(it->second, file_id)) {
-        result->Error("BAD_ARGS", "fileId must be an integer");
-        return;
-    }
-    it = args->find(flutter::EncodableValue("offsetUs"));
-    if (it == args->end() || !read_int64_arg(it->second, offset_us)) {
-        result->Error("BAD_ARGS", "offsetUs must be an integer");
-        return;
-    }
-
-    player_->set_track_offset(file_id, offset_us);
-    spdlog::info("[VideoRendererPlugin] setTrackOffset: file_id={}, offset_us={}", file_id, offset_us);
-    result->Success(flutter::EncodableValue(std::monostate{}));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "setTrackOffset", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "setTrackOffset", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "setTrackOffset");
-    }
-}
-
-void VideoRendererPlugin::SetLoopRange(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!player_) {
-        result->Error("NO_PLAYER", "Player not created");
-        return;
-    }
-    if (!arguments) {
-        result->Error("INVALID_ARGS", "Arguments required");
-        return;
-    }
-    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-    if (!args) {
-        result->Error("INVALID_ARGS", "Arguments must be a map");
-        return;
-    }
-
-    bool enabled = false;
-    int64_t start_us = 0;
-    int64_t end_us = 0;
-    auto it = args->find(flutter::EncodableValue("enabled"));
-    if (it != args->end() && !read_bool_arg(it->second, enabled)) {
-        result->Error("BAD_ARGS", "enabled must be a boolean");
-        return;
-    }
-    it = args->find(flutter::EncodableValue("startUs"));
-    if (it != args->end() && !read_int64_arg(it->second, start_us)) {
-        result->Error("BAD_ARGS", "startUs must be an integer");
-        return;
-    }
-    it = args->find(flutter::EncodableValue("endUs"));
-    if (it != args->end() && !read_int64_arg(it->second, end_us)) {
-        result->Error("BAD_ARGS", "endUs must be an integer");
-        return;
-    }
-    if (auto validation = vr::validate_loop_range(enabled, start_us, end_us);
-        !validation.ok) {
-        result->Error("BAD_ARGS", validation.message);
-        return;
-    }
-
-    player_->set_loop_range(enabled, start_us, end_us);
-    result->Success(flutter::EncodableValue(std::monostate{}));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "setLoopRange", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "setLoopRange", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "setLoopRange");
-    }
-}
-
-void VideoRendererPlugin::SetAudibleTrack(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!require_player(player_, result.get())) {
-        return;
-    }
-    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-    if (!args) {
-        result->Error("INVALID_ARGS", "Arguments must be a map");
-        return;
-    }
-    auto it = args->find(flutter::EncodableValue("fileId"));
-    int file_id = -1;
-    if (it == args->end() || !read_int_arg(it->second, file_id)) {
-        result->Error("BAD_ARGS", "fileId must be an integer");
-        return;
-    }
-    player_->set_audible_track(file_id);
-    result->Success(flutter::EncodableValue(std::monostate{}));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "setAudibleTrack", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "setAudibleTrack", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "setAudibleTrack");
-    }
-}
-
-void VideoRendererPlugin::Play(
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!require_player(player_, result.get())) {
-        return;
-    }
-    player_->play();
-    result->Success(flutter::EncodableValue(std::monostate{}));
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "play", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "play");
-    }
-}
-
-void VideoRendererPlugin::Pause(
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!require_player(player_, result.get())) {
-        return;
-    }
-    player_->pause();
-    result->Success(flutter::EncodableValue(std::monostate{}));
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "pause", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "pause");
-    }
-}
-
-void VideoRendererPlugin::Seek(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!require_player(player_, result.get())) {
-        return;
-    }
-    if (!arguments) {
-        result->Error("INVALID_ARGS", "Arguments required");
-        return;
-    }
-    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-    if (!args) {
-        result->Error("INVALID_ARGS", "Arguments must be a map");
-        return;
-    }
-    auto it = args->find(flutter::EncodableValue("ptsUs"));
-    int64_t pts = 0;
-    if (it == args->end() || !read_int64_arg(it->second, pts) || pts < 0) {
-        result->Error("BAD_ARGS", "ptsUs must be a non-negative integer");
-        return;
-    }
-    int64_t request_id = -1;
-    it = args->find(flutter::EncodableValue("requestId"));
-    if (it != args->end() && !read_int64_arg(it->second, request_id)) {
-        result->Error("BAD_ARGS", "requestId must be an integer");
-        return;
-    }
-    spdlog::info("[VideoRendererPlugin] seek: pts={}us request_id={}", pts, request_id);
-    player_->seek(pts, vr::SeekType::Exact, request_id);
-    spdlog::info("[VideoRendererPlugin] seek completed request_id={}", request_id);
-    result->Success(flutter::EncodableValue(std::monostate{}));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "seek", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "seek", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "seek");
-    }
-}
-
-void VideoRendererPlugin::Resize(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!require_player(player_, result.get())) {
-        return;
-    }
-    if (!arguments) {
-        result->Error("INVALID_ARGS", "Arguments required");
-        return;
-    }
-    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-    if (!args) {
-        result->Error("INVALID_ARGS", "Arguments must be a map");
-        return;
-    }
-    int w = 1920;
-    int h = 1080;
-    auto it = args->find(flutter::EncodableValue("width"));
-    if (it != args->end() && !read_int_arg(it->second, w)) {
-        result->Error("BAD_ARGS", "width must be an integer");
-        return;
-    }
-    it = args->find(flutter::EncodableValue("height"));
-    if (it != args->end() && !read_int_arg(it->second, h)) {
-        result->Error("BAD_ARGS", "height must be an integer");
-        return;
-    }
-    if (auto validation = vr::validate_renderer_dimensions(w, h, "viewport size");
-        !validation.ok) {
-        result->Error("BAD_ARGS", validation.message);
-        return;
-    }
-    spdlog::debug(
-        "[WindowsCompositorDebug] method resize viewport={}x{} "
-        "native_compositor={} player={}",
-        w, h, native_compositor_ ? "yes" : "no",
-        player_ ? "yes" : "no");
-    player_->resize(w, h);
-    spdlog::debug(
-        "[WindowsCompositorDebug] method resize complete viewport={}x{}",
-        w, h);
-    result->Success(flutter::EncodableValue(std::monostate{}));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "resize", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "resize", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "resize");
-    }
-}
-
-void VideoRendererPlugin::PrewarmNativePresentationTargetSize(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-    try {
-        if (!arguments || !player_) {
-            result->Success();
-            return;
-        }
-        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-        if (!args) {
-            result->Error("INVALID_ARGS", "Arguments must be a map");
-            return;
-        }
-        int w = 0;
-        int h = 0;
-        auto it = args->find(flutter::EncodableValue("width"));
-        if (it != args->end() && !read_int_arg(it->second, w)) {
-            result->Error("BAD_ARGS", "width must be an integer");
-            return;
-        }
-        it = args->find(flutter::EncodableValue("height"));
-        if (it != args->end() && !read_int_arg(it->second, h)) {
-            result->Error("BAD_ARGS", "height must be an integer");
-            return;
-        }
-        if (auto validation = vr::validate_renderer_dimensions(w, h, "prewarm viewport size");
-            !validation.ok) {
-            result->Error("BAD_ARGS", validation.message);
-            return;
-        }
-        spdlog::debug(
-            "[WindowsCompositorDebug] prewarm native target hint {}x{} "
-            "native_compositor={} player={}",
-            w, h, native_compositor_ ? "yes" : "no",
-            player_ ? "yes" : "no");
-        if (!player_->prewarm_presentation_target(w, h)) {
-            spdlog::debug(
-                "[WindowsCompositorDebug] prewarm native target skipped {}x{}",
-                w, h);
-        }
-        result->Success(flutter::EncodableValue(std::monostate{}));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(
-            result.get(), "prewarmNativePresentationTargetSize", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(
-            result.get(), "prewarmNativePresentationTargetSize", e);
-    } catch (...) {
-        ReportUnknownMethodException(
-            result.get(), "prewarmNativePresentationTargetSize");
-    }
-}
-
-void VideoRendererPlugin::SetNativeCompositorViewportRect(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-    try {
-        if (!arguments || !native_compositor_) {
-            result->Success();
-            return;
-        }
-        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-        if (!args) {
-            result->Error("BAD_ARGS", "viewport rect must be a map");
-            return;
-        }
-        int left = 0;
-        int top = 0;
-        int width = 0;
-        int height = 0;
-        int surface_width = 0;
-        int surface_height = 0;
-        const auto read = [&](const char* key, int& value) {
-            auto it = args->find(flutter::EncodableValue(key));
-            return it != args->end() && read_int_arg(it->second, value);
-        };
-        if (!read("left", left) || !read("top", top) ||
-            !read("width", width) || !read("height", height) ||
-            !read("surfaceWidth", surface_width) ||
-            !read("surfaceHeight", surface_height) ||
-            surface_width <= 0 || surface_height <= 0) {
-            result->Error("BAD_ARGS", "invalid viewport rect");
-            return;
-        }
-        spdlog::debug(
-            "[WindowsCompositorDebug] method viewportRect "
-            "physical=({},{} {}x{}) surface={}x{}",
-            left, top, width, height, surface_width, surface_height);
-        native_compositor_->SetViewportRect(
-            static_cast<double>(left) / surface_width,
-            static_cast<double>(top) / surface_height,
-            static_cast<double>(left + width) / surface_width,
-            static_cast<double>(top + height) / surface_height);
-        result->Success();
-    } catch (const std::exception& e) {
-        ReportMethodException(
-            result.get(), "setNativeCompositorViewportRect", e);
-    }
-}
-
-void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-    try {
-        if (!player_ || !native_compositor_) {
-            result->Success();
-            return;
-        }
-        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-        if (!args) {
-            result->Error("BAD_ARGS", "source cache payload must be a map");
-            return;
-        }
-        const auto read_int_list = [&](const char* key,
-                                       std::vector<int>& out,
-                                       size_t expected = 0) {
-            const auto it = args->find(flutter::EncodableValue(key));
-            if (it == args->end() ||
-                !std::holds_alternative<flutter::EncodableList>(it->second)) {
-                return false;
-            }
-            const auto& list = std::get<flutter::EncodableList>(it->second);
-            if (expected != 0 && list.size() != expected) {
-                return false;
-            }
-            out.clear();
-            for (const auto& value : list) {
-                int parsed = 0;
-                if (!read_int_arg(value, parsed)) {
-                    return false;
-                }
-                out.push_back(parsed);
-            }
-            return true;
-        };
-        const auto read_double_list = [&](const char* key,
-                                          std::array<double, 4>& out) {
-            const auto it = args->find(flutter::EncodableValue(key));
-            if (it == args->end() ||
-                !std::holds_alternative<flutter::EncodableList>(it->second)) {
-                return false;
-            }
-            const auto& list = std::get<flutter::EncodableList>(it->second);
-            if (list.size() != out.size()) {
-                return false;
-            }
-            for (size_t i = 0; i < out.size(); ++i) {
-                if (!read_double_arg(list[i], out[i]) ||
-                    !std::isfinite(out[i])) {
-                    return false;
-                }
-            }
-            return true;
-        };
-        const auto read_required_int = [&](const char* key, int& out) {
-            const auto it = args->find(flutter::EncodableValue(key));
-            return it != args->end() && read_int_arg(it->second, out);
-        };
-        const auto read_required_double = [&](const char* key, double& out) {
-            const auto it = args->find(flutter::EncodableValue(key));
-            return it != args->end() && read_double_arg(it->second, out) &&
-                   std::isfinite(out);
-        };
-
-        std::vector<int> source_slots;
-        std::vector<int> source_order;
-        std::array<double, 4> display_offset_x{};
-        std::array<double, 4> display_offset_y{};
-        std::array<double, 4> inv_display_size_x{};
-        std::array<double, 4> inv_display_size_y{};
-        std::array<double, 4> view_offset_uv_x{};
-        std::array<double, 4> view_offset_uv_y{};
-        int mode = 0;
-        int active_track_count = 0;
-        double split_pos = 0.5;
-        if (!read_int_list("sourceSlots", source_slots) ||
-            source_slots.empty() || source_slots.size() > 4 ||
-            !read_int_list("sourceOrder", source_order, 4) ||
-            !read_required_int("mode", mode) ||
-            !read_required_double("splitPos", split_pos) ||
-            !read_required_int("activeTrackCount", active_track_count) ||
-            !read_double_list("displayOffsetX", display_offset_x) ||
-            !read_double_list("displayOffsetY", display_offset_y) ||
-            !read_double_list("invDisplaySizeX", inv_display_size_x) ||
-            !read_double_list("invDisplaySizeY", inv_display_size_y) ||
-            !read_double_list("viewOffsetUvX", view_offset_uv_x) ||
-            !read_double_list("viewOffsetUvY", view_offset_uv_y) ||
-            (mode != vr::LAYOUT_SIDE_BY_SIDE &&
-             mode != vr::LAYOUT_SPLIT_SCREEN) ||
-            split_pos < 0.0 || split_pos > 1.0 ||
-            active_track_count < 1 || active_track_count > 4) {
-            result->Error("BAD_ARGS", "invalid source cache projection payload");
-            return;
-        }
-
-        std::array<bool, 4> requested{};
-        for (const int slot : source_slots) {
-            if (slot < 0 || slot >= 4 || requested[slot]) {
-                result->Error("BAD_ARGS", "sourceSlots must be unique slots 0..3");
-                return;
-            }
-            requested[slot] = true;
-        }
-        for (int index = 0; index < active_track_count; ++index) {
-            const int slot = source_order[static_cast<size_t>(index)];
-            if (slot < 0 || slot >= 4 || !requested[slot]) {
-                result->Error("BAD_ARGS", "sourceOrder references an unavailable slot");
-                return;
-            }
-        }
-
-        std::vector<vr::SourceCacheTrackDescriptor> descriptors;
-        const auto infos = player_->track_infos();
-        for (const auto& info : infos) {
-            if (info.slot >= 0 && info.slot < 4 && requested[info.slot]) {
-                if (info.file_id < 0 || info.width <= 0 || info.height <= 0) {
-                    result->Error("BAD_ARGS", "source track dimensions are invalid");
-                    return;
-                }
-                descriptors.push_back(
-                    {info.slot,
-                     info.file_id,
-                     info.width,
-                     info.height,
-                     info.color.transfer});
-            }
-        }
-        if (descriptors.size() != source_slots.size()) {
-            const std::string error = "source-cache-track-mismatch";
-            std::string failure_signature = error + "|slots=";
-            for (const int slot : source_slots) {
-                failure_signature += std::to_string(slot) + ",";
-            }
-            failure_signature += "|tracks=" + std::to_string(infos.size());
-            if (failure_signature !=
-                native_compositor_source_failure_signature_) {
-                spdlog::warn(
-                    "[WindowsSourceCache] ignoring stale source slots after track change: requested={} available_tracks={}",
-                    source_slots.size(),
-                    infos.size());
-                native_compositor_source_failure_signature_ =
-                    failure_signature;
-            }
-            player_->clear_source_cache(error.c_str());
-            player_->clear_source_projection();
-            native_compositor_->ClearSourceProjection(error);
-            native_compositor_->SetSourceCacheError(error);
-            native_compositor_source_signature_.clear();
-            result->Success();
-            return;
-        }
-        std::sort(
-            descriptors.begin(),
-            descriptors.end(),
-            [](const auto& left, const auto& right) {
-                return left.slot < right.slot;
-            });
-
-        WindowsNativeCompositor::SourceProjection projection;
-        projection.enabled = true;
-        projection.mode = mode;
-        projection.split_pos = static_cast<float>(split_pos);
-        projection.active_track_count = active_track_count;
-        for (size_t i = 0; i < 4; ++i) {
-            projection.source_order[i] = source_order[i];
-            projection.display_offset_x[i] =
-                static_cast<float>(display_offset_x[i]);
-            projection.display_offset_y[i] =
-                static_cast<float>(display_offset_y[i]);
-            projection.inv_display_size_x[i] =
-                static_cast<float>(inv_display_size_x[i]);
-            projection.inv_display_size_y[i] =
-                static_cast<float>(inv_display_size_y[i]);
-            projection.view_offset_uv_x[i] =
-                static_cast<float>(view_offset_uv_x[i]);
-            projection.view_offset_uv_y[i] =
-                static_cast<float>(view_offset_uv_y[i]);
-        }
-        const bool backend_projection_ready =
-            player_->update_source_projection(projection);
-        if (backend_projection_ready) {
-            native_compositor_->DisableRetainedSourceProjection(
-                "wgpu-d3d12-backend-source-projection");
-        } else {
-            const auto backend = player_->presentation_backend_diagnostics();
-            const std::string error =
-                backend.backend == "wgpu-d3d12"
-                    ? "wgpu-d3d12-source-projection-update-failed"
-                    : "source-projection-backend-unavailable";
-            spdlog::warn(
-                "[WindowsSourceProjection] backend projection update failed backend={} error={}; retained fallback is disabled",
-                backend.backend,
-                error);
-            player_->clear_source_cache(error.c_str());
-            player_->clear_source_projection();
-            native_compositor_->ClearSourceProjection(error);
-            native_compositor_->SetSourceCacheError(error);
-            native_compositor_source_signature_.clear();
-            result->Success();
-            return;
-        }
-
-        std::string signature = "R16G16B16A16_FLOAT|";
-        for (const int slot : source_order) {
-            signature += std::to_string(slot) + ",";
-        }
-        for (const auto& descriptor : descriptors) {
-            signature += "|" + std::to_string(descriptor.slot) + ":" +
-                         std::to_string(descriptor.file_id) + ":" +
-                         std::to_string(descriptor.width) + "x" +
-                         std::to_string(descriptor.height) + ":" +
-                         std::to_string(descriptor.color_transfer);
-        }
-        if (signature != native_compositor_source_signature_) {
-            if (!player_->configure_source_cache(descriptors)) {
-                const auto backend =
-                    player_->presentation_backend_diagnostics();
-                const std::string error =
-                    backend.backend == "wgpu-d3d12"
-                        ? "wgpu-d3d12-source-cache-unimplemented"
-                        : "source-cache-configuration-failed";
-                const std::string failure_signature =
-                    backend.backend + "|" + error + "|" + signature;
-                if (failure_signature !=
-                    native_compositor_source_failure_signature_) {
-                    spdlog::warn(
-                        "[WindowsSourceCache] configure failed backend={} error={}",
-                        backend.backend,
-                        error);
-                    native_compositor_source_failure_signature_ =
-                        failure_signature;
-                }
-                player_->clear_source_cache(error.c_str());
-                player_->clear_source_projection();
-                native_compositor_->ClearSourceProjection(error);
-                native_compositor_->SetSourceCacheError(error);
-                native_compositor_source_signature_.clear();
-                result->Success();
-                return;
-            }
-            native_compositor_source_signature_ = signature;
-            native_compositor_source_failure_signature_.clear();
-        }
-        if (!player_->is_playing()) {
-            const auto backend = player_->presentation_backend_diagnostics();
-            if (backend.source_cache_publish_count == 0) {
-                (void)player_->request_frame_refresh(
-                    "windows-source-cache-subscribe");
-            }
-            if (backend_projection_ready) {
-                (void)player_->request_frame_refresh(
-                    "windows-source-projection-refresh");
-            }
-        }
-        result->Success();
-    } catch (const std::exception& e) {
-        ReportMethodException(
-            result.get(), "prepareNativeCompositorSourceCache", e);
-    }
-}
-
-void VideoRendererPlugin::ClearNativeCompositorSourceCache(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-    try {
-        std::string reason = "clear-requested";
-        if (const auto* args =
-                std::get_if<flutter::EncodableMap>(arguments)) {
-            const auto it = args->find(flutter::EncodableValue("reason"));
-            if (it != args->end()) {
-                (void)read_string_arg(it->second, reason);
-            }
-        }
-        if (player_) {
-            player_->clear_source_cache(reason.c_str());
-            player_->clear_source_projection();
-        }
-        if (native_compositor_) {
-            native_compositor_->ClearSourceProjection(reason);
-        }
-        native_compositor_source_signature_.clear();
-        native_compositor_source_failure_signature_.clear();
-        result->Success();
-    } catch (const std::exception& e) {
-        ReportMethodException(
-            result.get(), "clearNativeCompositorSourceCache", e);
-    }
-}
-
-void VideoRendererPlugin::SetNativeAnalysisOverlay(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-    try {
-        if (!arguments) {
-            result->Error("INVALID_ARGS", "Arguments required");
-            return;
-        }
-        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-        if (!args) {
-            result->Error("INVALID_ARGS", "Arguments must be a map");
-            return;
-        }
-        const auto read_required_bool = [&](const char* key, int32_t& out) {
-            const auto it = args->find(flutter::EncodableValue(key));
-            bool value = false;
-            if (it == args->end() ||
-                !read_bool_arg(it->second, value)) {
-                return false;
-            }
-            out = value ? 1 : 0;
-            return true;
-        };
-        const auto read_required_int = [&](const char* key, int32_t& out) {
-            const auto it = args->find(flutter::EncodableValue(key));
-            int value = 0;
-            if (it == args->end() ||
-                !read_int_arg(it->second, value)) {
-                return false;
-            }
-            out = value;
-            return true;
-        };
-        NakiOverlayState state{};
-        if (!read_required_bool("showCuGrid", state.show_cu_grid) ||
-            !read_required_bool("showPredMode", state.show_pred_mode) ||
-            !read_required_bool(
-                "showQpHeatmap", state.show_qp_heatmap) ||
-            !read_required_bool("showPredLines", state.show_pred_lines) ||
-            !read_required_bool(
-                "showCuBitCostHeatmap",
-                state.show_cu_bit_cost_heatmap) ||
-            !read_required_int(
-                "opacityPermille", state.opacity_permille) ||
-            !read_required_int("mode", state.mode) ||
-            !read_required_int("trackFileId", state.track_file_id)) {
-            result->Error(
-                "BAD_ARGS", "Invalid native analysis overlay state");
-            return;
-        }
-        const auto tracks_it =
-            args->find(flutter::EncodableValue("tracks"));
-        const auto* tracks =
-            tracks_it == args->end()
-                ? nullptr
-                : std::get_if<flutter::EncodableList>(
-                      &tracks_it->second);
-        if (!tracks) {
-            result->Error("BAD_ARGS", "tracks must be a list");
-            return;
-        }
-        naki_analysis_clear_overlay_tracks();
-        for (const auto& value : *tracks) {
-            const auto* track =
-                std::get_if<flutter::EncodableMap>(&value);
-            if (!track) {
-                result->Error("BAD_ARGS", "track must be a map");
-                return;
-            }
-            const auto file_it =
-                track->find(flutter::EncodableValue("fileId"));
-            const auto path_it =
-                track->find(flutter::EncodableValue("analysisPath"));
-            int file_id = -1;
-            std::string analysis_path;
-            if (file_it == track->end() ||
-                !read_int_arg(file_it->second, file_id) ||
-                path_it == track->end() ||
-                !read_string_arg(path_it->second, analysis_path) ||
-                file_id < 0 || analysis_path.empty() ||
-                naki_analysis_set_overlay_track(
-                    file_id, analysis_path.c_str()) == 0) {
-                naki_analysis_clear_overlay_tracks();
-                result->Error(
-                    "BAD_ARGS",
-                    "Invalid native analysis overlay track");
-                return;
-            }
-        }
-        naki_analysis_set_overlay(&state);
-        if (player_) {
-            (void)player_->request_frame_refresh(
-                "windows-analysis-overlay-state");
-        }
-        result->Success();
-    } catch (const std::exception& e) {
-        ReportMethodException(
-            result.get(), "setNativeAnalysisOverlay", e);
-    }
-}
-
-void VideoRendererPlugin::RequestNativeCompositorFlutterFrame(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-    try {
-        std::string reason = "unspecified";
-        if (arguments) {
-            const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-            if (args) {
-                auto it = args->find(flutter::EncodableValue("reason"));
-                if (it != args->end()) {
-                    (void)read_string_arg(it->second, reason);
-                }
-            }
-        }
-        if (native_compositor_) {
-            native_compositor_->RequestFlutterFrame(reason);
-        }
-        result->Success();
-    } catch (const std::exception& e) {
-        ReportMethodException(
-            result.get(), "requestNativeCompositorFlutterFrame", e);
-    }
-}
-
-void VideoRendererPlugin::BoostNativeCompositorFlutterInteraction(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-    try {
-        std::string reason = "interaction";
-        if (arguments) {
-            const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-            if (args) {
-                auto it = args->find(flutter::EncodableValue("reason"));
-                if (it != args->end()) {
-                    (void)read_string_arg(it->second, reason);
-                }
-            }
-        }
-        if (native_compositor_) {
-            native_compositor_->BoostFlutterInteraction(reason);
-        }
-        result->Success();
-    } catch (const std::exception& e) {
-        ReportMethodException(
-            result.get(), "boostNativeCompositorFlutterInteraction", e);
-    }
-}
-
-void VideoRendererPlugin::AckNativeCompositorFlutterState(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-    try {
-        if (!arguments || !native_compositor_) {
-            result->Success();
-            return;
-        }
-        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-        if (!args) {
-            result->Error("BAD_ARGS", "ACK must be a map");
-            return;
-        }
-        int64_t serial = 0;
-        bool transparent = false;
-        auto serial_it = args->find(flutter::EncodableValue("serial"));
-        auto transparent_it =
-            args->find(flutter::EncodableValue("transparentViewport"));
-        if (serial_it == args->end() ||
-            !read_int64_arg(serial_it->second, serial) ||
-            transparent_it == args->end() ||
-            !read_bool_arg(transparent_it->second, transparent)) {
-            result->Error("BAD_ARGS", "serial and transparentViewport required");
-            return;
-        }
-        native_compositor_->AcknowledgeFlutterState(
-            static_cast<uint64_t>(serial), transparent);
-        result->Success();
-    } catch (const std::exception& e) {
-        ReportMethodException(
-            result.get(), "ackNativeCompositorFlutterState", e);
-    }
-}
-
-void VideoRendererPlugin::DebugFailNativeCompositor(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-    try {
-        if (!native_compositor_) {
-            result->Error(
-                "NOT_ACTIVE", "Windows native compositor is not available");
-            return;
-        }
-        std::string reason = "ui-test-forced-failure";
-        if (arguments) {
-            const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-            if (!args) {
-                result->Error("BAD_ARGS", "failure arguments must be a map");
-                return;
-            }
-            const auto it = args->find(flutter::EncodableValue("reason"));
-            if (it != args->end()) {
-                const auto* value = std::get_if<std::string>(&it->second);
-                if (!value || value->empty()) {
-                    result->Error(
-                        "BAD_ARGS", "reason must be a non-empty string");
-                    return;
-                }
-                reason = *value;
-            }
-        }
-        native_compositor_->ForceFailureForTesting(reason);
-        result->Success();
-    } catch (const std::exception& e) {
-        ReportMethodException(
-            result.get(), "debugFailNativeCompositor", e);
-    }
-}
-
-void VideoRendererPlugin::DebugSimulateWindowsDeviceLoss(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-    try {
-        if (!arguments) {
-            result->Error("BAD_ARGS", "device-loss arguments required");
-            return;
-        }
-        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-        if (!args) {
-            result->Error("BAD_ARGS", "device-loss arguments must be a map");
-            return;
-        }
-        const auto target_it =
-            args->find(flutter::EncodableValue("target"));
-        if (target_it == args->end()) {
-            result->Error("BAD_ARGS", "target is required");
-            return;
-        }
-        const auto* target_value =
-            std::get_if<std::string>(&target_it->second);
-        if (!target_value || target_value->empty()) {
-            result->Error("BAD_ARGS", "target must be a non-empty string");
-            return;
-        }
-        const std::string target = *target_value;
-        if (target != "presentation" && target != "compositor" &&
-            target != "transport" && target != "source-cache") {
-            result->Error("BAD_ARGS", "unknown device-loss target");
-            return;
-        }
-        std::string reason = "debug-simulated-device-loss";
-        const auto reason_it =
-            args->find(flutter::EncodableValue("reason"));
-        if (reason_it != args->end()) {
-            const auto* reason_value =
-                std::get_if<std::string>(&reason_it->second);
-            if (!reason_value || reason_value->empty()) {
-                result->Error("BAD_ARGS", "reason must be a non-empty string");
-                return;
-            }
-            reason = *reason_value;
-        }
-
-        const auto start = std::chrono::steady_clock::now();
-        const long removed_reason =
-            static_cast<long>(DXGI_ERROR_DEVICE_RESET);
-        device_recovery_.state =
-            vr::WindowsDeviceRecoveryState::DeviceLostDetected;
-        ++device_recovery_.generation;
-        ++device_recovery_.attempt_count;
-        device_recovery_.last_reason = reason + ":" + target;
-        device_recovery_.last_removed_reason =
-            vr::windows_hresult_hex(static_cast<HRESULT>(removed_reason));
-        device_recovery_.fallback_stage = "none";
-        device_recovery_.preserved_player = player_ != nullptr;
-        device_recovery_.preserved_track_count =
-            player_ ? static_cast<int>(player_->track_infos().size()) : 0;
-        device_recovery_.last_frame_held = true;
-
-        bool recovered = false;
-        if (target == "presentation" || target == "source-cache") {
-            if (!require_player(player_, result.get())) {
-                return;
-            }
-            device_recovery_.state =
-                vr::WindowsDeviceRecoveryState::RebuildingPresentation;
-            if (target == "source-cache") {
-                player_->clear_source_cache("debug-device-loss-source-cache");
-            }
-            recovered = player_->recover_presentation_device_loss(
-                reason.c_str(), removed_reason);
-            if (recovered) {
-                player_->request_frame_refresh("windows-device-recovery");
-            }
-        } else {
-            if (!native_compositor_) {
-                result->Error(
-                    "NOT_ACTIVE",
-                    "Windows native compositor is not available");
-                return;
-            }
-            device_recovery_.state =
-                vr::WindowsDeviceRecoveryState::RebuildingPresentation;
-            recovered =
-                native_compositor_->BeginDeviceRecovery(reason, removed_reason);
-            if (recovered && player_) {
-                player_->request_frame_refresh("windows-device-recovery");
-            }
-        }
-
-        device_recovery_.last_duration_ms =
-            static_cast<uint64_t>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now() - start)
-                    .count());
-        if (recovered) {
-            device_recovery_.state =
-                vr::WindowsDeviceRecoveryState::Recovered;
-            ++device_recovery_.success_count;
-        } else {
-            device_recovery_.state =
-                target == "presentation"
-                    ? vr::WindowsDeviceRecoveryState::FallbackNativeSdr
-                    : vr::WindowsDeviceRecoveryState::FailedTerminal;
-            ++device_recovery_.failure_count;
-            device_recovery_.fallback_stage =
-                target == "presentation" ? "native-sdr"
-                                         : "native-compositor-failed";
-        }
-        result->Success();
-    } catch (const std::exception& e) {
-        ReportMethodException(
-            result.get(), "debugSimulateWindowsDeviceLoss", e);
-    }
-}
-
-void VideoRendererPlugin::ResetNativePerfCounters(
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-    try {
-        if (native_compositor_) {
-            native_compositor_->SetHighRefreshDisplayHz(
-                query_window_refresh_hz(window_handle_));
-            native_compositor_->ResetHighRefreshMetrics();
-        }
-        result->Success();
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "resetNativePerfCounters", e);
-    }
-}
-
-void VideoRendererPlugin::BeginNativeInteractionSample(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-    try {
-        std::string label = "interaction";
-        if (arguments) {
-            const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-            if (!args) {
-                result->Error("BAD_ARGS", "sample arguments must be a map");
-                return;
-            }
-            const auto it = args->find(flutter::EncodableValue("label"));
-            if (it != args->end() && !read_string_arg(it->second, label)) {
-                result->Error("BAD_ARGS", "label must be a string");
-                return;
-            }
-        }
-        if (native_compositor_) {
-            native_compositor_->SetHighRefreshDisplayHz(
-                query_window_refresh_hz(window_handle_));
-            native_compositor_->BeginInteractionSample(label);
-        }
-        result->Success();
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "beginNativeInteractionSample", e);
-    }
-}
-
-void VideoRendererPlugin::EndNativeInteractionSample(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-    try {
-        std::string label = "interaction";
-        if (arguments) {
-            const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-            if (!args) {
-                result->Error("BAD_ARGS", "sample arguments must be a map");
-                return;
-            }
-            const auto it = args->find(flutter::EncodableValue("label"));
-            if (it != args->end() && !read_string_arg(it->second, label)) {
-                result->Error("BAD_ARGS", "label must be a string");
-                return;
-            }
-        }
-        if (native_compositor_) {
-            native_compositor_->EndInteractionSample(label);
-        }
-        result->Success();
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "endNativeInteractionSample", e);
-    }
-}
-
-void VideoRendererPlugin::SetViewportBackgroundColor(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!require_player(player_, result.get())) {
-        return;
-    }
-    if (!arguments) {
-        result->Error("INVALID_ARGS", "Arguments required");
-        return;
-    }
-    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-    if (!args) {
-        result->Error("INVALID_ARGS", "Arguments must be a map");
-        return;
-    }
-    auto it = args->find(flutter::EncodableValue("color"));
-    int64_t raw = 0;
-    if (it == args->end() || !read_int64_arg(it->second, raw)) {
-        result->Error("BAD_ARGS", "color must be an integer");
-        return;
-    }
-    const uint32_t color = static_cast<uint32_t>(raw);
-    const float a = static_cast<float>((color >> 24) & 0xFF) / 255.0f;
-    const float r = static_cast<float>((color >> 16) & 0xFF) / 255.0f;
-    const float g = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
-    const float b = static_cast<float>(color & 0xFF) / 255.0f;
-    player_->set_background_color(r, g, b, a);
-    if (native_compositor_) {
-        native_compositor_->SetViewportBackgroundColor(color);
-    }
-    result->Success(flutter::EncodableValue(std::monostate{}));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "setViewportBackgroundColor", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "setViewportBackgroundColor", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "setViewportBackgroundColor");
-    }
-}
-
-void VideoRendererPlugin::SetSpeed(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!require_player(player_, result.get())) {
-        return;
-    }
-    if (!arguments) {
-        result->Error("INVALID_ARGS", "Arguments required");
-        return;
-    }
-    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-    if (!args) {
-        result->Error("INVALID_ARGS", "Arguments must be a map");
-        return;
-    }
-    auto it = args->find(flutter::EncodableValue("speed"));
-    double speed = 0.0;
-    if (it == args->end() || !read_double_arg(it->second, speed)) {
-        result->Error("BAD_ARGS", "speed must be a number");
-        return;
-    }
-    if (auto validation = vr::validate_playback_speed(speed); !validation.ok) {
-        result->Error("BAD_ARGS", validation.message);
-        return;
-    }
-    player_->set_speed(speed);
-    result->Success(flutter::EncodableValue(std::monostate{}));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "setSpeed", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "setSpeed", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "setSpeed");
-    }
-}
-
-void VideoRendererPlugin::StepForward(
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!require_player(player_, result.get())) {
-        return;
-    }
-    player_->step_forward();
-    result->Success(flutter::EncodableValue(std::monostate{}));
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "stepForward", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "stepForward");
-    }
-}
-
-void VideoRendererPlugin::StepBackward(
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!require_player(player_, result.get())) {
-        return;
-    }
-    player_->step_backward();
-    result->Success(flutter::EncodableValue(std::monostate{}));
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "stepBackward", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "stepBackward");
-    }
-}
-
-void VideoRendererPlugin::CurrentPts(
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    int64_t pts = player_ ? player_->current_pts_us() : 0;
-    result->Success(flutter::EncodableValue(pts));
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "currentPts", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "currentPts");
-    }
-}
-
-void VideoRendererPlugin::CurrentPresentedFrame(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!arguments) {
-        result->Error("INVALID_ARGS", "Arguments required");
-        return;
-    }
-    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-    if (!args) {
-        result->Error("INVALID_ARGS", "Arguments must be a map");
-        return;
-    }
-    auto it = args->find(flutter::EncodableValue("fileId"));
-    int file_id = -1;
-    if (it == args->end() || !read_int_arg(it->second, file_id)) {
-        result->Error("BAD_ARGS", "fileId must be an integer");
-        return;
-    }
-    vr::TrackPerfStats selected_stats{};
-    bool found = false;
-    if (player_) {
-        for (const auto& stats : player_->track_perf_stats()) {
-            if (stats.file_id == file_id) {
-                selected_stats = stats;
-                found = true;
-                break;
-            }
-        }
-    }
-    flutter::EncodableMap frame;
-    frame[flutter::EncodableValue("ptsUs")] =
-        enc_i64(found ? selected_stats.current_pts_us : -1);
-    frame[flutter::EncodableValue("dtsUs")] =
-        enc_i64(found ? selected_stats.current_dts_us : std::numeric_limits<int64_t>::min());
-    frame[flutter::EncodableValue("analysisFrameIndex")] =
-        enc_i32(found ? selected_stats.analysis_frame_index : -1);
-    frame[flutter::EncodableValue("frameIdentityMode")] =
-        enc_i32(found ? static_cast<int32_t>(selected_stats.frame_identity_mode) : 0);
-    frame[flutter::EncodableValue("sourcePacketIndex")] =
-        enc_i32(found ? selected_stats.source_packet_index : -1);
-    frame[flutter::EncodableValue("sourcePacketSize")] =
-        enc_i32(found ? selected_stats.source_packet_size : 0);
-    frame[flutter::EncodableValue("sourcePacketPos")] =
-        enc_i64(found ? selected_stats.source_packet_pos : -1);
-    frame[flutter::EncodableValue("sourcePacketPtsUs")] =
-        enc_i64(found ? selected_stats.source_packet_pts : std::numeric_limits<int64_t>::min());
-    frame[flutter::EncodableValue("sourcePacketDtsUs")] =
-        enc_i64(found ? selected_stats.source_packet_dts : std::numeric_limits<int64_t>::min());
-    result->Success(flutter::EncodableValue(frame));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "currentPresentedFrame", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "currentPresentedFrame", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "currentPresentedFrame");
-    }
-}
-
-void VideoRendererPlugin::Duration(
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    int64_t dur = player_ ? player_->duration_us() : 0;
-    result->Success(flutter::EncodableValue(dur));
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "duration", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "duration");
-    }
-}
-
-void VideoRendererPlugin::IsPlaying(
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    bool playing = player_ ? player_->is_playing() : false;
-    result->Success(flutter::EncodableValue(playing));
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "isPlaying", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "isPlaying");
-    }
-}
-
-void VideoRendererPlugin::GetPlaybackSnapshot(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    bool include_presented_frames = false;
-    if (arguments) {
-        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-        if (!args) {
-            result->Error("INVALID_ARGS", "Arguments must be a map");
-            return;
-        }
-        auto it = args->find(flutter::EncodableValue("includePresentedFrames"));
-        if (it != args->end() && !read_bool_arg(it->second, include_presented_frames)) {
-            result->Error("BAD_ARGS", "includePresentedFrames must be a boolean");
-            return;
-        }
-    }
-
-    flutter::EncodableMap snapshot;
-    snapshot[flutter::EncodableValue("currentPtsUs")] =
-        enc_i64(player_ ? player_->current_pts_us() : 0);
-    snapshot[flutter::EncodableValue("durationUs")] =
-        enc_i64(player_ ? player_->duration_us() : 0);
-    snapshot[flutter::EncodableValue("isPlaying")] =
-        flutter::EncodableValue(player_ ? player_->is_playing() : false);
-
-    if (include_presented_frames) {
-        flutter::EncodableList frames;
-        if (player_) {
-            for (const auto& stats : player_->track_perf_stats()) {
-                frames.push_back(flutter::EncodableValue(make_presented_frame_map(stats)));
-            }
-        }
-        snapshot[flutter::EncodableValue("presentedFrames")] =
-            flutter::EncodableValue(frames);
-    }
-
-    result->Success(flutter::EncodableValue(snapshot));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "getPlaybackSnapshot", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "getPlaybackSnapshot", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "getPlaybackSnapshot");
-    }
-}
-
-void VideoRendererPlugin::ApplyLayout(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!require_player(player_, result.get())) {
-        return;
-    }
-    if (!arguments) {
-        result->Error("INVALID_ARGS", "Arguments required");
-        return;
-    }
-    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-    if (!args) {
-        result->Error("INVALID_ARGS", "Arguments must be a map");
-        return;
-    }
-    vr::LayoutState ls;
-    auto it = args->find(flutter::EncodableValue("mode"));
-    if (it != args->end() && !read_int_arg(it->second, ls.mode)) {
-        result->Error("BAD_ARGS", "mode must be an integer");
-        return;
-    }
-    if (ls.mode != vr::LAYOUT_SIDE_BY_SIDE && ls.mode != vr::LAYOUT_SPLIT_SCREEN) {
-        result->Error("BAD_ARGS", "Invalid layout mode");
-        return;
-    }
-    it = args->find(flutter::EncodableValue("splitPos"));
-    double double_arg = 0.0;
-    if (it != args->end()) {
-        if (!read_double_arg(it->second, double_arg) || !std::isfinite(double_arg)) {
-            result->Error("BAD_ARGS", "splitPos must be a finite number");
-            return;
-        }
-        ls.split_pos = static_cast<float>(double_arg);
-    }
-    it = args->find(flutter::EncodableValue("zoomRatio"));
-    if (it != args->end()) {
-        if (!read_double_arg(it->second, double_arg) ||
-            !std::isfinite(double_arg) ||
-            double_arg <= 0.0) {
-            result->Error("BAD_ARGS", "zoomRatio must be a positive finite number");
-            return;
-        }
-        ls.zoom_ratio = static_cast<float>(double_arg);
-    }
-    it = args->find(flutter::EncodableValue("viewOffsetX"));
-    if (it != args->end()) {
-        if (!read_double_arg(it->second, double_arg) || !std::isfinite(double_arg)) {
-            result->Error("BAD_ARGS", "viewOffsetX must be a finite number");
-            return;
-        }
-        ls.view_offset[0] = static_cast<float>(double_arg);
-    }
-    it = args->find(flutter::EncodableValue("viewOffsetY"));
-    if (it != args->end()) {
-        if (!read_double_arg(it->second, double_arg) || !std::isfinite(double_arg)) {
-            result->Error("BAD_ARGS", "viewOffsetY must be a finite number");
-            return;
-        }
-        ls.view_offset[1] = static_cast<float>(double_arg);
-    }
-    it = args->find(flutter::EncodableValue("pixelSizeMode"));
-    if (it != args->end() && !read_int_arg(it->second, ls.pixel_size_mode)) {
-        result->Error("BAD_ARGS", "pixelSizeMode must be an integer");
-        return;
-    }
-    if (ls.pixel_size_mode != vr::PIXEL_SIZE_UNIFORM_VIDEO_PIXELS &&
-        ls.pixel_size_mode != vr::PIXEL_SIZE_FILL_VIEW) {
-        result->Error("BAD_ARGS", "Invalid pixel size mode");
-        return;
-    }
-    it = args->find(flutter::EncodableValue("order"));
-    if (it != args->end()) {
-        if (!std::holds_alternative<flutter::EncodableList>(it->second)) {
-            result->Error("BAD_ARGS", "order must be a list");
-            return;
-        }
-        const auto& order_list = std::get<flutter::EncodableList>(it->second);
-        for (size_t i = 0; i < 4 && i < order_list.size(); ++i) {
-            if (!read_int_arg(order_list[i], ls.order[i])) {
-                result->Error("BAD_ARGS", "order entries must be integers");
-                return;
-            }
-        }
-    }
-    if (auto validation = vr::validate_layout_state(ls); !validation.ok) {
-        result->Error("BAD_ARGS", validation.message);
-        return;
-    }
-    player_->apply_layout(ls);
-    result->Success(flutter::EncodableValue(std::monostate{}));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "applyLayout", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "applyLayout", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "applyLayout");
-    }
-}
-
-void VideoRendererPlugin::GetTracks(
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    flutter::EncodableList tracks_list;
-    if (player_) {
-        for (const auto& info : player_->track_infos()) {
-            tracks_list.push_back(flutter::EncodableValue(make_track_map(info)));
-        }
-    }
-    result->Success(flutter::EncodableValue(tracks_list));
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "getTracks", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "getTracks");
-    }
-}
-
-vr::WindowsDisplayProbeSnapshot
-VideoRendererPlugin::RefreshPresentationPolicy(
-    const char* trigger,
-    bool allow_transient_hold) {
-    const auto display = display_probe_tracker_.Update(
-        display_resolver_.Probe(window_handle_, dxgi_adapter_.Get()));
-    if (display.changed) {
-        spdlog::info(
-            "[WindowsDisplayProbe] generation={} changes={} reason={} "
-            "status={} output={} color_space={} hdr={} rect={}x{}+{},{} "
-            "matches_presentation_adapter={}",
-            display.generation,
-            display.change_count,
-            display.last_change_reason,
-            display.probe.status,
-            display.probe.device_name,
-            display.probe.color_space,
-            display.probe.hdr_active,
-            display.probe.desktop_width,
-            display.probe.desktop_height,
-            display.probe.desktop_left,
-            display.probe.desktop_top,
-            display.probe.matches_presentation_adapter);
-    }
-    const bool has_hdr_track =
-        player_ &&
-        vr::windows_tracks_have_hdr_transfer(player_->track_infos());
-    auto next = vr::resolve_windows_presentation_policy(
-        presentation_request_, has_hdr_track, display.probe);
-    if (allow_transient_hold && player_ &&
-        presentation_policy_.native_compositor_requested &&
-        !display.probe.output_resolved) {
-        next = presentation_policy_;
-        next.has_hdr_track = has_hdr_track;
-        next.reason = "auto-transient-display-probe-hold";
-    }
-
-    const bool policy_changed =
-        next.mode != presentation_policy_.mode ||
-        next.reason != presentation_policy_.reason ||
-        next.has_hdr_track != presentation_policy_.has_hdr_track;
-    presentation_policy_ = next;
-    if (!player_ || !presentation_policy_.native_compositor_requested ||
-        !native_compositor_) {
-        return display;
-    }
-
-    const double white_nits =
-        presentation_policy_.hdr_output_requested
-            ? static_cast<double>(
-                  display.probe.sdr_white_level_milli_nits) /
-                  1000.0
-            : 80.0;
-    const int64_t white_milli_nits =
-        static_cast<int64_t>(std::llround(white_nits * 1000.0));
-    const bool white_changed =
-        white_milli_nits !=
-        presentation_locked_sdr_white_level_milli_nits_;
-    const bool display_changed =
-        display.generation != presentation_locked_display_generation_;
-    if (policy_changed || white_changed || display_changed) {
-        Microsoft::WRL::ComPtr<IDXGIAdapter> output_adapter;
-        if (!display_resolver_.OpenAdapterForProbe(
-                display.probe, &output_adapter)) {
-            output_adapter = dxgi_adapter_;
-        }
-        native_compositor_->RequestOutputTarget(
-            presentation_policy_.hdr_output_requested
-                ? WindowsNativeCompositor::OutputTarget::ScRGB
-                : WindowsNativeCompositor::OutputTarget::SDR,
-            output_adapter.Get(),
-            white_nits,
-            display.generation,
-            presentation_policy_.reason);
-        const bool white_level_applied =
-            player_->update_presentation_sdr_white_level(white_nits);
-        if (policy_changed || white_changed || display_changed ||
-            white_level_applied) {
-            (void)player_->request_frame_refresh(
-                "windows-presentation-policy-refresh");
-        }
-        presentation_locked_display_generation_ = display.generation;
-        presentation_locked_sdr_white_level_milli_nits_ =
-            white_milli_nits;
-        presentation_sdr_white_level_status_ =
-            presentation_policy_.hdr_output_requested
-                ? display.probe.sdr_white_level_status
-                : "nominal-default";
-        spdlog::info(
-            "[WindowsPresentationAuto] trigger={} request={} mode={} "
-            "reason={} hdr_track={} display_generation={} white_nits={:.3f}",
-            trigger ? trigger : "unknown",
-            presentation_policy_.request,
-            presentation_policy_.mode,
-            presentation_policy_.reason,
-            presentation_policy_.has_hdr_track,
-            display.generation,
-            white_nits);
-    }
-    if (native_compositor_) {
-        const auto compositor = native_compositor_->diagnostics();
-        if (compositor.transition_state == "preparing" &&
-            compositor.desired_output_target != compositor.output_target) {
-            (void)player_->request_frame_refresh(
-                "windows-presentation-transition-refresh");
-        }
-    }
-    return display;
-}
-
-void VideoRendererPlugin::GetDiagnostics(
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    const auto display =
-        RefreshPresentationPolicy("get-diagnostics");
-    auto diagnostics =
-        diagnostics_.BuildMethodChannelDiagnostics(
-            player_,
-            display,
-            presentation_policy_,
-            presentation_sdr_white_level_status_);
-    const auto event_diagnostics = event_bridge_.diagnostics();
-    diagnostics[flutter::EncodableValue("nativeEventListenCount")] =
-        enc_i64(event_diagnostics.listen_count);
-    diagnostics[flutter::EncodableValue("nativeEventEmitCount")] =
-        enc_i64(event_diagnostics.emit_count);
-    diagnostics[flutter::EncodableValue("nativeEventDropNoSinkCount")] =
-        enc_i64(event_diagnostics.drop_no_sink_count);
-    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryState")] =
-        flutter::EncodableValue(vr::windows_device_recovery_state_name(
-            device_recovery_.state));
-    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryGeneration")] =
-        enc_i64(static_cast<int64_t>(device_recovery_.generation));
-    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryAttemptCount")] =
-        enc_i64(static_cast<int64_t>(device_recovery_.attempt_count));
-    diagnostics[flutter::EncodableValue("windowsDeviceRecoverySuccessCount")] =
-        enc_i64(static_cast<int64_t>(device_recovery_.success_count));
-    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryFailureCount")] =
-        enc_i64(static_cast<int64_t>(device_recovery_.failure_count));
-    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryLastReason")] =
-        flutter::EncodableValue(device_recovery_.last_reason);
-    diagnostics[flutter::EncodableValue(
-        "windowsDeviceRecoveryLastRemovedReason")] =
-        flutter::EncodableValue(device_recovery_.last_removed_reason);
-    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryLastDurationMs")] =
-        enc_i64(static_cast<int64_t>(device_recovery_.last_duration_ms));
-    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryFallbackStage")] =
-        flutter::EncodableValue(device_recovery_.fallback_stage);
-    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryPreservedPlayer")] =
-        flutter::EncodableValue(device_recovery_.preserved_player);
-    diagnostics[flutter::EncodableValue(
-        "windowsDeviceRecoveryPreservedTrackCount")] =
-        enc_i64(device_recovery_.preserved_track_count);
-    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryLastFrameHeld")] =
-        flutter::EncodableValue(device_recovery_.last_frame_held);
-    if (native_compositor_) {
-        native_compositor_->SetHighRefreshDisplayHz(
-            query_window_refresh_hz(window_handle_));
-        const auto compositor = native_compositor_->diagnostics();
-        if (compositor.device_recovery_attempt_count > 0) {
-            diagnostics[flutter::EncodableValue("windowsDeviceRecoveryState")] =
-                flutter::EncodableValue(compositor.device_recovery_state);
-            diagnostics[flutter::EncodableValue(
-                "windowsDeviceRecoveryGeneration")] =
-                enc_i64(static_cast<int64_t>(
-                    compositor.device_recovery_generation));
-            diagnostics[flutter::EncodableValue(
-                "windowsDeviceRecoveryAttemptCount")] =
-                enc_i64(static_cast<int64_t>(
-                    compositor.device_recovery_attempt_count));
-            diagnostics[flutter::EncodableValue(
-                "windowsDeviceRecoverySuccessCount")] =
-                enc_i64(static_cast<int64_t>(
-                    compositor.device_recovery_success_count));
-            diagnostics[flutter::EncodableValue(
-                "windowsDeviceRecoveryFailureCount")] =
-                enc_i64(static_cast<int64_t>(
-                    compositor.device_recovery_failure_count));
-            diagnostics[flutter::EncodableValue(
-                "windowsDeviceRecoveryLastReason")] =
-                flutter::EncodableValue(
-                    compositor.device_recovery_last_reason);
-            diagnostics[flutter::EncodableValue(
-                "windowsDeviceRecoveryLastRemovedReason")] =
-                flutter::EncodableValue(
-                    compositor.device_recovery_last_removed_reason);
-            diagnostics[flutter::EncodableValue(
-                "windowsDeviceRecoveryLastDurationMs")] =
-                enc_i64(static_cast<int64_t>(
-                    compositor.device_recovery_last_duration_ms));
-            diagnostics[flutter::EncodableValue(
-                "windowsDeviceRecoveryFallbackStage")] =
-                flutter::EncodableValue(
-                    compositor.device_recovery_fallback_stage);
-            diagnostics[flutter::EncodableValue(
-                "windowsDeviceRecoveryPreservedPlayer")] =
-                flutter::EncodableValue(
-                    compositor.device_recovery_preserved_player);
-            diagnostics[flutter::EncodableValue(
-                "windowsDeviceRecoveryLastFrameHeld")] =
-                flutter::EncodableValue(
-                    compositor.device_recovery_last_frame_held);
-        }
-        diagnostics[flutter::EncodableValue("windowsNativeCompositorPhase")] =
-            flutter::EncodableValue(compositor.phase);
-        diagnostics[flutter::EncodableValue("windowsNativeCompositorStateSerial")] =
-            enc_i64(static_cast<int64_t>(compositor.state_serial));
-        diagnostics[flutter::EncodableValue("windowsNativeCompositorAckSerial")] =
-            enc_i64(static_cast<int64_t>(compositor.ack_serial));
-        diagnostics[flutter::EncodableValue("windowsFlutterExportGeneration")] =
-            enc_i64(static_cast<int64_t>(compositor.flutter_generation));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportStateGeneration")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_state_generation));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportRingGeneration")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_ring_generation));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportPublishCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_publish_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportRequestCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_request_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportRequestDispatchCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_request_dispatch_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportScheduleFrameCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_schedule_frame_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportVsyncCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_vsync_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportPresentCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_present_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportBeginCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_begin_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportBeginFailCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_begin_fail_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportMakeCurrentFailCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_make_current_fail_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportPublishFailCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_publish_fail_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportFlushCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_flush_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportFinishCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_finish_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportBackpressureCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_backpressure_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportPendingFramePumpFrames")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_pending_frame_pump_frames));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportStaleTimeoutCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_stale_timeout_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportUnrequestedSignalCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_unsolicited_signal_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportUnrequestedThrottleCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_export_unsolicited_throttle_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportLatestAvailable")] =
-            flutter::EncodableValue(
-                compositor.flutter_export_latest_available);
-        diagnostics[flutter::EncodableValue(
-            "windowsFlutterExportFramePumpAvailable")] =
-            flutter::EncodableValue(
-                compositor.engine_export_frame_pump_available);
-        diagnostics[flutter::EncodableValue("windowsVideoRingGeneration")] =
-            enc_i64(static_cast<int64_t>(compositor.video_generation));
-        diagnostics[flutter::EncodableValue("windowsDCompCompositeCount")] =
-            enc_i64(static_cast<int64_t>(compositor.composite_count));
-        diagnostics[flutter::EncodableValue("windowsDCompPresentCount")] =
-            enc_i64(static_cast<int64_t>(compositor.present_count));
-        diagnostics[flutter::EncodableValue("windowsDCompDropCount")] =
-            enc_i64(static_cast<int64_t>(compositor.drop_count));
-        diagnostics[flutter::EncodableValue("windowsDCompFailureCount")] =
-            enc_i64(static_cast<int64_t>(compositor.failure_count));
-        diagnostics[flutter::EncodableValue("windowsHighRefreshGateSupported")] =
-            flutter::EncodableValue(compositor.high_refresh_gate_supported);
-        diagnostics[flutter::EncodableValue("windowsHighRefreshDisplayHz")] =
-            enc_i64(compositor.high_refresh_display_hz);
-        diagnostics[flutter::EncodableValue("windowsDCompPresentIntervalP95Us")] =
-            enc_i64(compositor.dcomp_present_interval_p95_us);
-        diagnostics[flutter::EncodableValue("windowsDCompCompositeP95Us")] =
-            enc_i64(compositor.dcomp_composite_p95_us);
-        diagnostics[flutter::EncodableValue("windowsDCompDrawP95Us")] =
-            enc_i64(compositor.dcomp_draw_p95_us);
-        diagnostics[flutter::EncodableValue("windowsDCompPresentBlockP95Us")] =
-            enc_i64(compositor.dcomp_present_block_p95_us);
-        diagnostics[flutter::EncodableValue("windowsDCompAcquireWaitP95Us")] =
-            enc_i64(compositor.dcomp_acquire_wait_p95_us);
-        diagnostics[flutter::EncodableValue(
-            "windowsInteractionInputToPresentP95Us")] =
-            enc_i64(compositor.interaction_input_to_present_p95_us);
-        diagnostics[flutter::EncodableValue("windowsDCompDropRateX1000")] =
-            enc_i64(compositor.dcomp_drop_rate_x1000);
-        diagnostics[flutter::EncodableValue(
-            "windowsSourceProjectionReuseCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.source_projection_reuse_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsViewportRedrawDuringProjectionCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.viewport_redraw_during_projection_count));
-        diagnostics[flutter::EncodableValue("windowsOverlayLayerRasterCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.overlay_layer_raster_count));
-        diagnostics[flutter::EncodableValue("windowsOverlayLayerUploadCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.overlay_layer_upload_count));
-        diagnostics[flutter::EncodableValue("windowsOverlayLayerReuseCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.overlay_layer_reuse_count));
-        diagnostics[flutter::EncodableValue("windowsOverlayRetainedLayerActive")] =
-            flutter::EncodableValue(compositor.overlay_retained_layer_active);
-        diagnostics[flutter::EncodableValue("windowsOverlayRetainedLayerMode")] =
-            flutter::EncodableValue(compositor.overlay_layer_mode);
-        diagnostics[flutter::EncodableValue("windowsOverlayLayerTextureCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.overlay_layer_texture_count));
-        diagnostics[flutter::EncodableValue("windowsOverlayLayerBytes")] =
-            enc_i64(static_cast<int64_t>(compositor.overlay_layer_bytes));
-        diagnostics[flutter::EncodableValue("windowsOverlayLayerGeneration")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.overlay_layer_generation));
-        diagnostics[flutter::EncodableValue(
-            "windowsOverlayLayerCommittedGeneration")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.overlay_layer_committed_generation));
-        diagnostics[flutter::EncodableValue(
-            "windowsOverlayLayerPendingGeneration")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.overlay_layer_pending_generation));
-        diagnostics[flutter::EncodableValue(
-            "windowsOverlayLayerCompositeCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.overlay_layer_composite_count));
-        diagnostics[flutter::EncodableValue("windowsOverlayLayerMissCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.overlay_layer_miss_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsOverlayLayerBackpressureCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.overlay_layer_backpressure_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsOverlayLayerFallbackReason")] =
-            flutter::EncodableValue(compositor.overlay_layer_fallback_reason);
-        diagnostics[flutter::EncodableValue("windowsOverlayLayerLastError")] =
-            flutter::EncodableValue(compositor.overlay_layer_last_error);
-        diagnostics[flutter::EncodableValue("windowsOverlayCompositeP95Us")] =
-            enc_i64(compositor.overlay_composite_p95_us);
-        diagnostics[flutter::EncodableValue("windowsOverlayLayerCompositeP95Us")] =
-            enc_i64(compositor.overlay_composite_p95_us);
-        diagnostics[flutter::EncodableValue("windowsOverlayLayerRasterP95Us")] =
-            enc_i64(compositor.overlay_raster_p95_us);
-        diagnostics[flutter::EncodableValue("windowsOverlayLayerUploadP95Us")] =
-            enc_i64(compositor.overlay_upload_p95_us);
-        diagnostics[flutter::EncodableValue("windowsHighRefreshGateLastResult")] =
-            flutter::EncodableValue(compositor.high_refresh_gate_last_result);
-        diagnostics[flutter::EncodableValue("windowsHotPathActive")] =
-            flutter::EncodableValue(compositor.hot_path_active);
-        diagnostics[flutter::EncodableValue("windowsHotPathMode")] =
-            flutter::EncodableValue(compositor.hot_path_mode);
-        diagnostics[flutter::EncodableValue("windowsHotPathDisplayHz")] =
-            enc_i64(compositor.hot_path_display_hz);
-        diagnostics[flutter::EncodableValue("windowsHotPathFrameBudgetUs")] =
-            enc_i64(compositor.hot_path_frame_budget_us);
-        diagnostics[flutter::EncodableValue(
-            "windowsHotPathPresentIntervalP95Us")] =
-            enc_i64(compositor.hot_path_present_interval_p95_us);
-        diagnostics[flutter::EncodableValue("windowsHotPathCompositeP95Us")] =
-            enc_i64(compositor.hot_path_composite_p95_us);
-        diagnostics[flutter::EncodableValue("windowsHotPathDrawP95Us")] =
-            enc_i64(compositor.hot_path_draw_p95_us);
-        diagnostics[flutter::EncodableValue("windowsHotPathPresentBlockP95Us")] =
-            enc_i64(compositor.hot_path_present_block_p95_us);
-        diagnostics[flutter::EncodableValue(
-            "windowsHotPathAcquireWaitP95Us")] =
-            enc_i64(compositor.hot_path_acquire_wait_p95_us);
-        diagnostics[flutter::EncodableValue(
-            "windowsHotPathInputToPresentP95Us")] =
-            enc_i64(compositor.hot_path_input_to_present_p95_us);
-        diagnostics[flutter::EncodableValue("windowsHotPathDropRateX1000")] =
-            enc_i64(compositor.hot_path_drop_rate_x1000);
-        diagnostics[flutter::EncodableValue(
-            "windowsHotPathProjectionOnlyUpdateCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.hot_path_projection_only_update_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsHotPathViewportRedrawDuringProjectionCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.hot_path_viewport_redraw_during_projection_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsHotPathSourceCacheReuseCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.hot_path_source_cache_reuse_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsHotPathOverlayReuseCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.hot_path_overlay_reuse_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsHotPathOverlayRasterCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.hot_path_overlay_raster_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsHotPathOverlayUploadCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.hot_path_overlay_upload_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsHotPathLastFailureReason")] =
-            flutter::EncodableValue(compositor.hot_path_last_failure_reason);
-        diagnostics[flutter::EncodableValue("windowsHotPathGateResult")] =
-            flutter::EncodableValue(compositor.hot_path_gate_result);
-        diagnostics[flutter::EncodableValue("windowsRetainedGraphActive")] =
-            flutter::EncodableValue(compositor.retained_graph_active);
-        diagnostics[flutter::EncodableValue("windowsRetainedGraphMode")] =
-            flutter::EncodableValue(compositor.retained_graph_mode);
-        diagnostics[flutter::EncodableValue(
-            "windowsRetainedGraphFallbackReason")] =
-            flutter::EncodableValue(
-                compositor.retained_graph_fallback_reason);
-        diagnostics[flutter::EncodableValue(
-            "windowsRetainedGraphCommitCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.retained_graph_commit_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsRetainedGraphProjectionCommitCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.retained_graph_projection_commit_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsRetainedGraphSourceBakeCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.retained_graph_source_bake_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsRetainedGraphFlutterBakeCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.retained_graph_flutter_bake_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsRetainedGraphProjectionSkipPresentCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.retained_graph_projection_skip_present_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsRetainedGraphDeferredContentCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.retained_graph_deferred_content_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsRetainedGraphCommitDeferCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.retained_graph_commit_defer_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsRetainedGraphFlutterBakeP95Us")] =
-            enc_i64(compositor.retained_graph_flutter_bake_p95_us);
-        diagnostics[flutter::EncodableValue(
-            "windowsRetainedGraphSourceBakeP95Us")] =
-            enc_i64(compositor.retained_graph_source_bake_p95_us);
-        diagnostics[flutter::EncodableValue(
-            "windowsRetainedGraphApplyP95Us")] =
-            enc_i64(compositor.retained_graph_apply_p95_us);
-        diagnostics[flutter::EncodableValue(
-            "windowsRetainedGraphCommitP95Us")] =
-            enc_i64(compositor.retained_graph_commit_p95_us);
-        diagnostics[flutter::EncodableValue("windowsDCompResizeCount")] =
-            enc_i64(static_cast<int64_t>(compositor.resize_count));
-        diagnostics[flutter::EncodableValue("windowsDCompSwapChainWidth")] =
-            enc_i64(static_cast<int64_t>(compositor.swap_chain_width));
-        diagnostics[flutter::EncodableValue("windowsDCompSwapChainHeight")] =
-            enc_i64(static_cast<int64_t>(compositor.swap_chain_height));
-        diagnostics[flutter::EncodableValue("windowsFlutterExportAvailable")] =
-            flutter::EncodableValue(compositor.engine_export_available);
-        diagnostics[flutter::EncodableValue("windowsDCompSwapChainActive")] =
-            flutter::EncodableValue(compositor.swap_chain_active);
-        diagnostics[flutter::EncodableValue("windowsDCompSwapChainFormat")] =
-            flutter::EncodableValue(compositor.swap_chain_format);
-        diagnostics[flutter::EncodableValue("windowsDCompColorSpace")] =
-            flutter::EncodableValue(compositor.color_space);
-        diagnostics[flutter::EncodableValue("windowsPresentationProducerAdapterLuid")] =
-            flutter::EncodableValue(compositor.producer_adapter_luid);
-        diagnostics[flutter::EncodableValue("windowsPresentationOutputAdapterLuid")] =
-            flutter::EncodableValue(compositor.output_adapter_luid);
-        diagnostics[flutter::EncodableValue("windowsPresentationPendingOutputAdapterLuid")] =
-            flutter::EncodableValue(compositor.pending_output_adapter_luid);
-        diagnostics[flutter::EncodableValue("windowsPresentationCrossAdapterSupported")] =
-            flutter::EncodableValue(compositor.cross_adapter_supported);
-        diagnostics[flutter::EncodableValue("windowsPresentationCrossAdapterActive")] =
-            flutter::EncodableValue(compositor.cross_adapter_required);
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportMode")] =
-            flutter::EncodableValue(compositor.cross_adapter_transport_mode);
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportStatus")] =
-            flutter::EncodableValue(compositor.cross_adapter_transport_status);
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterSyncKind")] =
-            flutter::EncodableValue(compositor.cross_adapter_sync_kind);
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterRequestedSyncKind")] =
-            flutter::EncodableValue(compositor.cross_adapter_requested_sync_kind);
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterActiveSyncKind")] =
-            flutter::EncodableValue(compositor.cross_adapter_active_sync_kind);
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterSyncFallbackReason")] =
-            flutter::EncodableValue(compositor.cross_adapter_sync_fallback_reason);
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterLastError")] =
-            flutter::EncodableValue(compositor.cross_adapter_last_error);
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterBGRA8Supported")] =
-            flutter::EncodableValue(compositor.transport_bgra8_supported);
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterFP16Supported")] =
-            flutter::EncodableValue(compositor.transport_fp16_supported);
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterSharedFenceSupported")] =
-            flutter::EncodableValue(compositor.transport_shared_fence_supported);
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterSharedFenceProducerSupported")] =
-            flutter::EncodableValue(compositor.transport_shared_fence_producer_supported);
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterSharedFenceOutputSupported")] =
-            flutter::EncodableValue(compositor.transport_shared_fence_output_supported);
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterSharedFenceHandleCreated")] =
-            flutter::EncodableValue(compositor.transport_shared_fence_handle_created);
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterSharedFenceOpenSucceeded")] =
-            flutter::EncodableValue(compositor.transport_shared_fence_open_succeeded);
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportGeneration")] =
-            enc_i64(static_cast<int64_t>(compositor.transport_generation));
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportCopyCount")] =
-            enc_i64(static_cast<int64_t>(compositor.transport_copy_count));
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportCopyBytes")] =
-            enc_i64(static_cast<int64_t>(compositor.transport_copy_bytes));
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportTimeoutCount")] =
-            enc_i64(static_cast<int64_t>(compositor.transport_timeout_count));
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportLastCopyUs")] =
-            enc_i64(static_cast<int64_t>(compositor.transport_last_copy_us));
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportTotalCopyUs")] =
-            enc_i64(static_cast<int64_t>(compositor.transport_total_copy_us));
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterSharedFenceSignalCount")] =
-            enc_i64(static_cast<int64_t>(compositor.shared_fence_signal_count));
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterSharedFenceWaitCount")] =
-            enc_i64(static_cast<int64_t>(compositor.shared_fence_wait_count));
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterSharedFenceTimeoutCount")] =
-            enc_i64(static_cast<int64_t>(compositor.shared_fence_timeout_count));
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterSharedFenceLastWaitUs")] =
-            enc_i64(static_cast<int64_t>(compositor.shared_fence_last_wait_us));
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterSharedFenceP95WaitUs")] =
-            enc_i64(static_cast<int64_t>(compositor.shared_fence_p95_wait_us));
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterEventQueryP95WaitUs")] =
-            enc_i64(static_cast<int64_t>(compositor.event_query_p95_wait_us));
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterFlutterConsumedGeneration")] =
-            enc_i64(static_cast<int64_t>(compositor.flutter_transport_generation));
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterVideoConsumedGeneration")] =
-            enc_i64(static_cast<int64_t>(compositor.video_transport_generation));
-        diagnostics[flutter::EncodableValue("windowsCrossAdapterSourceConsumedGeneration")] =
-            enc_i64(static_cast<int64_t>(compositor.source_transport_generation));
-        diagnostics[flutter::EncodableValue("windowsPresentationOutputMigrationCount")] =
-            enc_i64(static_cast<int64_t>(compositor.output_migration_count));
-        diagnostics[flutter::EncodableValue("windowsPresentationOutputMigrationFailureCount")] =
-            enc_i64(static_cast<int64_t>(compositor.output_migration_failure_count));
-        diagnostics[flutter::EncodableValue("windowsDCompBufferCount")] =
-            flutter::EncodableValue(3);
-        diagnostics[flutter::EncodableValue(
-            "windowsDCompColorSpaceSupported")] =
-            flutter::EncodableValue(
-                compositor.color_space_supported);
-        diagnostics[flutter::EncodableValue(
-            "windowsDCompSDRToneMapActive")] =
-            flutter::EncodableValue(
-                compositor.sdr_tone_map_active);
-        diagnostics[flutter::EncodableValue(
-            "windowsPresentationTransitionState")] =
-            flutter::EncodableValue(
-                compositor.transition_state);
-        diagnostics[flutter::EncodableValue(
-            "windowsPresentationTransitionSerial")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.transition_serial));
-        diagnostics[flutter::EncodableValue(
-            "windowsPresentationTransitionReason")] =
-            flutter::EncodableValue(
-                compositor.transition_reason);
-        diagnostics[flutter::EncodableValue(
-            "windowsPresentationOutputGeneration")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.output_generation));
-        diagnostics[flutter::EncodableValue(
-            "windowsPresentationHDRPromotionCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.hdr_promotion_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsPresentationHDRDemotionCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.hdr_demotion_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsPresentationTargetFallbackCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.target_fallback_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsPresentationLockedDisplayGeneration")] =
-            enc_i64(static_cast<int64_t>(
-                presentation_locked_display_generation_));
-        diagnostics[flutter::EncodableValue(
-            "windowsPresentationLockedSDRWhiteLevelMilliNits")] =
-            enc_i64(
-                presentation_locked_sdr_white_level_milli_nits_);
-        diagnostics[flutter::EncodableValue("windowsNativeCompositorFallbackReason")] =
-            flutter::EncodableValue(compositor.fallback_reason);
-        const auto backend =
-            player_ ? player_->presentation_backend_diagnostics()
-                    : vr::PresentationBackendDiagnostics{};
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorSourceProjectionEnabled")] =
-            flutter::EncodableValue(compositor.source_projection_enabled);
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorSourceCacheActive")] =
-            flutter::EncodableValue(compositor.source_cache_active);
-        diagnostics[flutter::EncodableValue(
-            "windowsPresentationPrewarmRequestCount")] =
-            enc_i64(static_cast<int64_t>(backend.prewarm_request_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsPresentationPrewarmReadyCount")] =
-            enc_i64(static_cast<int64_t>(backend.prewarm_ready_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsPresentationPrewarmHitCount")] =
-            enc_i64(static_cast<int64_t>(backend.prewarm_hit_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsPresentationPrewarmDroppedCount")] =
-            enc_i64(static_cast<int64_t>(backend.prewarm_dropped_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsPresentationPrewarmConsumedCount")] =
-            enc_i64(static_cast<int64_t>(backend.prewarm_consumed_count));
-        diagnostics[flutter::EncodableValue("pixelBufferPrewarmRequestCount")] =
-            enc_i64(static_cast<int64_t>(backend.prewarm_request_count));
-        diagnostics[flutter::EncodableValue("pixelBufferPrewarmReadyCount")] =
-            enc_i64(static_cast<int64_t>(backend.prewarm_ready_count));
-        diagnostics[flutter::EncodableValue("pixelBufferPrewarmHitCount")] =
-            enc_i64(static_cast<int64_t>(backend.prewarm_hit_count));
-        diagnostics[flutter::EncodableValue("pixelBufferPrewarmDroppedCount")] =
-            enc_i64(static_cast<int64_t>(backend.prewarm_dropped_count));
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorSourceCacheTextureCount")] =
-            enc_i64(backend.source_cache_texture_count);
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorSourceCacheGeneration")] =
-            enc_i64(static_cast<int64_t>(backend.source_cache_generation));
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorSourceCacheBytes")] =
-            enc_i64(static_cast<int64_t>(backend.source_cache_bytes));
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorSourceCacheLastError")] =
-            flutter::EncodableValue(
-                compositor.source_cache_last_error != "none"
-                    ? compositor.source_cache_last_error
-                    : backend.source_cache_last_error);
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorSourceCacheHz")] =
-            flutter::EncodableValue(compositor.source_cache_hz);
-        const auto anchor =
-            player_ ? player_->presented_anchor_diagnostics()
-                    : vr::RendererPresentedAnchorDiagnostics{};
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorPresentedAnchorMode")] =
-            flutter::EncodableValue(presented_anchor_mode_name(anchor.mode));
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorPresentedAnchorGeneration")] =
-            enc_i64(static_cast<int64_t>(anchor.generation));
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorPresentedAnchorSourceCacheGeneration")] =
-            enc_i64(static_cast<int64_t>(
-                anchor.source_cache_ring_generation));
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorPresentedAnchorSourceCacheFrameGeneration")] =
-            enc_i64(static_cast<int64_t>(
-                anchor.source_cache_frame_generation));
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorPresentedAnchorUpdateCount")] =
-            enc_i64(static_cast<int64_t>(anchor.update_count));
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorPresentedAnchorStaleAfterSeek")] =
-            flutter::EncodableValue(anchor.stale_after_seek);
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorSourceProjectionHz")] =
-            flutter::EncodableValue(compositor.source_projection_hz);
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorOverlayGeneration")] =
-            enc_i64(static_cast<int64_t>(compositor.overlay_generation));
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorOverlayFillRectCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.overlay_fill_rect_count));
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorOverlayLineRectCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.overlay_line_rect_count));
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorOverlayMotionLineCount")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.overlay_motion_line_count));
-        diagnostics[flutter::EncodableValue(
-            "nativeCompositorSourceBakedOverlayDisabled")] =
-            flutter::EncodableValue(true);
-        diagnostics[flutter::EncodableValue("windowsSourceCacheFormat")] =
-            flutter::EncodableValue(backend.source_cache_format);
-        diagnostics[flutter::EncodableValue("windowsSourceCacheRingDepth")] =
-            enc_i64(backend.source_cache_ring_depth);
-        diagnostics[flutter::EncodableValue(
-            "windowsSourceCacheFrozenSnapshot")] =
-            flutter::EncodableValue(
-                backend.source_cache_frozen_snapshot);
-        diagnostics[flutter::EncodableValue("windowsSourceCachePublishCount")] =
-            enc_i64(static_cast<int64_t>(
-                backend.source_cache_publish_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsSourceCachePresentedAnchorPublishCount")] =
-            enc_i64(static_cast<int64_t>(
-                anchor.source_cache_publish_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsSourceCacheBackpressureCount")] =
-            enc_i64(static_cast<int64_t>(
-                backend.source_cache_backpressure_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsSourceCacheConsumedGeneration")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.source_cache_consumed_generation));
-        diagnostics[flutter::EncodableValue(
-            "windowsSourceCacheFallbackCount")] =
-            enc_i64(static_cast<int64_t>(
-                backend.source_cache_fallback_count +
-                compositor.source_cache_fallback_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsBackendSourceProjectionActive")] =
-            flutter::EncodableValue(backend.source_projection_active);
-        diagnostics[flutter::EncodableValue(
-            "windowsBackendSourceProjectionUpdateCount")] =
-            enc_i64(static_cast<int64_t>(
-                backend.source_projection_update_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsBackendSourceProjectionConsumeCount")] =
-            enc_i64(static_cast<int64_t>(
-                backend.source_projection_consume_count));
-        diagnostics[flutter::EncodableValue(
-            "windowsBackendOverlayLayerActive")] =
-            flutter::EncodableValue(backend.overlay_layer_active);
-        diagnostics[flutter::EncodableValue(
-            "windowsBackendOverlayLayerMode")] =
-            flutter::EncodableValue(backend.overlay_layer_mode);
-        diagnostics[flutter::EncodableValue(
-            "windowsBackendOverlayLayerGeneration")] =
-            enc_i64(static_cast<int64_t>(
-                backend.overlay_layer_generation));
-        diagnostics[flutter::EncodableValue(
-            "windowsBackendOverlayLayerCompositeCount")] =
-            enc_i64(static_cast<int64_t>(
-                backend.overlay_layer_composite_count));
-        if (backend.overlay_layer_active) {
-            diagnostics[flutter::EncodableValue(
-                "windowsOverlayRetainedLayerActive")] =
-                flutter::EncodableValue(true);
-            diagnostics[flutter::EncodableValue(
-                "windowsOverlayRetainedLayerMode")] =
-                flutter::EncodableValue(backend.overlay_layer_mode);
-            diagnostics[flutter::EncodableValue(
-                "windowsOverlayLayerRasterCount")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.overlay_layer_rebuild_count));
-            diagnostics[flutter::EncodableValue(
-                "windowsOverlayLayerUploadCount")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.overlay_layer_upload_count));
-            diagnostics[flutter::EncodableValue(
-                "windowsOverlayLayerReuseCount")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.overlay_layer_reuse_count));
-            diagnostics[flutter::EncodableValue(
-                "windowsOverlayLayerBytes")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.overlay_layer_bytes));
-            diagnostics[flutter::EncodableValue(
-                "windowsOverlayLayerGeneration")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.overlay_layer_generation));
-            diagnostics[flutter::EncodableValue(
-                "windowsOverlayLayerCompositeCount")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.overlay_layer_composite_count));
-            diagnostics[flutter::EncodableValue(
-                "nativeCompositorOverlayGeneration")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.overlay_layer_generation));
-            diagnostics[flutter::EncodableValue(
-                "nativeCompositorOverlayFillRectCount")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.overlay_layer_fill_rect_count));
-            diagnostics[flutter::EncodableValue(
-                "nativeCompositorOverlayLineRectCount")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.overlay_layer_line_rect_count));
-            diagnostics[flutter::EncodableValue(
-                "nativeCompositorOverlayMotionLineCount")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.overlay_layer_motion_line_count));
-            diagnostics[flutter::EncodableValue(
-                "windowsOverlayLayerFallbackReason")] =
-                flutter::EncodableValue(
-                    backend.overlay_layer_fallback_reason);
-            diagnostics[flutter::EncodableValue(
-                "windowsOverlayLayerLastError")] =
-                flutter::EncodableValue(backend.overlay_layer_last_error);
-            diagnostics[flutter::EncodableValue(
-                "windowsHotPathOverlayReuseCount")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.overlay_layer_reuse_count));
-            diagnostics[flutter::EncodableValue(
-                "windowsHotPathOverlayRasterCount")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.overlay_layer_rebuild_count));
-            diagnostics[flutter::EncodableValue(
-                "windowsHotPathOverlayUploadCount")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.overlay_layer_upload_count));
-        }
-        const bool backend_source_projection_hot_path =
-            backend.source_projection_active &&
-            backend.source_projection_consume_count > 0;
-        if (backend_source_projection_hot_path) {
-            diagnostics[flutter::EncodableValue(
-                "nativeCompositorSourceProjectionEnabled")] =
-                flutter::EncodableValue(true);
-            diagnostics[flutter::EncodableValue(
-                "nativeCompositorSourceCacheActive")] =
-                flutter::EncodableValue(
-                    backend.source_cache_texture_count > 0 ||
-                    backend.source_cache_publish_count > 0);
-            diagnostics[flutter::EncodableValue(
-                "windowsSourceProjectionReuseCount")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.source_projection_consume_count));
-            diagnostics[flutter::EncodableValue(
-                "windowsSourceCacheConsumedGeneration")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.source_cache_generation));
-            diagnostics[flutter::EncodableValue("windowsHotPathActive")] =
-                flutter::EncodableValue(true);
-            diagnostics[flutter::EncodableValue("windowsHotPathMode")] =
-                flutter::EncodableValue(
-                    "source-projection-wgpu-d3d12");
-            diagnostics[flutter::EncodableValue(
-                "windowsHotPathProjectionOnlyUpdateCount")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.source_projection_update_count));
-            diagnostics[flutter::EncodableValue(
-                "windowsHotPathSourceCacheReuseCount")] =
-                enc_i64(static_cast<int64_t>(
-                    backend.source_projection_consume_count));
-            diagnostics[flutter::EncodableValue("windowsHotPathGateResult")] =
-                flutter::EncodableValue("pass-wgpu-d3d12-source-projection");
-            diagnostics[flutter::EncodableValue(
-                "windowsHotPathLastFailureReason")] =
-                flutter::EncodableValue("none");
-        }
-        const bool compositor_active =
-            compositor.phase == "preparing" || compositor.phase == "active";
-        diagnostics[flutter::EncodableValue("windowsPresentationCompositorActive")] =
-            flutter::EncodableValue(compositor_active);
-        if (compositor_active) {
-            diagnostics[flutter::EncodableValue(
-                "windowsPresentationMode")] =
-                flutter::EncodableValue(
-                    compositor.output_target == "scrgb"
-                        ? "native-compositor-scrgb"
-                        : "native-compositor-sdr");
-        } else if (
-            compositor.fallback_reason != "none") {
-            diagnostics[flutter::EncodableValue("windowsPresentationMode")] =
-                flutter::EncodableValue("native-compositor-failed");
-            diagnostics[flutter::EncodableValue(
-                "windowsPresentationFallbackReason")] =
-                flutter::EncodableValue(compositor.fallback_reason);
-        }
-    }
-    result->Success(flutter::EncodableValue(std::move(diagnostics)));
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "getDiagnostics", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "getDiagnostics");
-    }
-}
-
-void VideoRendererPlugin::PickFiles(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-        bool allow_multiple = true;
-
-        if (arguments) {
-            const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-            if (args) {
-                auto it = args->find(flutter::EncodableValue("allowMultiple"));
-                if (it != args->end()) {
-                    if (!read_bool_arg(it->second, allow_multiple)) {
-                        result->Error("BAD_ARGS", "allowMultiple must be a boolean");
-                        return;
-                    }
-                }
-            }
-        }
-
-        auto shared_result =
-            std::make_shared<std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>>(
-                std::move(result));
-        HWND owner_window = window_handle_;
-        auto platform_task_state = platform_task_state_;
-        std::thread([allow_multiple, owner_window, platform_task_state, shared_result]() {
-            std::vector<std::string> paths;
-            std::string error_message;
-            try {
-                FilePickerService picker;
-                paths = picker.PickVideoFiles(allow_multiple, owner_window);
-            } catch (const std::exception& e) {
-                error_message = e.what();
-            } catch (...) {
-                error_message = "Unknown native exception";
-            }
-
-            PostPlatformTaskToState(
-                platform_task_state,
-                [paths = std::move(paths),
-                 error_message = std::move(error_message),
-                 shared_result]() mutable {
-                    auto& result_ref = *shared_result;
-                    if (!result_ref) {
-                        return;
-                    }
-                    if (!error_message.empty()) {
-                        ReportMethodException(
-                            result_ref.get(), "pickFiles", "NATIVE_EXCEPTION", error_message);
-                        result_ref.reset();
-                        return;
-                    }
-
-                    flutter::EncodableList paths_list;
-                    for (const auto& path : paths) {
-                        paths_list.push_back(flutter::EncodableValue(path));
-                    }
-                    // Always return a list (empty = cancelled, non-empty = selected files).
-                    result_ref->Success(flutter::EncodableValue(paths_list));
-                    result_ref.reset();
-                });
-        }).detach();
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "pickFiles", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "pickFiles", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "pickFiles");
-    }
-}
-
-void VideoRendererPlugin::CaptureViewport(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!player_) {
-        result->Error("NO_PLAYER", "Player not created");
-        return;
-    }
-
-    std::string output_path;
-    if (arguments) {
-        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-        if (args) {
-            auto it = args->find(flutter::EncodableValue("outputPath"));
-            if (it != args->end() && !read_string_arg(it->second, output_path)) {
-                result->Error("BAD_ARGS", "outputPath must be a string");
-                return;
-            }
-        }
-    }
-
-    ViewportCaptureResult capture;
-    const auto capture_status =
-        viewport_capture_.Capture(*player_, output_path, capture);
-    if (capture_status == ViewportCaptureStatus::CaptureFailed) {
-        result->Error("CAPTURE_FAILED", "Failed to capture viewport");
-        return;
-    }
-    if (capture_status == ViewportCaptureStatus::SaveFailed) {
-        result->Error("CAPTURE_SAVE_FAILED", "Failed to save viewport PNG");
-        return;
-    }
-
-    flutter::EncodableMap map;
-    map[flutter::EncodableValue("hash")] = flutter::EncodableValue(capture.hash);
-    map[flutter::EncodableValue("width")] = flutter::EncodableValue(capture.width);
-    map[flutter::EncodableValue("height")] = flutter::EncodableValue(capture.height);
-    map[flutter::EncodableValue("avgLuma")] = flutter::EncodableValue(capture.avg_luma);
-    map[flutter::EncodableValue("nonBlackRatio")] =
-        flutter::EncodableValue(capture.non_black_ratio);
-    if (!capture.output_path.empty()) {
-        map[flutter::EncodableValue("outputPath")] =
-            flutter::EncodableValue(capture.output_path);
-    }
-    result->Success(flutter::EncodableValue(map));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "captureViewport", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "captureViewport", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "captureViewport");
-    }
-}
-
-void VideoRendererPlugin::CaptureViewportRegion(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    if (!player_) {
-        result->Error("NO_PLAYER", "Player not created");
-        return;
-    }
-    if (!arguments) {
-        result->Error("INVALID_ARGS", "Arguments required");
-        return;
-    }
-    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-    if (!args) {
-        result->Error("INVALID_ARGS", "Arguments must be a map");
-        return;
-    }
-
-    const auto read_required_int = [&](const char* key, int& value) -> bool {
-        auto it = args->find(flutter::EncodableValue(key));
-        return it != args->end() && read_int_arg(it->second, value);
+    config.use_hardware_decode =
+        ReadBool(arguments, "useHardwareDecode", true);
+    config.initial_file_id = 0;
+    config.offscreen = true;
+    config.backend.type = vr::RendererBackendType::NativeD3D11;
+    config.backend.output = &install;
+    config.backend.max_track_slots = 4;
+    config.backend.output_target =
+        vr::ColorOutputTarget::kSDRToneMappedBT709;
+    auto player = std::make_shared<vr::WindowsNativePlayer>();
+    if (!player->initialize(config)) {
+      compositor_->ClearVideoTargetRing();
+      result->Error("NATIVE_INIT_FAILED",
+                    "shared Windows renderer failed to initialize");
+      return;
+    }
+    player_ = player;
+    ApplyViewportBackgroundColor(
+        static_cast<uint32_t>(ReadInt(arguments, "color", 0xFF000000)));
+    player_id_ = next_player_id_.fetch_add(1);
+    vr::WindowsFirstFrameActivationGate::Session presentation_session = 0;
+    {
+      std::lock_guard<std::mutex> lock(presentation_state_mutex_);
+      presentation_session_ = first_frame_activation_gate_.begin_session();
+      presentation_session = presentation_session_;
+    }
+    const std::weak_ptr<vr::WindowsNativePlayer> weak_player = player;
+    player->set_frame_callback(
+        [this, weak_player, presentation_session](
+            const vr::PresentationBackendFrameInfo* frame) {
+          OnFrameAvailable(weak_player, presentation_session, frame);
+        });
+    player->set_frame_failure_callback([](const char*) {});
+    player->set_event_callback(
+        [this](const vr::RendererEvent& event) { event_bridge_.Queue(event); });
+    if (viewport_presentation_controller_) {
+      viewport_presentation_controller_->AttachPlayer(player);
+    }
+    std::string policy_error;
+    if (!RefreshPresentationPolicy("windows-runner-create", policy_error)) {
+      DestroyPlayer();
+      result->Error("PRESENTATION_POLICY_FAILED", policy_error);
+      return;
+    }
+    EncodableMap payload = {
+        {EncodableValue("playerId"), EncodableValue(player_id_)},
+        {EncodableValue("tracks"), EncodableValue(TrackList(player->tracks()))},
     };
-
-    int x = 0;
-    int y = 0;
+    result->Success(EncodableValue(std::move(payload)));
+    return;
+  }
+  if (method == "destroyPlayer") {
+    DestroyPlayer();
+    result->Success();
+    return;
+  }
+  if (method == "debugNativeCompositor") {
+    EncodableMap diagnostics;
+    AddCompositorDiagnostics(diagnostics, compositor_.get(), compositor_started_,
+                             viewport_presentation_controller_.get());
+    AddPresentationPolicyDiagnostics(diagnostics, presentation_policy_,
+                                     display_probe_,
+                                     presentation_sdr_white_level_nits_);
+    result->Success(EncodableValue(std::move(diagnostics)));
+    return;
+  }
+  if (method == "getDiagnostics") {
+    const ProcessMemorySnapshot process_memory = QueryProcessMemory();
+    EncodableMap diagnostics = {
+        {EncodableValue("available"), EncodableValue(player_ != nullptr)},
+        {EncodableValue("presentationBackend"),
+         EncodableValue("windows-native-d3d11")},
+        {EncodableValue("windowsBackendRebuildRequired"),
+         EncodableValue(false)},
+        {EncodableValue("trackCount"),
+         EncodableValue(player_ ? static_cast<int64_t>(player_->tracks().size())
+                                : int64_t{0})},
+        {EncodableValue("isPlaying"),
+         EncodableValue(player_ && player_->is_playing())},
+        {EncodableValue("hardwareDecodeActive"), EncodableValue(false)},
+        {EncodableValue("hardwareDecodeDownloadsToCpu"),
+         EncodableValue(false)},
+        {EncodableValue("processRssBytes"),
+         EncodableValue(SaturatingInt64(process_memory.rss_bytes))},
+        {EncodableValue("processPrivateBytes"),
+         EncodableValue(SaturatingInt64(process_memory.private_bytes))},
+        {EncodableValue("dedicatedGpuUsageBytes"), EncodableValue(int64_t{0})},
+        {EncodableValue("cpuFrameMemoryBytes"), EncodableValue(int64_t{0})},
+        {EncodableValue("packetQueueMemoryBytes"), EncodableValue(int64_t{0})},
+        {EncodableValue("nativeTrackDiagnostics"),
+         EncodableValue(flutter::EncodableList{})},
+        {EncodableValue("nativeTrackDiagnosticCount"),
+         EncodableValue(int64_t{0})},
+    };
+    AddCompositorDiagnostics(diagnostics, compositor_.get(),
+                             compositor_started_,
+                             viewport_presentation_controller_.get());
+    AddPresentationPolicyDiagnostics(diagnostics, presentation_policy_,
+                                     display_probe_,
+                                     presentation_sdr_white_level_nits_);
+    if (player_) {
+      const auto tracks = player_->tracks();
+      const auto track_perf = player_->track_perf_stats();
+      const auto memory = player_->gpu_memory_stats();
+      const auto renderer_metrics = player_->presentation_metrics();
+      const auto stats = player_->presentation_stats();
+      const auto backend = player_->presentation_diagnostics();
+      const auto pacing = player_->playback_pacing_diagnostics();
+      const bool hardware_decode_active =
+          std::any_of(memory.tracks.begin(), memory.tracks.end(),
+                      [](const auto& track) { return track.hardware_enabled; });
+      const bool hardware_decode_downloads_to_cpu =
+          std::any_of(memory.tracks.begin(), memory.tracks.end(),
+                      [](const auto& track) {
+                        return track.hardware_enabled &&
+                               track.hardware_download_to_cpu;
+                      });
+      uint64_t snapshot_completion_wait_count = 0;
+      uint64_t snapshot_completion_wait_max_us = 0;
+      uint64_t snapshot_completion_wait_over_budget_count = 0;
+      uint64_t snapshot_completion_wait_timeout_count = 0;
+      for (const auto& track : memory.tracks) {
+        snapshot_completion_wait_count +=
+            track.snapshot_completion_wait_count;
+        snapshot_completion_wait_max_us = std::max(
+            snapshot_completion_wait_max_us,
+            track.snapshot_completion_wait_max_us);
+        snapshot_completion_wait_over_budget_count +=
+            track.snapshot_completion_wait_over_budget_count;
+        snapshot_completion_wait_timeout_count +=
+            track.snapshot_completion_wait_timeout_count;
+      }
+      auto track_diagnostics =
+          TrackDiagnosticList(*player_, tracks, track_perf, memory);
+      uint64_t dedicated_gpu_usage =
+          QueryDedicatedGpuUsage(compositor_ ? compositor_->device() : nullptr);
+      if (dedicated_gpu_usage == 0) {
+        dedicated_gpu_usage =
+            memory.decoder_pool_bytes + memory.presenter_texture_bytes +
+            memory.fp16_target_bytes + memory.analysis_overlay_bytes;
+      }
+      diagnostics[EncodableValue("nativeTrackDiagnostics")] =
+          EncodableValue(std::move(track_diagnostics));
+      diagnostics[EncodableValue("nativeTrackDiagnosticCount")] =
+          EncodableValue(static_cast<int64_t>(track_perf.size()));
+      diagnostics[EncodableValue("hardwareDecodeActive")] =
+          EncodableValue(hardware_decode_active);
+      diagnostics[EncodableValue("hardwareDecodeDownloadsToCpu")] =
+          EncodableValue(hardware_decode_downloads_to_cpu);
+      diagnostics[EncodableValue("playbackPacingState")] =
+          EncodableValue(std::string(
+              vr::playback_pacing_state_name(pacing.state)));
+      diagnostics[EncodableValue("requestedPlaybackSpeed")] =
+          EncodableValue(pacing.requested_speed);
+      diagnostics[EncodableValue("effectivePlaybackSpeed")] =
+          EncodableValue(pacing.effective_speed);
+      diagnostics[EncodableValue("effectivePlaybackSpeedX1000")] =
+          EncodableValue(static_cast<int64_t>(
+              pacing.effective_speed * 1000.0));
+      diagnostics[EncodableValue("playbackSafeFrontierUs")] =
+          EncodableValue(pacing.safe_frontier_us);
+      diagnostics[EncodableValue("playbackSafeHeadroomUs")] =
+          EncodableValue(pacing.headroom_us);
+      diagnostics[EncodableValue("playbackBottleneckTrack")] =
+          EncodableValue(pacing.bottleneck_slot);
+      diagnostics[EncodableValue("playbackMinBufferedFrames")] =
+          EncodableValue(static_cast<int64_t>(
+              pacing.min_buffered_frames));
+      diagnostics[EncodableValue("playbackBottleneckBufferedFrames")] =
+          EncodableValue(static_cast<int64_t>(
+              pacing.bottleneck_buffered_frames));
+      diagnostics[EncodableValue("playbackBottleneckTargetFrames")] =
+          EncodableValue(static_cast<int64_t>(
+              pacing.bottleneck_target_frames));
+      diagnostics[EncodableValue("playbackRebufferCount")] =
+          EncodableValue(
+              SaturatingInt64(pacing.rebuffer_count));
+      diagnostics[EncodableValue("playbackRebufferDurationUs")] =
+          EncodableValue(
+              SaturatingInt64(pacing.rebuffer_duration_us));
+      diagnostics[EncodableValue("presentationSkippedFrameCount")] =
+          EncodableValue(SaturatingInt64(
+              pacing.presentation_skipped_frame_count));
+      diagnostics[EncodableValue("snapshotCompletionWaitCount")] =
+          EncodableValue(SaturatingInt64(snapshot_completion_wait_count));
+      diagnostics[EncodableValue("snapshotCompletionWaitMaxUs")] =
+          EncodableValue(SaturatingInt64(snapshot_completion_wait_max_us));
+      diagnostics[EncodableValue("snapshotCompletionWaitOverBudgetCount")] =
+          EncodableValue(
+              SaturatingInt64(snapshot_completion_wait_over_budget_count));
+      diagnostics[EncodableValue("snapshotCompletionWaitTimeoutCount")] =
+          EncodableValue(
+              SaturatingInt64(snapshot_completion_wait_timeout_count));
+      diagnostics[EncodableValue("dedicatedGpuUsageBytes")] =
+          EncodableValue(SaturatingInt64(dedicated_gpu_usage));
+      diagnostics[EncodableValue("cpuFrameMemoryBytes")] =
+          EncodableValue(SaturatingInt64(memory.cpu_frame_bytes));
+      diagnostics[EncodableValue("nativeCpuFrameMemoryBytes")] =
+          EncodableValue(SaturatingInt64(memory.cpu_frame_bytes));
+      diagnostics[EncodableValue("packetQueueMemoryBytes")] =
+          EncodableValue(SaturatingInt64(memory.packet_queue_bytes));
+      diagnostics[EncodableValue("nativePacketQueueMemoryBytes")] =
+          EncodableValue(SaturatingInt64(memory.packet_queue_bytes));
+      diagnostics[EncodableValue("nativeRendererDrawP95Us")] =
+          EncodableValue(SaturatingInt64(renderer_metrics.draw_p95_us));
+      diagnostics[EncodableValue("nativeRendererDrawWorkP95Us")] =
+          EncodableValue(SaturatingInt64(renderer_metrics.draw_work_p95_us));
+      diagnostics[EncodableValue("nativeRendererDrawCallbackP95Us")] =
+          EncodableValue(
+              SaturatingInt64(renderer_metrics.draw_callback_p95_us));
+      diagnostics[EncodableValue("nativeRendererDrawBlockingWaitP95Us")] =
+          EncodableValue(
+              SaturatingInt64(renderer_metrics.draw_blocking_wait_p95_us));
+      diagnostics[EncodableValue("nativeRendererDrawBackendP95Us")] =
+          EncodableValue(SaturatingInt64(renderer_metrics.draw_backend_p95_us));
+      diagnostics[EncodableValue("nativeRendererDrawBackendWorkP95Us")] =
+          EncodableValue(
+              SaturatingInt64(renderer_metrics.draw_backend_work_p95_us));
+      diagnostics[EncodableValue("nativeTargetStagingAllocationCount")] =
+          EncodableValue(
+              SaturatingInt64(stats.staging_allocation_count));
+      diagnostics[EncodableValue("nativeTargetStagingReuseCount")] =
+          EncodableValue(SaturatingInt64(stats.staging_reuse_count));
+      diagnostics[EncodableValue("nativeTargetStagingMaxBytes")] =
+          EncodableValue(SaturatingInt64(stats.staging_max_bytes));
+      diagnostics[EncodableValue("nativeTargetRendererInitialized")] =
+          EncodableValue(stats.backend_available != 0);
+      diagnostics[EncodableValue("nativeTargetLastDrawSucceeded")] =
+          EncodableValue(stats.last_draw_succeeded != 0);
+      diagnostics[EncodableValue("nativeFramePresentationCount")] =
+          EncodableValue(static_cast<int64_t>(stats.viewport_composite_count));
+      diagnostics[EncodableValue("videoSourceUpdateCount")] =
+          EncodableValue(static_cast<int64_t>(stats.video_source_update_count));
+      diagnostics[EncodableValue("hardwareDirectBindCount")] = EncodableValue(
+          static_cast<int64_t>(stats.hardware_direct_bind_count));
+      diagnostics[EncodableValue("hardwarePresenterCopyCount")] = EncodableValue(
+          static_cast<int64_t>(stats.hardware_array_copy_count));
+      diagnostics[EncodableValue("hardwareSourceRetireCount")] = EncodableValue(
+          static_cast<int64_t>(stats.hardware_source_retire_count));
+      diagnostics[EncodableValue("hardwareSourceReleaseCount")] = EncodableValue(
+          static_cast<int64_t>(stats.hardware_source_release_count));
+      diagnostics[EncodableValue("sourceFrameCacheHitCount")] = EncodableValue(
+          static_cast<int64_t>(stats.source_frame_cache_hit_count));
+      diagnostics[EncodableValue("sourceFrameCacheMissCount")] = EncodableValue(
+          static_cast<int64_t>(stats.source_frame_cache_miss_count));
+      diagnostics[EncodableValue("nativeTargetOverlayLastExpected")] =
+          EncodableValue(stats.overlay_last_expected != 0);
+      diagnostics[EncodableValue("nativeTargetOverlayLastApplied")] =
+          EncodableValue(stats.overlay_last_applied != 0);
+      diagnostics[EncodableValue("nativeTargetOverlayLastFillRectCount")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_last_fill_rect_count));
+      diagnostics[EncodableValue("nativeTargetOverlayLastLineRectCount")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_last_line_rect_count));
+      diagnostics[EncodableValue("nativeTargetOverlayExpectedCount")] =
+          EncodableValue(static_cast<int64_t>(stats.overlay_expected_count));
+      diagnostics[EncodableValue("nativeTargetOverlayAppliedCount")] =
+          EncodableValue(static_cast<int64_t>(stats.overlay_applied_count));
+      diagnostics[EncodableValue("nativeTargetOverlayMissedCount")] =
+          EncodableValue(static_cast<int64_t>(stats.overlay_missed_count));
+      diagnostics[EncodableValue("nativeTargetOverlayGpuSuccessCount")] =
+          EncodableValue(static_cast<int64_t>(stats.overlay_gpu_success_count));
+      diagnostics[EncodableValue("nativeTargetOverlayGpuFailureCount")] =
+          EncodableValue(static_cast<int64_t>(stats.overlay_gpu_failure_count));
+      diagnostics[EncodableValue("nativeTargetOverlayCpuFallbackCount")] =
+          EncodableValue(
+              static_cast<int64_t>(stats.overlay_cpu_fallback_count));
+      diagnostics[EncodableValue("nativeTargetOverlaySourceCacheHitCount")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_source_cache_hit_count));
+      diagnostics[EncodableValue("nativeTargetOverlaySourceCacheMissCount")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_source_cache_miss_count));
+      diagnostics[EncodableValue("nativeTargetOverlayGpuUploadCount")] =
+          EncodableValue(
+              static_cast<int64_t>(stats.overlay_gpu_upload_count));
+      diagnostics[EncodableValue("nativeTargetOverlayGpuBufferReuseCount")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_gpu_buffer_reuse_count));
+      diagnostics[EncodableValue("nativeTargetOverlayGpuUploadBytes")] =
+          EncodableValue(
+              static_cast<int64_t>(stats.overlay_gpu_upload_bytes));
+      diagnostics[EncodableValue("nativeTargetOverlayLastSourceGeneration")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_last_source_generation));
+      diagnostics[EncodableValue("nativeTargetOverlayLastLookupUs")] =
+          EncodableValue(
+              static_cast<int64_t>(stats.overlay_last_lookup_us));
+      diagnostics[EncodableValue("nativeTargetOverlayLastUploadUs")] =
+          EncodableValue(
+              static_cast<int64_t>(stats.overlay_last_upload_us));
+      diagnostics[EncodableValue("nativeTargetOverlayLastCpuSubmitUs")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_last_cpu_submit_us));
+      diagnostics[EncodableValue("nativeTargetOverlayMaxCpuSubmitUs")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_max_cpu_submit_us));
+      diagnostics[EncodableValue("nativeTargetConsecutiveDrawFailures")] =
+          EncodableValue(static_cast<int64_t>(stats.consecutive_draw_failures));
+      diagnostics[EncodableValue("nativeTargetBackendName")] =
+          EncodableValue(backend.backend);
+      diagnostics[EncodableValue("presentationFallbackReason")] =
+          EncodableValue(backend.fallback_reason);
+      diagnostics[EncodableValue("textureWidth")] =
+          EncodableValue(backend.width);
+      diagnostics[EncodableValue("textureHeight")] =
+          EncodableValue(backend.height);
+    }
+    result->Success(EncodableValue(std::move(diagnostics)));
+    return;
+  }
+  if (!player_) {
+    if (method == "getTracks") {
+      result->Success(EncodableValue(flutter::EncodableList{}));
+    } else {
+      result->Error("NO_PLAYER", "createPlayer must be called first");
+    }
+    return;
+  }
+  if (method == "play") {
+    player_->play();
+    result->Success();
+  } else if (method == "pause") {
+    player_->pause();
+    result->Success();
+  } else if (method == "seek") {
+    player_->seek(ReadInt(arguments, "ptsUs"),
+                  ReadInt(arguments, "requestId", -1));
+    result->Success();
+  } else if (method == "stepForward") {
+    player_->step_forward();
+    result->Success();
+  } else if (method == "stepBackward") {
+    player_->step_backward();
+    result->Success();
+  } else if (method == "setSpeed") {
+    player_->set_speed(ReadDouble(arguments, "speed", 1.0));
+    result->Success();
+  } else if (method == "setLoopRange") {
+    player_->set_loop_range(ReadBool(arguments, "enabled"),
+                            ReadInt(arguments, "startUs"),
+                            ReadInt(arguments, "endUs"));
+    result->Success();
+  } else if (method == "setAudibleTrack") {
+    player_->set_audible_track(static_cast<int>(ReadInt(arguments, "fileId", -1)));
+    result->Success();
+  } else if (method == "setTrackOffset") {
+    player_->set_track_offset(
+        static_cast<int>(ReadInt(arguments, "fileId", -1)),
+        ReadInt(arguments, "offsetUs"));
+    result->Success();
+  } else if (method == "setViewportBackgroundColor") {
+    const uint32_t color = static_cast<uint32_t>(ReadInt(arguments, "color"));
+    ApplyViewportBackgroundColor(color);
+    result->Success();
+  } else if (method == "resize") {
+    std::string error;
+    if (!ResizeVideoTargets(static_cast<int>(ReadInt(arguments, "width")),
+                            static_cast<int>(ReadInt(arguments, "height")),
+                            error)) {
+      result->Error("RESIZE_FAILED", error);
+    } else {
+      vr::WindowsFirstFrameActivationGate::Session presentation_session = 0;
+      {
+        std::lock_guard<std::mutex> lock(presentation_state_mutex_);
+        presentation_session = presentation_session_;
+      }
+      (void)first_frame_activation_gate_.commit_initial_viewport(
+          presentation_session);
+      player_->request_frame_refresh("windows-runner-resize");
+      result->Success();
+    }
+  } else if (method == "applyLayout") {
+    const vr::LayoutState layout = ReadLayout(arguments);
+    const uint64_t count = ++layout_apply_count_;
+    if (count <= 12 || count % 60 == 0) {
+      spdlog::info(
+          "[WindowsLayout] runner intent={} playing={} mode={} zoom={:.4f} "
+          "offset=({:.1f},{:.1f}) split={:.4f} pixel_mode={}",
+          count, player_->is_playing(), layout.mode, layout.zoom_ratio,
+          layout.view_offset[0], layout.view_offset[1], layout.split_pos,
+          layout.pixel_size_mode);
+    }
+    player_->apply_interaction_layout(layout);
+    bool native_viewport_active = false;
+    {
+      std::lock_guard<std::mutex> lock(presentation_state_mutex_);
+      native_viewport_active =
+          first_frame_activation_gate_.active(presentation_session_);
+    }
+    if (viewport_presentation_controller_ && native_viewport_active) {
+      // Before first-frame activation there is no cached source frame to
+      // reproject. The shared renderer has already retained this layout and
+      // will use it for the initial preview; submitting an interaction draw
+      // here only records a synthetic backend failure during startup.
+      viewport_presentation_controller_->RequestLayoutFrame();
+    }
+    result->Success();
+  } else if (method == "getLayout") {
+    result->Success(EncodableValue(LayoutMap(player_->layout())));
+  } else if (method == "getTracks") {
+    result->Success(EncodableValue(TrackList(player_->tracks())));
+  } else if (method == "addTrack") {
+    const int file_id =
+        player_->add_track(ReadString(arguments, "path"),
+                           ReadBool(arguments, "useHardwareDecode", true));
+    const auto tracks = player_->tracks();
+    const auto found = std::find_if(
+        tracks.begin(), tracks.end(),
+        [file_id](const auto& track) { return track.file_id == file_id; });
+    if (file_id < 0 || found == tracks.end()) {
+      result->Error("ADD_TRACK_FAILED", "native renderer rejected the track");
+    } else {
+      std::string policy_error;
+      if (!RefreshPresentationPolicy("windows-add-track", policy_error)) {
+        player_->remove_track(file_id);
+        std::string restore_error;
+        if (!RefreshPresentationPolicy(
+                "windows-add-track-rollback", restore_error)) {
+          FailClosedPresentation(std::move(restore_error));
+        }
+        result->Error("PRESENTATION_POLICY_FAILED", policy_error);
+        return;
+      }
+      result->Success(EncodableValue(TrackMap(*found)));
+    }
+  } else if (method == "removeTrack") {
+    player_->remove_track(static_cast<int>(ReadInt(arguments, "fileId", -1)));
+    std::string policy_error;
+    if (!RefreshPresentationPolicy("windows-remove-track", policy_error)) {
+      spdlog::warn(
+          "[WindowsPresentation] remove-track policy refresh failed: {}",
+          policy_error);
+    }
+    result->Success();
+  } else if (method == "currentPts") {
+    result->Success(EncodableValue(player_->current_pts_us()));
+  } else if (method == "duration") {
+    result->Success(EncodableValue(player_->duration_us()));
+  } else if (method == "isPlaying") {
+    result->Success(EncodableValue(player_->is_playing()));
+  } else if (method == "currentPresentedFrame") {
+    vr::PresentationBackendFrameInfo frame = {};
+    if (!player_->copy_last_frame_info(&frame)) {
+      result->Success();
+    } else {
+      result->Success(EncodableValue(FrameMap(
+          static_cast<int>(ReadInt(arguments, "fileId", -1)), frame)));
+    }
+  } else if (method == "getPlaybackSnapshot") {
+    EncodableMap snapshot = {
+        {EncodableValue("currentPtsUs"),
+         EncodableValue(player_->current_pts_us())},
+        {EncodableValue("durationUs"), EncodableValue(player_->duration_us())},
+        {EncodableValue("isPlaying"), EncodableValue(player_->is_playing())},
+    };
+    if (ReadBool(arguments, "includePresentedFrames")) {
+      flutter::EncodableList frames;
+      vr::PresentationBackendFrameInfo frame = {};
+      const auto tracks = player_->tracks();
+      if (!tracks.empty() && player_->copy_last_frame_info(&frame)) {
+        frames.emplace_back(FrameMap(tracks.front().file_id, frame));
+      }
+      snapshot[EncodableValue("presentedFrames")] =
+          EncodableValue(std::move(frames));
+    }
+    result->Success(EncodableValue(std::move(snapshot)));
+  } else if (method == "captureViewport") {
+    std::vector<uint8_t> bgra;
     int width = 0;
     int height = 0;
-    int max_size = 0;
-    if (!read_required_int("x", x) ||
-        !read_required_int("y", y) ||
-        !read_required_int("width", width) ||
-        !read_required_int("height", height) ||
-        !read_required_int("maxSize", max_size)) {
-        result->Error("BAD_ARGS", "x, y, width, height and maxSize must be integers");
-        return;
+    if (!player_->capture_front_buffer(bgra, width, height)) {
+      result->Error("CAPTURE_FAILED", "native viewport capture failed");
+    } else {
+      result->Success(EncodableValue(CaptureMap(
+          bgra, width, height, ReadString(arguments, "outputPath"))));
     }
-    if (width <= 0 || height <= 0) {
-        result->Error("BAD_ARGS", "width and height must be positive");
-        return;
+  } else if (method == "captureViewportRegion") {
+    const int requested_width =
+        static_cast<int>(ReadInt(arguments, "width"));
+    const int requested_height =
+        static_cast<int>(ReadInt(arguments, "height"));
+    if (requested_width <= 0 || requested_height <= 0) {
+      result->Error("BAD_ARGS", "width and height must be positive");
+      return;
     }
-
-    std::string output_path;
-    auto output_it = args->find(flutter::EncodableValue("outputPath"));
-    if (output_it != args->end() && !read_string_arg(output_it->second, output_path)) {
-        result->Error("BAD_ARGS", "outputPath must be a string");
-        return;
+    std::vector<uint8_t> bgra;
+    int width = 0;
+    int height = 0;
+    if (!player_->capture_front_buffer_region(
+            static_cast<int>(ReadInt(arguments, "x")),
+            static_cast<int>(ReadInt(arguments, "y")),
+            requested_width, requested_height, bgra, width, height)) {
+      result->Error("CAPTURE_FAILED", "native viewport region capture failed");
+    } else {
+      ScaleBgraToMaxSize(bgra, width, height,
+                         static_cast<int>(ReadInt(arguments, "maxSize")));
+      result->Success(EncodableValue(CaptureMap(
+          bgra, width, height, ReadString(arguments, "outputPath"))));
     }
-
-    ViewportCaptureResult capture;
-    const auto capture_status =
-        viewport_capture_.CaptureRegion(
-            *player_, x, y, width, height, max_size, output_path, capture);
-    if (capture_status == ViewportCaptureStatus::CaptureFailed) {
-        result->Error("CAPTURE_FAILED", "Failed to capture viewport region");
-        return;
-    }
-    if (capture_status == ViewportCaptureStatus::SaveFailed) {
-        result->Error("CAPTURE_SAVE_FAILED", "Failed to save viewport region PNG");
-        return;
-    }
-
-    flutter::EncodableMap map;
-    map[flutter::EncodableValue("hash")] = flutter::EncodableValue(capture.hash);
-    map[flutter::EncodableValue("width")] = flutter::EncodableValue(capture.width);
-    map[flutter::EncodableValue("height")] = flutter::EncodableValue(capture.height);
-    map[flutter::EncodableValue("avgLuma")] = flutter::EncodableValue(capture.avg_luma);
-    map[flutter::EncodableValue("nonBlackRatio")] =
-        flutter::EncodableValue(capture.non_black_ratio);
-    if (!capture.output_path.empty()) {
-        map[flutter::EncodableValue("outputPath")] =
-            flutter::EncodableValue(capture.output_path);
-    }
-    result->Success(flutter::EncodableValue(map));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "captureViewportRegion", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "captureViewportRegion", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "captureViewportRegion");
-    }
-}
-
-void VideoRendererPlugin::CaptureWindow(
-    const flutter::EncodableValue* arguments,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-        std::string output_path;
-        if (arguments) {
-            const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-            if (args) {
-                auto it = args->find(flutter::EncodableValue("outputPath"));
-                if (it != args->end() && !read_string_arg(it->second, output_path)) {
-                    result->Error("BAD_ARGS", "outputPath must be a string");
-                    return;
-                }
-            }
-        }
-
-        WindowCaptureResult capture;
-        const auto capture_status =
-            window_capture_.Capture(window_handle_, output_path, capture);
-        if (capture_status == WindowCaptureStatus::InvalidWindow) {
-            result->Error("NO_WINDOW", "Window handle is unavailable");
-            return;
-        }
-        if (capture_status == WindowCaptureStatus::CaptureFailed) {
-            result->Error("CAPTURE_FAILED", "Failed to capture window");
-            return;
-        }
-        if (capture_status == WindowCaptureStatus::SaveFailed) {
-            result->Error("CAPTURE_SAVE_FAILED", "Failed to save window PNG");
-            return;
-        }
-
-        flutter::EncodableMap map;
-        map[flutter::EncodableValue("hash")] = flutter::EncodableValue(capture.hash);
-        map[flutter::EncodableValue("width")] = flutter::EncodableValue(capture.width);
-        map[flutter::EncodableValue("height")] = flutter::EncodableValue(capture.height);
-        map[flutter::EncodableValue("avgLuma")] = flutter::EncodableValue(capture.avg_luma);
-        map[flutter::EncodableValue("nonBlackRatio")] =
-            flutter::EncodableValue(capture.non_black_ratio);
-        if (!capture.output_path.empty()) {
-            map[flutter::EncodableValue("outputPath")] =
-                flutter::EncodableValue(capture.output_path);
-        }
-        result->Success(flutter::EncodableValue(map));
-    } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "captureWindow", e);
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "captureWindow", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "captureWindow");
-    }
-}
-
-void VideoRendererPlugin::GetLayout(
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-
-    try {
-    flutter::EncodableMap map;
-    if (player_) {
-        auto ls = player_->layout();
-        map[flutter::EncodableValue("mode")] = flutter::EncodableValue(ls.mode);
-        map[flutter::EncodableValue("splitPos")] =
-            flutter::EncodableValue(static_cast<double>(ls.split_pos));
-        map[flutter::EncodableValue("zoomRatio")] =
-            flutter::EncodableValue(static_cast<double>(ls.zoom_ratio));
-        map[flutter::EncodableValue("viewOffsetX")] =
-            flutter::EncodableValue(static_cast<double>(ls.view_offset[0]));
-        map[flutter::EncodableValue("viewOffsetY")] =
-            flutter::EncodableValue(static_cast<double>(ls.view_offset[1]));
-        map[flutter::EncodableValue("pixelSizeMode")] =
-            flutter::EncodableValue(ls.pixel_size_mode);
-        flutter::EncodableList order_list;
-        for (int i = 0; i < 4; ++i) {
-            order_list.push_back(flutter::EncodableValue(ls.order[i]));
-        }
-        map[flutter::EncodableValue("order")] = flutter::EncodableValue(order_list);
-    }
-    result->Success(flutter::EncodableValue(map));
-    } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "getLayout", e);
-    } catch (...) {
-        ReportUnknownMethodException(result.get(), "getLayout");
-    }
+  } else {
+    result->NotImplemented();
+  }
 }

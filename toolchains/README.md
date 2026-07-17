@@ -13,11 +13,9 @@ the active SDK against this lock before building or testing.
 `.toolchains/ffmpeg/`; the hydrated SDKs are local build inputs and are not
 committed to this repository.
 
-The Windows product decode path uses the FFmpeg D3D12VA hardware
-acceleration. The pinned package exposes at least `h264_d3d12va`,
-`hevc_d3d12va`, `mpeg2_d3d12va`, `vp9_d3d12va`, and `av1_d3d12va`, so the
-Windows wgpu-d3d12 backend can use D3D12VA decode surfaces instead of the CPU YUV
-upload canary path.
+Windows native presentation is reserved/fail-closed on this branch. D3D11/DX12
+decode and presentation requirements should be documented again when the Windows
+runner-composed backend is rebuilt.
 
 Useful commands:
 

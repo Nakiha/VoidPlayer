@@ -435,7 +435,11 @@ void main() {
         .setMockMethodCallHandler(channel, (call) async {
           switch (call.method) {
             case 'createPlayer':
-              return {'textureId': 1, 'tracks': const <Map<String, Object?>>[]};
+              return {
+                'playerId': 1,
+                'textureId': 1,
+                'tracks': const <Map<String, Object?>>[],
+              };
             case 'setTrackOffset':
               throw PlatformException(
                 code: 'native-error',
@@ -583,6 +587,7 @@ void main() {
             switch (call.method) {
               case 'createPlayer':
                 return {
+                  'playerId': 1,
                   'textureId': 1,
                   'tracks': const <Map<String, Object?>>[],
                 };
@@ -733,7 +738,7 @@ void main() {
       ),
     );
     controller.stateStore
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setPolledPlaybackState(1000, 10000, true);
     controller.viewActions.viewport.onResize(320, 180, 1.0);
 
@@ -754,6 +759,7 @@ void main() {
             switch (call.method) {
               case 'createPlayer':
                 return {
+                  'playerId': 1,
                   'textureId': 1,
                   'tracks': const <Map<String, Object?>>[],
                 };
@@ -810,7 +816,7 @@ void main() {
       );
       addTearDown(controller.dispose);
       await controller.player.createPlayer(['a.mp4'], width: 400, height: 200);
-      controller.stateStore.setTextureId(1);
+      controller.stateStore.setPlayerIdentity(playerId: 1, textureId: 1);
       controller.viewActions.viewport.onResize(400, 200, 1.0);
       controller.start();
       controller.trackManager.addTrack(

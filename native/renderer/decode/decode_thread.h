@@ -8,6 +8,7 @@
 #include "renderer/decode/decode_seek_epoch.h"
 #include "renderer/decode/exact_seek_candidate_store.h"
 #include "renderer/decode/frame_converter.h"
+#include "renderer/decode/frame_timestamp_rescaler.h"
 #include "renderer/decode/hw/hw_decode_provider.h"
 #include "media/seek_controller.h"
 #include <thread>
@@ -140,9 +141,6 @@ private:
     /// Whether hardware frames are downloaded before being published.
     bool hardware_output_downloads_to_cpu() const;
 
-    /// Whether decoded hardware surfaces can be held by the render queue.
-    bool hardware_surfaces_are_renderer_owned() const;
-
     /// Drain remaining frames from the codec (avcodec_send_packet(nullptr) + receive loop).
     /// If target_us >= 0, frames with pts >= target_us are added to exact seek candidates.
     /// Sets eof_flushed_ = true.
@@ -211,6 +209,7 @@ private:
     const AVCodec* codec_ = nullptr;
     const AVCodecParameters* codec_params_;
     AVRational time_base_;
+    FrameTimestampNormalizer timestamp_normalizer_;
     CodecOpenFunction codec_open_for_test_ = nullptr;
 
     // Hardware decode state

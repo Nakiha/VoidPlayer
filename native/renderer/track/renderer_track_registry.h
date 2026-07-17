@@ -42,7 +42,6 @@ public:
     std::pair<int, int> dimensions_for_slot(int slot) const;
     bool has_active_tracks() const;
     size_t count() const;
-    bool has_preroll_blocking_track() const;
     bool has_buffering_track() const;
 
     int next_file_id_value() const;

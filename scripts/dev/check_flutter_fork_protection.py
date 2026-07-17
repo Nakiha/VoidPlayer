@@ -59,7 +59,6 @@ REQUIRED_WORKFLOW_SNIPPETS = {
     ],
     ".github/workflows/native.yml": [
         "hashFiles('toolchains/flutter.lock.json')",
-        "scripts/ci/bootstrap_flutter_toolchain.ps1",
         "scripts/ci/bootstrap_flutter_toolchain.sh",
         "scripts/ci/bootstrap_flutter_macos_engine.sh",
     ],

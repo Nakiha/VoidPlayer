@@ -1,0 +1,24 @@
+# Local Windows HDR lifecycle canary. Requires Windows HDR enabled and dolby.mp4.
+@WINDOW, 960, 540
+0.0, SET_DECODE_MODE, preferHardware
+0.2, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+1.4, WAIT_TRACK_COUNT, 1, 10000
+1.5, DEBUG_NATIVE_COMPOSITOR
+1.52, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, native-compositor-sdr
+1.54, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsVideoTargetFormat, bgra8
+1.7, ADD_MEDIA, C:\Users\12967\Downloads\dolby.mp4
+3.0, WAIT_TRACK_COUNT, 2, 10000
+3.1, DEBUG_NATIVE_COMPOSITOR
+3.12, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationReason, auto-hdr-track
+3.14, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, native-compositor-scrgb
+3.16, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsVideoTargetFormat, rgba16f
+3.18, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsCompositorScRGBEnabled, true
+3.4, REMOVE_TRACK, 1
+4.5, WAIT_TRACK_COUNT, 1, 10000
+4.6, DEBUG_NATIVE_COMPOSITOR
+4.62, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationReason, auto-sdr-only
+4.64, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, native-compositor-sdr
+4.66, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsVideoTargetFormat, bgra8
+4.68, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsCompositorScRGBEnabled, false
+4.8, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsVideoPresentCount, 1
+5.0, QUIT, 0

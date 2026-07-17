@@ -16,19 +16,14 @@
 namespace vr {
 
 struct RendererPresentCommandHooks {
-    // May be called with state_mutex held.
-    std::function<bool()> should_consume_pending_layout;
     // Requires state_mutex held.
     std::function<void()> consume_pending_layout_locked;
-    std::function<bool()> should_suppress_playback_present_for_viewport_compositor;
     // Must not take the renderer state lock.
     std::function<RendererPresentationOverlayHooks()> overlay_hooks;
     // Requires state_mutex held.
     std::function<void(const char* operation)> enter_terminal_device_lost_locked;
     // Called with state_mutex held.
     std::function<bool()> playback_inactive_or_paused;
-    // Must not take renderer state/device locks through this context.
-    std::function<void()> playback_frame_ready_for_viewport_compositor;
 };
 
 struct RendererPresentCommandContext {
@@ -49,8 +44,11 @@ class RendererPresentCommandProcessor {
 public:
     static bool draw_paused_frame(RendererPresentCommandContext& context,
                                   const char* reason);
-    static bool redraw_layout(RendererPresentCommandContext& context);
-    static void present_frame(RendererPresentCommandContext& context,
+    static RendererFrameRefreshResult redraw_layout(
+        RendererPresentCommandContext& context);
+    // Returns true once the backend accepts a synchronous draw or asynchronous
+    // handoff. Presentation cursors must not advance when this returns false.
+    static bool present_frame(RendererPresentCommandContext& context,
                               const PresentDecision& decision);
 };
 

@@ -2,15 +2,14 @@
 cmake_minimum_required(VERSION 3.14)
 project(void_player LANGUAGES CXX)
 
-# ==================== Native Video Renderer Dependencies ====================
-
+# Windows runner and shared native renderer use one locked dependency graph.
+set(BUILD_ANALYSIS ON CACHE BOOL "" FORCE)
 set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(BUILD_ANALYSIS_TESTS OFF CACHE BOOL "" FORCE)
 set(BUILD_PYTHON OFF CACHE BOOL "" FORCE)
 include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/Dependencies.cmake")
-
-set(VOID_FFMPEG_REQUIRED OFF)
 include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/FFmpeg.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/NativeSources.cmake")
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
@@ -59,6 +58,11 @@ endfunction()
 set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")
 add_subdirectory(${FLUTTER_MANAGED_DIR})
 
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis"
+                 "${CMAKE_BINARY_DIR}/native-analysis")
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../native/renderer"
+                 "${CMAKE_BINARY_DIR}/native-renderer")
+
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
@@ -66,6 +70,9 @@ add_subdirectory("runner")
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
 include(flutter/generated_plugins.cmake)
+
+void_collect_ffmpeg_runtime_dlls(VOID_WINDOWS_FFMPEG_RUNTIME_DLLS)
+list(APPEND PLUGIN_BUNDLED_LIBRARIES ${VOID_WINDOWS_FFMPEG_RUNTIME_DLLS})
 
 
 # === Installation ===
@@ -85,11 +92,6 @@ set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 
-if(TARGET VoidPlayerCli)
-  install(TARGETS VoidPlayerCli RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
-    COMPONENT Runtime)
-endif()
-
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)
 
@@ -108,15 +110,6 @@ install(DIRECTORY "${NATIVE_ASSETS_DIR}"
    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
    COMPONENT Runtime)
 
-install(CODE "
-  file(GLOB _void_unused_ffmpeg_dlls
-    \"${INSTALL_BUNDLE_LIB_DIR}/avfilter-*.dll\"
-    \"${INSTALL_BUNDLE_LIB_DIR}/avdevice-*.dll\")
-  if(_void_unused_ffmpeg_dlls)
-    file(REMOVE \${_void_unused_ffmpeg_dlls})
-  endif()
-  " COMPONENT Runtime)
-
 # Fully re-copy the assets directory on each build to avoid having stale files
 # from a previous install.
 set(FLUTTER_ASSET_DIR_NAME "flutter_assets")
@@ -130,27 +123,3 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
-
-# FFmpeg-based analysis tool (required for HEVC/H.264 VACache overlay generation).
-# The analyzer is built out-of-band from the instrumented FFmpeg submodule.
-file(GLOB_RECURSE FFMPEG_ANALYSIS_GLOB
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/vendor/ffmpeg/bin/windows-x64/void_ffmpeg_analyzer.exe")
-if(DEFINED ENV{VOID_FFMPEG_ANALYZER} AND EXISTS "$ENV{VOID_FFMPEG_ANALYZER}")
-  list(APPEND FFMPEG_ANALYSIS_GLOB "$ENV{VOID_FFMPEG_ANALYZER}")
-endif()
-if(NOT FFMPEG_ANALYSIS_GLOB)
-  if(DEFINED ENV{VOIDPLAYER_ALLOW_MISSING_FFMPEG_ANALYZER} AND NOT "$ENV{VOIDPLAYER_ALLOW_MISSING_FFMPEG_ANALYZER}" STREQUAL "")
-    message(WARNING
-      "FFmpeg analysis tool missing; continuing because "
-      "VOIDPLAYER_ALLOW_MISSING_FFMPEG_ANALYZER is set.")
-  else()
-    message(FATAL_ERROR
-      "FFmpeg analysis tool missing. Build it with: "
-      "python dev.py build --native")
-  endif()
-endif()
-foreach(FFMPEG_ANALYZER IN LISTS FFMPEG_ANALYSIS_GLOB)
-  install(FILES "${FFMPEG_ANALYZER}"
-    DESTINATION "${CMAKE_INSTALL_PREFIX}/tools/ffmpeg-analysis"
-    COMPONENT Runtime)
-endforeach()

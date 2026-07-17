@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ffi';
 import 'dart:io';
 import 'package:flutter/material.dart';
 
@@ -8,121 +7,11 @@ import '../native_player/native_player_api.dart';
 import '../performance/performance_health.dart';
 import '../utils/async_guard.dart';
 
-// ---- FFI bindings ----
-
-final class NakiVrTrackStats extends Struct {
-  @Int32()
-  external int slot;
-  @Int32()
-  external int fileId;
-  @Double()
-  external double fps;
-  @Double()
-  external double avgDecodeMs;
-  @Double()
-  external double maxDecodeMs;
-  @Int32()
-  external int bufferCount;
-  @Int32()
-  external int bufferCapacity;
-  @Int32()
-  external int bufferState;
-  @Uint64()
-  external int cpuFrameMemoryBytes;
-  @Uint64()
-  external int packetQueueMemoryBytes;
-  @Int64()
-  external int currentPtsUs;
-  @Int64()
-  external int currentDtsUs;
-}
-
-final class NakiVrDiagnostics extends Struct {
-  @Double()
-  external double playbackTimeS;
-  @Int32()
-  external int isPlaying;
-  @Int32()
-  external int trackCount;
-  @Uint64()
-  external int processWorkingSetBytes;
-  @Uint64()
-  external int processPrivateBytes;
-  @Uint64()
-  external int dedicatedVideoMemoryBytes;
-  @Uint64()
-  external int cpuFrameMemoryBytes;
-  @Uint64()
-  external int packetQueueMemoryBytes;
-
-  @Array(4)
-  external Array<NakiVrTrackStats> tracks;
-
-  @Int32()
-  external int d3dDeviceLost;
-  @Int32()
-  external int reserved0;
-  @Int64()
-  external int d3dDeviceRemovedReason;
-}
-
-typedef _GetDiagNative = Pointer<NakiVrDiagnostics> Function();
-typedef _GetDiagDart = Pointer<NakiVrDiagnostics> Function();
-
 abstract interface class StatsDataSource {
   Future<StatsSnapshot?> load({PerformanceHealthSnapshot? previousHealth});
 
   static StatsDataSource forCurrentPlatform() {
-    if (Platform.isWindows) {
-      return WindowsFfiStatsDataSource();
-    }
     return NativeDiagnosticsStatsDataSource();
-  }
-}
-
-class WindowsFfiStatsDataSource implements StatsDataSource {
-  late final _GetDiagDart _getDiag = DynamicLibrary.executable()
-      .lookupFunction<_GetDiagNative, _GetDiagDart>('naki_vr_get_diagnostics');
-
-  @override
-  Future<StatsSnapshot?> load({
-    PerformanceHealthSnapshot? previousHealth,
-  }) async {
-    final ptr = _getDiag();
-    if (ptr == nullptr) return null;
-    final d = ptr.ref;
-    final memory = StatsMemorySummary(
-      workingSetBytes: d.processWorkingSetBytes,
-      privateBytes: d.processPrivateBytes,
-      dedicatedGpuBytes: d.dedicatedVideoMemoryBytes,
-      cpuFrameBytes: d.cpuFrameMemoryBytes,
-      packetQueueBytes: d.packetQueueMemoryBytes,
-    );
-    final list = <StatsTrackRow>[];
-    for (int i = 0; i < d.trackCount && i < 4; i++) {
-      final t = d.tracks[i];
-      if (t.slot < 0) continue;
-      list.add(
-        StatsTrackRow(
-          fileId: t.fileId,
-          fps: t.fps,
-          avgDecodeMs: t.avgDecodeMs,
-          maxDecodeMs: t.maxDecodeMs,
-          bufferCount: t.bufferCount,
-          bufferCapacity: t.bufferCapacity,
-          bufferState: t.bufferState,
-          cpuFrameMemoryBytes: t.cpuFrameMemoryBytes,
-          packetQueueMemoryBytes: t.packetQueueMemoryBytes,
-          currentPtsUs: t.currentPtsUs,
-          currentDtsUs: t.currentDtsUs,
-        ),
-      );
-    }
-    return StatsSnapshot(
-      health: PerformanceHealthSnapshot.ok(trackCount: d.trackCount),
-      memory: memory,
-      tracks: list,
-    );
   }
 }
 
@@ -150,7 +39,8 @@ class NativeDiagnosticsStatsDataSource implements StatsDataSource {
       memory: StatsMemorySummary(
         workingSetBytes: _intValue(
           diagnostics['processRssBytes'] ??
-              diagnostics['processWorkingSetBytes'],
+              diagnostics['processWorkingSetBytes'] ??
+              ProcessInfo.currentRss,
         ),
         privateBytes: _intValue(diagnostics['processPrivateBytes']),
         dedicatedGpuBytes: _intValue(
@@ -202,6 +92,8 @@ class StatsSnapshot {
 // ---- UI panel ----
 
 class StatsPage extends StatefulWidget {
+  static const double preferredWidth = 920;
+
   final StatsDataSource? dataSource;
 
   const StatsPage({super.key, this.dataSource});
@@ -871,6 +763,7 @@ class StatsTrackRow {
   final double maxDecodeMs;
   final int bufferCount;
   final int bufferCapacity;
+  final int bufferPrerollTarget;
   final int bufferState;
   final int cpuFrameMemoryBytes;
   final int packetQueueMemoryBytes;
@@ -883,6 +776,7 @@ class StatsTrackRow {
     required this.maxDecodeMs,
     required this.bufferCount,
     required this.bufferCapacity,
+    this.bufferPrerollTarget = 0,
     required this.bufferState,
     required this.cpuFrameMemoryBytes,
     required this.packetQueueMemoryBytes,
@@ -900,6 +794,7 @@ class StatsTrackRow {
     maxDecodeMs: _doubleValue(map['decodeMaxMs'] ?? map['maxDecodeMs']),
     bufferCount: _intValue(map['bufferCount']),
     bufferCapacity: _intValue(map['bufferCapacity']),
+    bufferPrerollTarget: _intValue(map['bufferPrerollTarget']),
     bufferState: _intValue(map['bufferState']),
     cpuFrameMemoryBytes: _intValue(
       map['cpuFrameMemoryBytes'] ?? map['totalCpuFrameBytes'],

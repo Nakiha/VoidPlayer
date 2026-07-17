@@ -17,6 +17,7 @@ class MainWindowViewModelFactory {
   static MainWindowViewModel build({
     required PlaybackSession session,
     required LayoutState layout,
+    required bool hasPlayer,
     required int? textureId,
     bool nativeCompositorActive = false,
     required ViewportDisplayState viewportState,
@@ -54,7 +55,7 @@ class MainWindowViewModelFactory {
       session: MainWindowSessionVm.fromSession(session),
       viewport: MainWindowViewportVm(
         viewMode: layout.mode,
-        viewModeEnabled: textureId != null,
+        viewModeEnabled: hasPlayer,
         textureId: textureId,
         nativeCompositorActive: nativeCompositorActive,
         viewportState: viewportState,

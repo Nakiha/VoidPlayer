@@ -1,3 +1,5 @@
+import 'dart:ui' show SemanticsAction;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +15,7 @@ import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/track_manager.dart';
 import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/widgets/analysis_overlay_controls.dart';
+import 'package:void_player/widgets/controls_bar.dart';
 import 'package:void_player/widgets/media_header.dart';
 import 'package:void_player/widgets/toolbar.dart';
 
@@ -336,6 +339,90 @@ void main() {
     expect(find.byKey(analysisOverlayControlBarKey), findsNothing);
   });
 
+  testWidgets('media header overlay target remains a named AXTree button', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+
+    await tester.pumpWidget(
+      _localized(
+        MediaHeaderBar(
+          entries: [track()],
+          analysisDataSource: _FakeAnalysisToolbarDataSource(),
+          onAnalysisOverlayControlsToggle: () {},
+          onMediaSwapped: (_, _) {},
+          onRemoveClicked: (_) {},
+        ),
+      ),
+    );
+
+    final target = find.bySemanticsLabel('Show bitstream overlay controls');
+    expect(target, findsOneWidget);
+    expect(
+      tester
+          .getSemantics(target)
+          .getSemanticsData()
+          .hasAction(SemanticsAction.tap),
+      isTrue,
+    );
+    semantics.dispose();
+  });
+
+  testWidgets('playback controls expose stable named actions and seek slider', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+
+    await tester.pumpWidget(
+      _localized(
+        SizedBox(
+          width: 1000,
+          child: ControlsBar(
+            timelineStartWidth: 500,
+            zoomRatio: 1,
+            onZoomChanged: (_) {},
+            isPlaying: false,
+            isFullScreen: false,
+            onTogglePlay: () async {},
+            onToggleFullScreen: () {},
+            onStepForward: () async {},
+            onStepBackward: () async {},
+            currentPtsUs: 1000000,
+            durationUs: 9000000,
+            onSeek: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.bySemanticsLabel('Playback controls'), findsOneWidget);
+    expect(find.bySemanticsLabel('Zoom'), findsOneWidget);
+    for (final label in const [
+      'Enter Full Screen',
+      'Previous Frame',
+      'Play',
+      'Next Frame',
+    ]) {
+      final target = find.bySemanticsLabel(label);
+      expect(target, findsOneWidget, reason: label);
+      expect(
+        tester
+            .getSemantics(target)
+            .getSemanticsData()
+            .hasAction(SemanticsAction.tap),
+        isTrue,
+        reason: label,
+      );
+    }
+
+    final timeline = find.bySemanticsLabel('Timeline seek');
+    expect(timeline, findsOneWidget);
+    final timelineData = tester.getSemantics(timeline).getSemanticsData();
+    expect(timelineData.hasAction(SemanticsAction.increase), isTrue);
+    expect(timelineData.hasAction(SemanticsAction.decrease), isTrue);
+    semantics.dispose();
+  });
+
   testWidgets('analysis overlay strip close hides controls only', (
     tester,
   ) async {
@@ -438,6 +525,7 @@ void main() {
   testWidgets('analysis overlay control bar switches type and opacity', (
     tester,
   ) async {
+    final semantics = tester.ensureSemantics();
     var type = AnalysisOverlayType.cu;
     var opacity = 0.55;
     final source = _FakeAnalysisToolbarDataSource(
@@ -479,6 +567,29 @@ void main() {
       expect(tooltip.excludeFromSemantics, isTrue);
     }
 
+    for (final label in const [
+      'CU partitions',
+      'QP heatmap',
+      'Bit-cost heatmap',
+    ]) {
+      final target = find.bySemanticsLabel(label);
+      expect(target, findsOneWidget, reason: label);
+      expect(
+        tester
+            .getSemantics(target)
+            .getSemanticsData()
+            .hasAction(SemanticsAction.tap),
+        isTrue,
+        reason: label,
+      );
+    }
+    final opacityNode = find.bySemanticsLabel('Overlay opacity');
+    expect(opacityNode, findsOneWidget);
+    final opacityData = tester.getSemantics(opacityNode).getSemanticsData();
+    expect(opacityData.value, '55%');
+    expect(opacityData.hasAction(SemanticsAction.increase), isTrue);
+    expect(opacityData.hasAction(SemanticsAction.decrease), isTrue);
+
     await tester.tap(
       find.byKey(
         ValueKey('analysis-overlay-type-${AnalysisOverlayType.qpHeatmap.name}'),
@@ -494,6 +605,7 @@ void main() {
 
     expect(source.config.copyWith(opacity: -1).opacity, 0);
     expect(source.config.copyWith(opacity: 2).opacity, 1);
+    semantics.dispose();
   });
 
   testWidgets('analysis overlay type segments toggle activation', (

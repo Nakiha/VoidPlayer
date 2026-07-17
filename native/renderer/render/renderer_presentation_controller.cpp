@@ -7,6 +7,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <memory>
+#include <thread>
 #include <utility>
 
 namespace vr {
@@ -47,12 +48,6 @@ bool RendererPresentationController::has_backend() const {
 
 PresentationBackendKind RendererPresentationController::backend_kind() const {
     return backend_ ? backend_->kind() : PresentationBackendKind::Unknown;
-}
-
-bool RendererPresentationController::uses_macos_native_compositor_scheduling() const {
-    const PresentationBackendKind kind = backend_kind();
-    return kind == PresentationBackendKind::Metal ||
-           kind == PresentationBackendKind::WgpuMetal;
 }
 
 void RendererPresentationController::set_backend(std::unique_ptr<PresentationBackend> backend) {
@@ -162,17 +157,17 @@ void RendererPresentationController::move_track(size_t from, size_t to) {
     }
 }
 
-bool RendererPresentationController::update_headless_output(
+bool RendererPresentationController::update_offscreen_target(
     void* output,
     int width,
     int height,
     int max_track_slots) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     return backend_ &&
-           backend_->update_headless_output(output, width, height, max_track_slots);
+           backend_->update_offscreen_target(output, width, height, max_track_slots);
 }
 
-bool RendererPresentationController::update_headless_output_ring(
+bool RendererPresentationController::update_offscreen_target_ring(
     const void* const* pixel_buffers,
     size_t pixel_buffer_count,
     void* displayed_pixel_buffer,
@@ -182,7 +177,7 @@ bool RendererPresentationController::update_headless_output_ring(
     int max_track_slots) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     return backend_ &&
-           backend_->update_headless_output_ring(pixel_buffers,
+           backend_->update_offscreen_target_ring(pixel_buffers,
                                                  pixel_buffer_count,
                                                  displayed_pixel_buffer,
                                                  protected_pixel_buffer,
@@ -191,32 +186,34 @@ bool RendererPresentationController::update_headless_output_ring(
                                                  max_track_slots);
 }
 
-void RendererPresentationController::mark_headless_output_displayed(
+void RendererPresentationController::mark_offscreen_target_displayed(
     void* pixel_buffer) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     if (backend_) {
-        backend_->mark_headless_output_displayed(pixel_buffer);
+        backend_->mark_offscreen_target_displayed(pixel_buffer);
     }
 }
 
-void RendererPresentationController::protect_headless_output(void* pixel_buffer) {
+void RendererPresentationController::protect_offscreen_target(void* pixel_buffer) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     if (backend_) {
-        backend_->protect_headless_output(pixel_buffer);
+        backend_->protect_offscreen_target(pixel_buffer);
     }
 }
 
-void RendererPresentationController::release_headless_output(void* pixel_buffer) {
+void RendererPresentationController::release_offscreen_target(void* pixel_buffer) {
+    pending_offscreen_target_releases_.fetch_add(1, std::memory_order_acq_rel);
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     if (backend_) {
-        backend_->release_headless_output(pixel_buffer);
+        backend_->release_offscreen_target(pixel_buffer);
     }
+    pending_offscreen_target_releases_.fetch_sub(1, std::memory_order_acq_rel);
 }
 
-void RendererPresentationController::clear_headless_output() {
+void RendererPresentationController::clear_offscreen_target() {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     if (backend_) {
-        backend_->clear_headless_output();
+        backend_->clear_offscreen_target();
     }
 }
 
@@ -237,7 +234,7 @@ void RendererPresentationController::wait_gpu_idle(
     metrics.render_wait_count.fetch_add(1, std::memory_order_relaxed);
 }
 
-bool RendererPresentationController::draw_renderer_managed_headless_and_publish(
+bool RendererPresentationController::draw_renderer_managed_offscreen_and_publish(
     const RendererDrawSnapshot& snapshot,
     const char* source,
     PresentationMetricsStore& metrics,
@@ -248,7 +245,7 @@ bool RendererPresentationController::draw_renderer_managed_headless_and_publish(
     if (should_abort && should_abort()) {
         return false;
     }
-    if (!backend_ || !backend_->begin_renderer_managed_headless_frame()) {
+    if (!backend_ || !backend_->begin_renderer_managed_offscreen_frame()) {
         return false;
     }
     if (!draw_frame(snapshot, source, metrics, std::move(overlay_hooks))) {
@@ -256,7 +253,7 @@ bool RendererPresentationController::draw_renderer_managed_headless_and_publish(
     }
     const auto publish_start = std::chrono::steady_clock::now();
     auto published_callback =
-        backend_->publish_renderer_managed_headless_frame(source);
+        backend_->publish_renderer_managed_offscreen_frame(source);
     callback = published_callback
         ? RendererFrameCallback(
               [published_callback = std::move(published_callback)](
@@ -302,25 +299,29 @@ RendererPresentationDrawResult RendererPresentationController::execute_draw(
     RendererPresentationDrawRequest request) {
     RendererPresentationDrawResult result;
     const auto backend_start = std::chrono::steady_clock::now();
+    // Completed-target releases are tiny but latency-sensitive. Once a host
+    // callback is waiting to return a ring slot, do not let a continuous stream
+    // of 120Hz interaction/source draws repeatedly win the backend mutex.
+    while (pending_offscreen_target_releases_.load(
+               std::memory_order_acquire) > 0) {
+        std::this_thread::yield();
+    }
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-    const uint64_t source_cache_publish_count_before =
-        backend_ ? backend_->diagnostics().source_cache_presented_anchor_publish_count
-                 : 0;
     const bool async_backend =
         backend_ && backend_->completes_draw_asynchronously();
     auto async_completion =
         async_backend ? std::move(request.async_completion)
                       : PresentationBackendAsyncDrawCompleted();
 
-    if (request.headless) {
-        if (backend_ && backend_->renderer_manages_headless_publish() &&
-            request.should_abort_headless_publish) {
-            result.drew = draw_renderer_managed_headless_and_publish(
+    if (request.offscreen) {
+        if (backend_ && backend_->renderer_manages_offscreen_publish() &&
+            request.should_abort_offscreen_publish) {
+            result.drew = draw_renderer_managed_offscreen_and_publish(
                 request.snapshot,
                 request.source,
                 request.metrics,
                 std::move(request.overlay_hooks),
-                request.should_abort_headless_publish,
+                request.should_abort_offscreen_publish,
                 result.frame_callback);
         } else {
             result.drew = draw_frame(request.snapshot,
@@ -374,17 +375,10 @@ RendererPresentationDrawResult RendererPresentationController::execute_draw(
     }
     if (backend_) {
         if (result.drew && !result.async_draw_submitted) {
+            result.backend_blocking_wait_us =
+                backend_->last_draw_blocking_wait_us();
             result.frame_info_available =
                 backend_->copy_last_frame_info(&result.frame_info);
-        }
-        const auto diagnostics = backend_->diagnostics();
-        if (diagnostics.source_cache_presented_anchor_publish_count >
-            source_cache_publish_count_before) {
-            result.source_cache_published = true;
-            result.source_cache_ring_generation =
-                diagnostics.source_cache_presented_anchor_generation;
-            result.source_cache_frame_generation =
-                diagnostics.source_cache_presented_anchor_frame_generation;
         }
     }
     result.backend_us = presentation_elapsed_us_since(backend_start);
@@ -399,7 +393,7 @@ RendererPresentationSubmitResult RendererPresentationController::submit_draw(
 
     RendererPresentationDrawRequest draw_request(request.snapshot, request.metrics);
     draw_request.source = request.source;
-    draw_request.headless = request.headless;
+    draw_request.offscreen = request.offscreen;
     draw_request.publish_swap_chain_after_sync_draw =
         request.publish_swap_chain_after_sync_draw;
     draw_request.wait_idle_after_sync_draw_label =
@@ -407,8 +401,8 @@ RendererPresentationSubmitResult RendererPresentationController::submit_draw(
     draw_request.poll_device_removed_label = request.poll_device_removed_label;
     draw_request.check_device_lost_after_draw = request.check_device_lost_after_draw;
     draw_request.overlay_hooks = std::move(request.overlay_hooks);
-    draw_request.should_abort_headless_publish =
-        std::move(request.should_abort_headless_publish);
+    draw_request.should_abort_offscreen_publish =
+        std::move(request.should_abort_offscreen_publish);
     if (request.async_completed) {
         auto callbacks = result.callbacks;
         auto async_completed = std::move(request.async_completed);
@@ -532,43 +526,43 @@ bool RendererPresentationController::capture_backend_front_buffer_region(
     return false;
 }
 
-RendererPresentationD3DMemorySnapshot
-RendererPresentationController::d3d_memory_snapshot() const {
+RendererPresentationMemorySnapshot
+RendererPresentationController::memory_snapshot() const {
     return {};
 }
 
-bool RendererPresentationController::resize_renderer_managed_headless_output(
+bool RendererPresentationController::resize_renderer_managed_offscreen_target(
     int width,
     int height,
     PresentationMetricsStore& metrics) {
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
     if (!backend_ ||
-        !backend_->resize_renderer_managed_headless_output(width, height)) {
+        !backend_->resize_renderer_managed_offscreen_target(width, height)) {
         return false;
     }
-    metrics.note_shared_texture_resize();
+    metrics.note_presentation_target_resize();
     return true;
 }
 
-bool RendererPresentationController::prewarm_renderer_managed_headless_output(
+bool RendererPresentationController::prewarm_renderer_managed_offscreen_target(
     int width,
     int height) {
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
     return backend_ &&
-           backend_->prewarm_renderer_managed_headless_output(width, height);
+           backend_->prewarm_renderer_managed_offscreen_target(width, height);
 }
 
-void RendererPresentationController::cleanup_renderer_managed_headless_pending_buffers() {
+void RendererPresentationController::cleanup_renderer_managed_offscreen_pending_buffers() {
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
     if (backend_) {
-        backend_->cleanup_renderer_managed_headless_pending_buffers();
+        backend_->cleanup_renderer_managed_offscreen_pending_buffers();
     }
 }
 
-bool RendererPresentationController::set_renderer_managed_headless_frame_callback(
+bool RendererPresentationController::set_renderer_managed_offscreen_frame_callback(
     RendererFrameCallback callback) {
     if (!backend_ ||
-        !backend_->set_renderer_managed_headless_frame_callback(
+        !backend_->set_renderer_managed_offscreen_frame_callback(
             [callback = std::move(callback)]() {
                 if (callback) {
                     callback(nullptr);
@@ -580,136 +574,7 @@ bool RendererPresentationController::set_renderer_managed_headless_frame_callbac
     return true;
 }
 
-#ifdef _WIN32
-bool RendererPresentationController::acquire_d3d_shared_texture(
-    SharedTextureSnapshot& snapshot,
-    PresentationMetricsStore& metrics) const {
-    snapshot = {};
-    metrics.note_texture_sharing_failure();
-    return false;
-}
-
-void RendererPresentationController::release_d3d_shared_texture(
-    int buffer_index,
-    uint64_t buffer_generation) const {
-    (void)buffer_index;
-    (void)buffer_generation;
-}
-
-bool RendererPresentationController::acquire_d3d_shared_fp16_texture(
-    SharedFp16TextureSnapshot& snapshot) const {
-    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    return backend_ && backend_->acquire_shared_fp16_texture(snapshot);
-}
-
-void RendererPresentationController::release_d3d_shared_fp16_texture(
-    int buffer_index, uint64_t ring_generation) const {
-    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (backend_) {
-        backend_->release_shared_fp16_texture(
-            buffer_index, ring_generation);
-    }
-}
-
-void RendererPresentationController::set_d3d_shared_fp16_frame_callback(
-    std::function<void()> callback) {
-    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (backend_) {
-        backend_->set_shared_fp16_frame_callback(std::move(callback));
-    }
-}
-
-bool RendererPresentationController::update_external_flutter_surface(
-    const PresentationExternalD3D12Surface& surface) {
-    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    return backend_ && backend_->update_external_flutter_surface(surface);
-}
-
-void RendererPresentationController::clear_external_flutter_surface() {
-    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (backend_) {
-        backend_->clear_external_flutter_surface();
-    }
-}
-
-bool RendererPresentationController::draw_frame_to_external_d3d12_target(
-    const RendererDrawSnapshot& snapshot,
-    const char* source,
-    PresentationMetricsStore& metrics,
-    const PresentationExternalD3D12RenderTarget& target,
-    RendererPresentationOverlayHooks overlay_hooks) {
-    if (!backend_) {
-        return false;
-    }
-    PresentationBackendDrawHooks hooks;
-    hooks.draw_source = source;
-    hooks.wait_gpu_idle = [this, &metrics](const char* label) {
-        wait_gpu_idle(label, metrics);
-    };
-    hooks.record_frame_copy_us = [&metrics](uint64_t elapsed_us) {
-        metrics.frame_copy_us.fetch_add(elapsed_us, std::memory_order_relaxed);
-        metrics.frame_copy_count.fetch_add(1, std::memory_order_relaxed);
-    };
-    hooks.draw_overlay = std::move(overlay_hooks.draw_overlay);
-    hooks.composite_bgra_overlay =
-        std::move(overlay_hooks.composite_bgra_overlay);
-    hooks.build_overlay_primitives =
-        std::move(overlay_hooks.build_overlay_primitives);
-    return backend_->draw_frame_to_external_d3d12_target(
-        snapshot, hooks, target);
-}
-
-bool RendererPresentationController::configure_source_cache(
-    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
-    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    return backend_ && backend_->configure_source_cache(descriptors);
-}
-
-void RendererPresentationController::clear_source_cache(
-    const char* reason) {
-    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (backend_) {
-        backend_->clear_source_cache(reason);
-    }
-}
-
-bool RendererPresentationController::update_source_projection(
-    const WindowsSourceProjection& projection) {
-    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    return backend_ && backend_->update_source_projection(projection);
-}
-
-void RendererPresentationController::clear_source_projection() {
-    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (backend_) {
-        backend_->clear_source_projection();
-    }
-}
-
-bool RendererPresentationController::acquire_source_cache_bundle(
-    SharedSourceCacheBundleSnapshot& snapshot) const {
-    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    return backend_ && backend_->acquire_source_cache_bundle(snapshot);
-}
-
-void RendererPresentationController::release_source_cache_bundle(
-    int buffer_index, uint64_t ring_generation) const {
-    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (backend_) {
-        backend_->release_source_cache_bundle(
-            buffer_index, ring_generation);
-    }
-}
-
-void RendererPresentationController::set_source_cache_frame_callback(
-    std::function<void()> callback) {
-    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (backend_) {
-        backend_->set_source_cache_frame_callback(std::move(callback));
-    }
-}
-
-bool RendererPresentationController::recover_d3d_device_loss(
+bool RendererPresentationController::recover_device_loss(
     const char* reason,
     long removed_reason) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
@@ -717,7 +582,5 @@ bool RendererPresentationController::recover_d3d_device_loss(
     (void)removed_reason;
     return false;
 }
-
-#endif
 
 } // namespace vr

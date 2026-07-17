@@ -1,23 +1,23 @@
 # macOS Readiness
 
 VoidPlayer macOS support must converge on the existing native player pipeline. The macOS runner owns
-Cocoa windows, sandbox file access, platform-channel glue, Flutter texture registration, and
-`CVPixelBuffer` lifecycle only. Playback policy belongs in shared native code.
+Cocoa windows, sandbox file access, platform-channel glue, native target-ring lifetime, Flutter
+surface export consumption, and final composition. Playback policy belongs in shared native code.
 
 ## Current State
 
 - macOS native playback is feature-complete enough to treat the port as a stabilization effort:
-  shared scheduling, renderer-owned Metal presentation, VideoToolbox zero-copy, software fallback,
+  shared scheduling, native Metal presentation, VideoToolbox zero-copy, software fallback,
   refresh completion, and per-track diagnostics are all on the normal route.
 - Flutter macOS launches through explicit capability gates.
 - Local-file playback uses shared demux/decode queues and the shared `RenderSink`.
 - Audio uses the shared native audio engine with the miniaudio/CoreAudio output path.
 - FFmpeg dylibs are bundled and staged for macOS builds.
 - VideoToolbox initializes through the shared hardware decode provider. H.264/H.265 hardware frames
-  can stay in CVPixelBuffer/IOSurface storage for renderer-owned Metal presentation; unsupported
+  can stay in CVPixelBuffer/IOSurface storage for native Metal presentation; unsupported
   codecs and formats fall back through the named software path.
-- Metal is the normal native presentation target for macOS playback. Swift installs the texture
-  target, owns `CVPixelBuffer` lifecycle, and forwards successful frame notifications to Flutter;
+- Metal is the normal native presentation target for macOS playback. Swift installs the offscreen
+  target ring, owns `CVPixelBuffer` lifetime, and forwards successful publications to the runner;
   playback timing, seek/step/loop, layout, track lifecycle, refresh completion, and failure state live
   in shared native code. Upload failures stay visible in diagnostics instead of silently switching to
   a Swift-side copy path. CVPixelBuffer hardware-frame uploads are distinguished from staged YUV
@@ -60,7 +60,7 @@ converted into a platform texture; it does not decide playback time.
 
 ## Stabilization Scope
 
-- Keep renderer-owned Metal presentation and VideoToolbox/software fallback diagnostics truthful.
+- Keep native Metal presentation and VideoToolbox/software fallback diagnostics truthful.
 - Add deterministic Metal shader/layout/color parity coverage before raising performance thresholds.
 - Preserve Windows behavior after shared backend boundary changes.
 - Keep architecture docs and tests written as current backend contracts.
@@ -90,9 +90,8 @@ for the current backend contracts.
 | Portable native code | `python dev.py test --native-only` |
 | macOS runner or texture path | `flutter build macos --debug` plus targeted `python dev.py mac-ui-test ...` |
 | Shared renderer scheduling | macOS native tests plus Windows native/UI preservation checks |
-| macOS wgpu/color/layout behavior | native parity tests plus targeted macOS UI capture smokes |
+| macOS native/color/layout behavior | native parity tests plus targeted macOS UI capture smokes |
 | macOS HDR Auto policy | `python dev.py gate macos-ui-smoke` for SDR policy plus `python dev.py gate macos-hdr-edr-smoke` on an EDR-capable display |
-| default wgpu-metal backend | `python dev.py gate macos-wgpu-metal-smoke` plus `python dev.py gate macos-wgpu-metal-edr-smoke` on an EDR-capable display |
 | Packaging | `python dev.py gate macos-release-readiness` |
 
 Representative local macOS smoke set:
@@ -107,11 +106,4 @@ Current stabilization gate:
 python3.12 dev.py gate pr-fast
 python3.12 dev.py gate macos-ui-smoke
 python3.12 dev.py gate macos-hdr-edr-smoke
-```
-
-wgpu-metal default backend evidence:
-
-```bash
-python3.12 dev.py gate macos-wgpu-metal-smoke
-python3.12 dev.py gate macos-wgpu-metal-edr-smoke
 ```

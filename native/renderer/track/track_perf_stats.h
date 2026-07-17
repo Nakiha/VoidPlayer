@@ -66,6 +66,7 @@ struct TrackPerfStats {
     double decode_stage_flush_max_ms = 0.0;
     size_t buffer_count = 0;
     size_t buffer_capacity = 0;
+    size_t buffer_preroll_target = 0;
     TrackState buffer_state = TrackState::Empty;
     int64_t current_pts_us = 0;
     int64_t current_dts_us = kNoTimestampUs;

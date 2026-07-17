@@ -34,6 +34,7 @@ class MainWindowAnalysisCoordinator {
   Timer? _overlayPlaybackPrefetchTimer;
   late final Listenable? _analysisGenerationListenable;
   late int _observedOverlayPresentationRevision;
+  int _latestSeekOverlayRequestId = 0;
 
   MainWindowAnalysisCoordinator({
     required this.trackManager,
@@ -113,17 +114,25 @@ class MainWindowAnalysisCoordinator {
     return _enqueueOperation(_refreshOverlayForCurrentFrameImpl);
   }
 
+  void beginSeekOverlayRefresh(int requestId) {
+    if (_disposed) return;
+    _latestSeekOverlayRequestId = requestId;
+  }
+
   Future<void> refreshOverlayForPresentedFrame({
+    required int requestId,
     required int trackFileId,
     required int ptsUs,
     required int dtsUs,
   }) {
     if (!analysisOverlaysEnabled) return Future.value();
+    if (requestId != _latestSeekOverlayRequestId) return Future.value();
     return _enqueueOperation(
       () => _refreshOverlayForCurrentFrameImpl(
         presentedFrameOverrides: {
           trackFileId: PresentedFrameTiming(ptsUs: ptsUs, dtsUs: dtsUs),
         },
+        isCurrent: () => requestId == _latestSeekOverlayRequestId,
       ),
     );
   }
@@ -344,7 +353,9 @@ class MainWindowAnalysisCoordinator {
   Future<void> _refreshOverlayForCurrentFrameImpl({
     Map<int, PresentedFrameTiming>? presentedFrameOverrides,
     bool notifyOnSuccess = true,
+    bool Function()? isCurrent,
   }) async {
+    if (isCurrent != null && !isCurrent()) return;
     final activeFileIds = analysisGeneration.activeOverlayTrackFileIds;
     if (activeFileIds.isEmpty) return;
 
@@ -353,13 +364,13 @@ class MainWindowAnalysisCoordinator {
       if (!activeFileIds.contains(entry.fileId)) continue;
       var hash = _hashesByFileId[entry.fileId];
       hash ??= await analysisGeneration.ensureGenerated(entry.path);
-      if (_disposed) return;
+      if (_disposed || (isCurrent != null && !isCurrent())) return;
       if (hash == null) continue;
       _hashesByFileId[entry.fileId] = hash;
       final presentedFrame =
           presentedFrameOverrides?[entry.fileId] ??
           await _presentedFrameForTrack(entry);
-      if (_disposed) return;
+      if (_disposed || (isCurrent != null && !isCurrent())) return;
       sources.add(
         AnalysisOverlayTrackSource(
           hash: hash,
@@ -379,9 +390,13 @@ class MainWindowAnalysisCoordinator {
       );
     }
 
-    if (_disposed || sources.isEmpty) return;
+    if (_disposed || sources.isEmpty || (isCurrent != null && !isCurrent())) {
+      return;
+    }
     final refreshed = await analysisGeneration.activateOverlayTracks(sources);
-    if (_disposed || !refreshed) return;
+    if (_disposed || !refreshed || (isCurrent != null && !isCurrent())) {
+      return;
+    }
     if (notifyOnSuccess) {
       _notifyOverlayStateChanged();
     }

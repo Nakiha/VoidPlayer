@@ -9,8 +9,8 @@
 
 namespace vr {
 
-struct EmptyBufferEofClamp {
-    bool all_active_buffers_empty = true;
+struct PlaybackEofBoundary {
+    bool all_active_tracks_bounded = true;
     int64_t max_end_pts_us = 0;
 };
 
@@ -82,7 +82,7 @@ void apply_present_carry_forward(
     const PresentDecision& last_decision,
     PresentDecision& decision);
 
-EmptyBufferEofClamp compute_empty_buffer_eof_clamp(
+PlaybackEofBoundary compute_playback_eof_boundary(
     const TrackPipelineManager& tracks,
     const PresentDecision& last_decision);
 

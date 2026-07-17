@@ -51,14 +51,21 @@ extension MainWindowComposition on MainWindowController {
           layoutCoordinator.onNativeCompositorAvailabilityChanged(
             active: active,
           ),
+      onSeekStarted: ({required requestId}) =>
+          analysisCoordinator.beginSeekOverlayRefresh(requestId),
       onSeekSettled: (_) => analysisCoordinator.refreshOverlayForCurrentFrame(),
       onSeekPreviewPresented:
-          ({required trackFileId, required ptsUs, required dtsUs}) =>
-              analysisCoordinator.refreshOverlayForPresentedFrame(
-                trackFileId: trackFileId,
-                ptsUs: ptsUs,
-                dtsUs: dtsUs,
-              ),
+          ({
+            required requestId,
+            required trackFileId,
+            required ptsUs,
+            required dtsUs,
+          }) => analysisCoordinator.refreshOverlayForPresentedFrame(
+            requestId: requestId,
+            trackFileId: trackFileId,
+            ptsUs: ptsUs,
+            dtsUs: dtsUs,
+          ),
     );
     quickMarkCoordinator = MainWindowQuickMarkCoordinator(
       player: player,
@@ -193,7 +200,7 @@ extension MainWindowComposition on MainWindowController {
             );
           },
           dartViewportDiagnostics: () =>
-              ViewportProjectionDiagnostics.instance.snapshot(),
+              ViewportInteractionDiagnostics.instance.snapshot(),
           actionRegistry: actionRegistry,
         ),
       ).run();

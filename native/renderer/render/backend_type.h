@@ -5,16 +5,16 @@ namespace vr {
 enum class RenderBackendKind {
     Unknown = 0,
     Metal,
-    WgpuMetal,
-    WgpuD3D12,
+    NativeD3D11,
+    NativeD3D12,
     Vulkan,
 };
 
 inline constexpr RenderBackendKind default_render_backend_kind() {
 #ifdef _WIN32
-    return RenderBackendKind::WgpuD3D12;
+    return RenderBackendKind::NativeD3D11;
 #elif defined(__APPLE__)
-    return RenderBackendKind::WgpuMetal;
+    return RenderBackendKind::Metal;
 #else
     return RenderBackendKind::Unknown;
 #endif
@@ -26,10 +26,10 @@ inline const char* render_backend_kind_name(RenderBackendKind kind) {
         return "unknown";
     case RenderBackendKind::Metal:
         return "metal";
-    case RenderBackendKind::WgpuMetal:
-        return "wgpu-metal";
-    case RenderBackendKind::WgpuD3D12:
-        return "wgpu-d3d12";
+    case RenderBackendKind::NativeD3D11:
+        return "native-d3d11";
+    case RenderBackendKind::NativeD3D12:
+        return "native-d3d12";
     case RenderBackendKind::Vulkan:
         return "vulkan";
     }

@@ -15,8 +15,6 @@ PerformanceHealthSnapshot _health({
   double displayRefreshHz = 120,
   double displayTickHz = 120,
   double nativeCompositorCompositeHz = 0,
-  double nativeCompositorSourceCacheHz = 0,
-  double nativeCompositorSourceProjectionHz = 0,
   double drawP95Us = 1800,
   double metalP95Us = 1800,
   String presentationBackend = 'unknown',
@@ -35,8 +33,6 @@ PerformanceHealthSnapshot _health({
     layoutDrawHz: 0,
     layoutIntentHz: 0,
     nativeCompositorCompositeHz: nativeCompositorCompositeHz,
-    nativeCompositorSourceCacheHz: nativeCompositorSourceCacheHz,
-    nativeCompositorSourceProjectionHz: nativeCompositorSourceProjectionHz,
     drawP95Us: drawP95Us,
     backendP95Us: 0,
     metalP95Us: metalP95Us,
@@ -60,7 +56,14 @@ PerformanceHealthSnapshot _health({
 }
 
 void main() {
-  test('native diagnostics stats source maps macOS per-track stats', () async {
+  test('platform stats source uses the shared native diagnostics channel', () {
+    expect(
+      StatsDataSource.forCurrentPlatform(),
+      isA<NativeDiagnosticsStatsDataSource>(),
+    );
+  });
+
+  test('native diagnostics stats source maps per-track stats', () async {
     final source = NativeDiagnosticsStatsDataSource(
       _FakeNativePlayerApi({
         'processRssBytes': 8192,
@@ -75,6 +78,7 @@ void main() {
             'decodeMaxMs': 7.25,
             'bufferCount': 3,
             'bufferCapacity': 8,
+            'bufferPrerollTarget': 4,
             'bufferState': 2,
             'cpuFrameMemoryBytes': 1024,
             'packetQueueMemoryBytes': 512,
@@ -97,6 +101,7 @@ void main() {
     expect(snapshot.tracks.single.fps, closeTo(59.8, 0.001));
     expect(snapshot.tracks.single.bufferCount, 3);
     expect(snapshot.tracks.single.bufferCapacity, 8);
+    expect(snapshot.tracks.single.bufferPrerollTarget, 4);
     expect(snapshot.tracks.single.cpuFrameMemoryBytes, 1024);
     expect(snapshot.tracks.single.packetQueueMemoryBytes, 512);
     expect(snapshot.tracks.single.currentPtsUs, 123000);
@@ -175,7 +180,7 @@ void main() {
 
       expect(find.byType(SingleChildScrollView), findsNothing);
       expect(find.text('RSS'), findsOneWidget);
-      expect(find.text('私有'), findsOneWidget);
+      expect(find.text('私有提交'), findsOneWidget);
       expect(find.text('GPU帧'), findsOneWidget);
       expect(find.text('CPU帧'), findsOneWidget);
       expect(find.text('包队列'), findsOneWidget);
@@ -235,7 +240,7 @@ void main() {
     expect(find.textContaining('display-link'), findsNothing);
   });
 
-  testWidgets('health summary labels wgpu backend latency', (tester) async {
+  testWidgets('health summary labels native backend latency', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         locale: const Locale('zh'),
@@ -250,7 +255,7 @@ void main() {
           width: 560,
           child: StatsHealthSummarySection(
             health: _health(
-              presentationBackend: 'native-wgpu-metal-cvpixelbuffer-target',
+              presentationBackend: 'native-metal-source-provider',
               metalP95Us: 2400,
             ),
           ),
@@ -258,8 +263,7 @@ void main() {
       ),
     );
 
-    expect(find.textContaining('WGPU p95 2.4ms'), findsOneWidget);
-    expect(find.textContaining('Metal p95'), findsNothing);
+    expect(find.textContaining('Metal p95 2.4ms'), findsOneWidget);
   });
 
   testWidgets('health summary keeps a stable height across metric counts', (
@@ -291,8 +295,6 @@ void main() {
       build(
         _health(
           nativeCompositorCompositeHz: 108,
-          nativeCompositorSourceCacheHz: 60,
-          nativeCompositorSourceProjectionHz: 120,
           metalBufferExhaustionCount: 92,
           playing: true,
           largeGapCount: 2,

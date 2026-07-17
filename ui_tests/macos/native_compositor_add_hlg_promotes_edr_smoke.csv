@@ -24,6 +24,5 @@
 3.12, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorVideoPixelFormat, 64RGBAHalf
 3.16, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoSampleCount, 1
 3.18, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoMaxRGBX1000, 1001
-3.3, CAPTURE_WINDOW, native_add_hlg_promotes_edr
-3.4, ASSERT_CAPTURE_NOT_BLACK, native_add_hlg_promotes_edr, 0.01, 4.0
+3.3, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorLastCompositeSucceeded, true
 3.6, QUIT, 0

@@ -360,6 +360,22 @@ ScriptInstruction? _parseInstruction(
           button: args.length >= 5 ? args[4] : 'secondary',
         ),
       );
+    case 'DRAG_VIEWPORT_WIN32_MESSAGE':
+      if (args.length < 2) {
+        log.warning(
+          'DRAG_VIEWPORT_WIN32_MESSAGE needs dx and dy arguments: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        DragViewportWin32Message(
+          double.parse(args[0]),
+          double.parse(args[1]),
+          steps: args.length >= 3 ? int.parse(args[2]) : 24,
+          stepMs: args.length >= 4 ? int.parse(args[3]) : 16,
+        ),
+      );
     case 'DRAG_SPLIT_HANDLE_NATIVE':
       if (args.isEmpty) {
         log.warning('DRAG_SPLIT_HANDLE_NATIVE needs target fraction: $rawLine');
@@ -530,7 +546,6 @@ ScriptInstruction? _parseInstruction(
         const DebugFlutterSurfaceInfoAction(),
       );
     case 'DEBUG_NATIVE_COMPOSITOR':
-    case 'DEBUG_NATIVE_COMPOSITOR_SPIKE':
       return ScriptAutomationAction(time, const DebugNativeCompositorAction());
     case 'DEBUG_FAIL_NATIVE_COMPOSITOR':
       return ScriptAutomationAction(
@@ -539,22 +554,6 @@ ScriptInstruction? _parseInstruction(
           reason: args.isEmpty || args[0].isEmpty
               ? 'ui-test-forced-failure'
               : args[0],
-        ),
-      );
-    case 'DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS':
-      if (args.isEmpty || args[0].isEmpty) {
-        log.warning(
-          'DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS needs a target: $rawLine',
-        );
-        return null;
-      }
-      return ScriptAutomationAction(
-        time,
-        DebugSimulateWindowsDeviceLossAction(
-          target: args[0],
-          reason: args.length < 2 || args[1].isEmpty
-              ? 'debug-simulated-device-loss'
-              : args[1],
         ),
       );
     case 'RESET_NATIVE_PERF_COUNTERS':
@@ -662,6 +661,12 @@ ScriptInstruction? _parseInstruction(
           stepMs: args.length >= 2 ? int.parse(args[1]) : 8,
         ),
       );
+    case 'ASSERT_WINDOWS_AXTREE':
+      if (args.isEmpty) {
+        log.warning('ASSERT_WINDOWS_AXTREE needs required names: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(time, AssertWindowsAxTree(List.of(args)));
     case 'CLICK_MEDIA_HEADER_OVERLAY_BUTTON_NATIVE':
       return ScriptAutomationAction(
         time,
@@ -672,6 +677,27 @@ ScriptInstruction? _parseInstruction(
         time,
         const ClickMediaHeaderOverlayButton(),
       );
+    case 'INVOKE_WINDOWS_AX_ACTION':
+      if (args.isEmpty) {
+        log.warning('INVOKE_WINDOWS_AX_ACTION needs action name: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        InvokeWindowsAxAction(args[0].trim()),
+      );
+    case 'PRESS_KEY_NATIVE':
+      if (args.isEmpty) {
+        log.warning('PRESS_KEY_NATIVE needs key name: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(time, PressKeyNative(args[0].trim()));
+    case 'PRESS_KEY_WIN32_MESSAGE':
+      if (args.isEmpty) {
+        log.warning('PRESS_KEY_WIN32_MESSAGE needs key name: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(time, PressKeyWin32Message(args[0].trim()));
     case 'CLICK_MEDIA_HEADER_REMOVE_BUTTON':
       if (args.isEmpty) {
         log.warning(

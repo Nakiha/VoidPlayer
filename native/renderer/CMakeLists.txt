@@ -16,6 +16,8 @@ target_link_libraries(video_renderer_core PUBLIC
     ${AVUTIL_LIBRARY}
     ${SWRESAMPLE_LIBRARY}
 )
+target_compile_definitions(video_renderer_core PUBLIC
+    VOID_BUILD_ANALYSIS=$<BOOL:${BUILD_ANALYSIS}>)
 
 add_library(video_renderer_lib STATIC
     ${VOID_RENDERER_WINDOWS_SOURCES}
@@ -38,18 +40,14 @@ target_link_libraries(video_renderer_lib PUBLIC
     ${AVFORMAT_LIBRARY}
     ${AVUTIL_LIBRARY}
     ${SWRESAMPLE_LIBRARY}
+    d3d11
+    d3dcompiler
     dxgi
-    d3d12
-    dcomp
     winmm
 )
-include("${CMAKE_CURRENT_LIST_DIR}/../cmake/WgpuRustTarget.cmake")
-void_link_wgpu_rust_ffi(video_renderer_lib)
 if(BUILD_ANALYSIS)
     target_link_libraries(video_renderer_lib PUBLIC analysis_lib)
 endif()
 
 target_compile_definitions(video_renderer_lib PUBLIC
     VOID_BUILD_ANALYSIS=$<BOOL:${BUILD_ANALYSIS}>)
-
-void_configure_renderer_shaders("${CMAKE_CURRENT_BINARY_DIR}")

@@ -1,44 +1,19 @@
 #include "renderer/renderer_internal.h"
 
+#include <atomic>
+
 namespace vr {
 
-void Renderer::Impl::apply_layout_locked(const LayoutState& state, uint64_t revision) {
+void Renderer::Impl::apply_layout_locked(const LayoutState& state,
+                                         uint64_t revision,
+                                         bool schedule_preview) {
     layout_state_.apply_current(
         state, revision, [this](int file_id) {
             return track_controller_.find_slot_by_file_id(file_id);
         });
-    loop_driver_.force_preview_redraw();
-}
-
-bool Renderer::Impl::should_present_frame_consume_pending_layout() const {
-    if (!timeline_.playing() ||
-        timeline_.playback().clock().is_paused()) {
-        return true;
+    if (schedule_preview) {
+        loop_driver_.force_preview_redraw();
     }
-    if (!presentation_.uses_macos_native_compositor_scheduling()) {
-        return true;
-    }
-    return false;
-}
-
-void Renderer::Impl::note_viewport_compositor_activity() {
-    const auto active_until =
-        steady_clock_us_now() +
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            kViewportCompositorActivityGrace)
-            .count();
-    layout_state_.note_viewport_compositor_activity(active_until);
-}
-
-void Renderer::Impl::set_viewport_compositor_active(bool active) {
-    layout_state_.set_viewport_compositor_active(active);
-}
-
-bool Renderer::Impl::should_suppress_playback_present_for_viewport_compositor() const {
-    if (!presentation_.uses_macos_native_compositor_scheduling()) {
-        return false;
-    }
-    return layout_state_.viewport_compositor_persistent_active();
 }
 
 bool Renderer::Impl::consume_pending_layout_locked() {
@@ -46,7 +21,7 @@ bool Renderer::Impl::consume_pending_layout_locked() {
         [this](int file_id) {
             return track_controller_.find_slot_by_file_id(file_id);
         });
-    if (consumed) {
+    if (consumed && !interaction_presentation_active()) {
         loop_driver_.force_preview_redraw();
     }
     return consumed;
@@ -57,6 +32,16 @@ void Renderer::Impl::clear_pending_layout_intent() {
 }
 
 void Renderer::Impl::apply_layout(const LayoutState& state) {
+    apply_layout_impl(state, true, "apply_layout");
+}
+
+void Renderer::Impl::apply_interaction_layout(const LayoutState& state) {
+    apply_layout_impl(state, false, "apply_interaction_layout");
+}
+
+void Renderer::Impl::apply_layout_impl(const LayoutState& state,
+                                       bool schedule_preview,
+                                       const char* trace_source) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (auto validation = validate_layout_state(state); !validation.ok) {
         spdlog::warn("[Renderer] ignoring invalid layout: {}", validation.message);
@@ -65,6 +50,10 @@ void Renderer::Impl::apply_layout(const LayoutState& state) {
 
     const uint64_t intent_revision =
         layout_state_.next_intent_revision();
+    static std::atomic<uint64_t> layout_log_count{0};
+    const auto log_count =
+        layout_log_count.fetch_add(1, std::memory_order_relaxed) + 1;
+    const bool log_layout = log_count <= 12 || log_count % 60 == 0;
     presentation_metrics_.note_layout_intent();
     const bool playing_now = timeline_.playing();
     const bool defer_to_playback = playing_now && !timeline_.playback().clock().is_paused();
@@ -72,11 +61,12 @@ void Renderer::Impl::apply_layout(const LayoutState& state) {
     if (defer_to_playback) {
         layout_state_.set_pending(state, intent_revision);
         presentation_metrics_.note_layout_deferred_to_playback();
-        if (should_log_viewport_trace_event(false)) {
+        if (log_layout || should_log_viewport_trace_event(false)) {
             spdlog::info(
-                "[ViewportTrace] native source=apply_layout layout_rev={} playing={} "
+                "[ViewportTrace] native source={} layout_rev={} playing={} "
                 "defer_to_playback={} mode={} zoom={:.4f} offset=({:.1f},{:.1f}) "
                 "split={:.4f} pixel_mode={}",
+                trace_source,
                 intent_revision,
                 playing_now,
                 defer_to_playback,
@@ -92,13 +82,14 @@ void Renderer::Impl::apply_layout(const LayoutState& state) {
 
     std::lock_guard<std::mutex> lock(state_mutex_);
     clear_pending_layout_intent();
-    apply_layout_locked(state, intent_revision);
-    if (should_log_viewport_trace_event(false)) {
+    apply_layout_locked(state, intent_revision, schedule_preview);
+    if (log_layout || should_log_viewport_trace_event(false)) {
         const auto layout = layout_state_.current_for_draw();
         spdlog::info(
-            "[ViewportTrace] native source=apply_layout layout_rev={} playing={} "
+            "[ViewportTrace] native source={} layout_rev={} playing={} "
             "defer_to_playback={} mode={} zoom={:.4f} offset=({:.1f},{:.1f}) "
             "split={:.4f} pixel_mode={}",
+            trace_source,
             layout_state_.current_revision(),
             playing_now,
             defer_to_playback,

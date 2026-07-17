@@ -39,8 +39,8 @@ inline const char* frame_storage_kind_name(FrameStorageKind kind) {
         return "cpu-nv12";
     case FrameStorageKind::CpuPlanarYuv:
         return "cpu-planar-yuv";
-    case FrameStorageKind::D3D12Texture:
-        return "d3d12-texture";
+    case FrameStorageKind::WindowsD3D11:
+        return "windows-d3d11";
     case FrameStorageKind::MacOSCVPixelBuffer:
         return "macos-cvpixelbuffer";
     case FrameStorageKind::Empty:

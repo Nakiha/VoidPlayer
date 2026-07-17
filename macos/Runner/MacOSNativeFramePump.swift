@@ -45,20 +45,9 @@ func macOSNativeFrameAvailable(_ userData: UnsafeMutableRawPointer?) {
 }
 
 final class MacOSNativeFramePump {
-  private enum Mode {
-    case stopped
-    case presentationTarget
-    case sourceProvider
-  }
-
   private var callbackRegistered = false
   private(set) var targetInstalled = false
-  private var mode: Mode = .stopped
   private var callbackContextUserData: UnsafeMutableRawPointer?
-
-  var sourceProviderActive: Bool {
-    mode == .sourceProvider && callbackRegistered
-  }
 
   func setTargetInstalled(_ installed: Bool) {
     targetInstalled = installed
@@ -66,17 +55,12 @@ final class MacOSNativeFramePump {
 
   func ensure(
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge?,
+    texture: MacOSNativeTargetRing?,
     maxTrackSlots: Int,
     userData: UnsafeMutableRawPointer,
-    presentationState: MacOSFramePresentationState,
-    requiresPresentationTarget: Bool = true
+    presentationState: MacOSFramePresentationState
   ) -> Bool {
-    if !requiresPresentationTarget, targetInstalled {
-      player.clearMetalPresentationTarget()
-      targetInstalled = false
-    }
-    if requiresPresentationTarget, !targetInstalled, let texture {
+    if !targetInstalled, let texture {
       targetInstalled = texture.installNativePresentationTarget(
         player,
         maxTrackSlots: maxTrackSlots
@@ -95,30 +79,24 @@ final class MacOSNativeFramePump {
       )
       callbackRegistered = true
     }
-    if !requiresPresentationTarget {
-      mode = .sourceProvider
-      return true
-    }
     guard targetInstalled else {
       presentationState.recordError()
-      NSLog("VoidPlayer macOS renderer-owned Metal presentation target unavailable")
+      NSLog("VoidPlayer macOS native Metal presentation target unavailable")
       return false
     }
-    mode = .presentationTarget
     return true
   }
 
   func start(
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge?,
+    texture: MacOSNativeTargetRing?,
     maxTrackSlots: Int,
     userData: UnsafeMutableRawPointer,
-    presentationState: MacOSFramePresentationState,
-    requiresPresentationTarget: Bool = true
+    presentationState: MacOSFramePresentationState
   ) -> Bool {
-    stop(player: player, clearPresentationTarget: !requiresPresentationTarget)
+    stop(player: player)
     presentationState.resetFrameCounters()
-    player.resetRendererOwnedPresentationStats()
+    player.resetNativeTargetPresentationStats()
     texture?.resetNativeUploadBaseline()
     targetInstalled = false
     if !ensure(
@@ -126,8 +104,7 @@ final class MacOSNativeFramePump {
       texture: texture,
       maxTrackSlots: maxTrackSlots,
       userData: userData,
-      presentationState: presentationState,
-      requiresPresentationTarget: requiresPresentationTarget
+      presentationState: presentationState
     ) {
       player.pause()
       stop(player: player)
@@ -164,6 +141,5 @@ final class MacOSNativeFramePump {
       player?.clearMetalPresentationTarget()
       targetInstalled = false
     }
-    mode = .stopped
   }
 }

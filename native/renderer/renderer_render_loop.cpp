@@ -20,7 +20,7 @@ void Renderer::Impl::do_resize(int width, int height) {
 
     spdlog::info("[Renderer] resize: {}x{} -> {}x{}", old_width, old_height, width, height);
 
-    if (!presentation_.resize_renderer_managed_headless_output(
+    if (!presentation_.resize_renderer_managed_offscreen_target(
             width, height, presentation_metrics_)) {
         return;
     }
@@ -44,7 +44,7 @@ void Renderer::Impl::do_resize(int width, int height) {
     bool drew = false;
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(presentation_.device_mutex());
-        drew = presentation_.draw_renderer_managed_headless_and_publish(
+        drew = presentation_.draw_renderer_managed_offscreen_and_publish(
             snapshot,
             "resize",
             presentation_metrics_,
@@ -116,6 +116,9 @@ void Renderer::Impl::render_loop() noexcept {
             },
             [this](bool force) {
                 emit_playback_clock_event(force);
+            },
+            [this]() {
+                return interaction_presentation_active();
             },
             [this](int64_t end_pts_us) {
                 return settle_eof_locked(end_pts_us);

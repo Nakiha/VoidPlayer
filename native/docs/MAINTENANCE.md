@@ -40,42 +40,12 @@ python dev.py test --native-only   # 全部 PASS
 
 测试文件位于 `native/tests/`，对应关系见 [构建与测试](BUILD_AND_TEST.md)。
 
-Windows presentation、shader output target 或颜色布局改动必须同时保持
-`windows_d3d11_color_layout_parity_smoke` 与
-`windows_d3d11_fp16_scrgb_smoke` 全绿，并运行 `windows-preservation`。
-DirectComposition、Flutter surface export 或共享 FP16 ring 改动还必须运行
-`video_renderer_tests [windows_dcomp]`，并使用锁定 Windows local engine
-执行 native-compositor UI smoke；surface export/frame-pump 改动还必须覆盖
-`native_compositor_flutter_surface_pump_scrgb.csv`。普通 Flutter SDK 的 fallback
-不算上屏证据。
-Windows source cache/projection、bundle lease、projection shader 或 compositor
-overlay 改动还必须运行 `[windows_source_cache]`、
-`[windows_source_projection]` 和 rebuilt source-projection UI smoke。D3D11
-DComp source shader 不是产品路径；source/video/overlay 合成证据应来自
-wgpu/D3D12 backend 与 UI smoke。
-Windows Auto policy、DXGI output refresh、SDR/scRGB swap-chain 切换或 white
-level 更新还必须运行默认 Auto SDR smoke、强制 scRGB smoke；具备 HDR 显示时
-再运行 `python dev.py gate windows-hdr-auto`。HDR target 失败必须先降级
-native SDR，不能直接跳过到 Flutter Texture。
-Windows cross-adapter transport、shared-fence sync、output-device migration、display calibration
-diagnostics 或 adapter fallback 改动还必须运行
-`video_renderer_tests [windows_cross_adapter]`；具备多 adapter / HDR output
-机器时补跑 `python dev.py gate windows-cross-adapter-local`。跨 adapter 只允许
-GPU-copy bridge 或明确诊断回落，不能引入 CPU readback 或私有 ICC/LUT 校色。
-shared-fence 只能在本地 A/B 证据证明不劣于 event-query 后再考虑默认启用。
-Windows device-loss recovery、D3D11/DComp 原地重建、source-cache 清理或
-debug recovery 注入改动还必须运行
-`video_renderer_tests [windows_device_recovery]`，并在 `windows-preservation`
-中覆盖默认 SDR、强制 scRGB 和 source-projection recovery UI smoke。真实 TDR
-或 device reset 证据是本地补充，不替代 debug injection gate。
-Windows high-refresh interaction、DComp present cadence、source projection
-pan/zoom/split/order 或 overlay compositor 热路径改动还必须运行
-`video_renderer_tests [windows_high_refresh]`、
-`video_renderer_tests [windows_overlay_layer]` 和
-`python dev.py gate windows-high-refresh-local`。低刷机器只提供功能证据；
-高刷机器必须检查 `windowsHotPathGateResult=pass`，并保留
-present/composite/input-to-present/drop-rate、source reuse、overlay reuse 和
-viewport redraw summary 证据。
+Windows native presentation 在本 restart 分支处于 reserved/fail-closed 状态。
+修改 Windows runner/native presentation 壳时，必须运行
+`python dev.py gate windows-rebuild-boundary`，确保 D3D11/DX12 backend 没有被
+半接回 active build/test path。后续恢复 Windows 时，需要为新的
+runner-composed sandwich backend 重新建立 D3D11/DX12 验证矩阵，而不是直接复活
+旧 DComp preservation profiles。
 
 ---
 
@@ -96,8 +66,7 @@ viewport redraw summary 证据。
 | 解码路径变更（软解/硬解） | [DECODE_PIPELINE.md](DECODE_PIPELINE.md) |
 | 像素格式 / 色彩转换 / HDR-SDR 边界变更 | [COLOR_PIPELINE.md](COLOR_PIPELINE.md) |
 | Seek 逻辑变更 | [SEEK_STRATEGY.md](SEEK_STRATEGY.md) |
-| Windows 上屏 / wgpu 着色器变更 | [WINDOWS_PRESENTATION_BACKEND.md](WINDOWS_PRESENTATION_BACKEND.md)、[COLOR_PIPELINE.md](COLOR_PIPELINE.md) |
-| FFI 函数签名变更 | [FFI_AND_BINDINGS.md](FFI_AND_BINDINGS.md) |
+| Windows 上屏 / native D3D 着色器变更 | 新建/更新 Windows backend 文档与 [COLOR_PIPELINE.md](COLOR_PIPELINE.md)，并同步新的验证矩阵 |
 | 新增测试/基准/Demo | [BUILD_AND_TEST.md](BUILD_AND_TEST.md) |
 
 ### 更新原则
@@ -130,14 +99,11 @@ viewport redraw summary 证据。
 | [DECODE_PIPELINE.md](DECODE_PIPELINE.md) | 解码管线 | 解码路径变更时 |
 | [COLOR_PIPELINE.md](COLOR_PIPELINE.md) | 色彩管线 | 像素格式或色彩转换变更时 |
 | [SEEK_STRATEGY.md](SEEK_STRATEGY.md) | Seek 策略 | seek 逻辑变更时 |
-| [WINDOWS_PRESENTATION_BACKEND.md](WINDOWS_PRESENTATION_BACKEND.md) | Windows 产品上屏、诊断与 fallback 合同 | Windows presentation route 变更时 |
-| [FFI_AND_BINDINGS.md](FFI_AND_BINDINGS.md) | FFI 绑定 | API 签名变更时 |
 | [BUILD_AND_TEST.md](BUILD_AND_TEST.md) | 构建测试 | 构建/测试变更时 |
 | [TEST_MATRIX.md](TEST_MATRIX.md) | 测试 ownership / gate 映射 | 新增、删除或重分类测试时 |
 | [TARGET_BOUNDARIES.md](TARGET_BOUNDARIES.md) | CMake target / feature 边界 | target 或 feature option 变更时 |
 | [MACOS_READINESS.md](MACOS_READINESS.md) | macOS readiness / release gates | macOS runner、package、release gate 变更时 |
 | [MACOS_PRESENTATION_BACKEND.md](MACOS_PRESENTATION_BACKEND.md) | macOS Metal presentation contract | macOS texture / Metal / CVPixelBuffer 路径变更时 |
-| [MACOS_HDR_EXPLORATION.md](MACOS_HDR_EXPLORATION.md) | macOS HDR/EDR 路径 | Flutter fork pin、presentation mode、HDR 验证方式变更时 |
 | [NATIVE_EVENT_PIPELINE.md](NATIVE_EVENT_PIPELINE.md) | native -> Dart EventChannel 合同 | native event envelope 或 bridge 变更时 |
 | [ANALYSIS_MODULE.md](ANALYSIS_MODULE.md) | analysis 模块入口 | analysis FFI、parser、generator 变更时 |
 | [ANALYSIS_CACHE.md](ANALYSIS_CACHE.md) | VAC2/VACHUNK cache contract | cache layout、chunk policy、generation contract 变更时 |

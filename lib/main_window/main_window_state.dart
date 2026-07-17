@@ -14,6 +14,7 @@ const double kMaxMarksSidebarWidth = 560.0;
 const double kMarksSidebarResizeHandleWidth = 9.0;
 
 class MainWindowStateModel {
+  final int? playerId;
   final int? textureId;
   final ViewportDisplayState viewportState;
   final bool isPlaying;
@@ -49,6 +50,7 @@ class MainWindowStateModel {
   final int? selectedQuickMarkId;
 
   const MainWindowStateModel({
+    this.playerId,
     this.textureId,
     this.viewportState = const ViewportDisplayState.empty(),
     this.isPlaying = false,
@@ -85,6 +87,7 @@ class MainWindowStateModel {
   });
 
   MainWindowStateModel copyWith({
+    Object? playerId = _mainWindowStateUnset,
     Object? textureId = _mainWindowStateUnset,
     ViewportDisplayState? viewportState,
     bool? isPlaying,
@@ -120,6 +123,9 @@ class MainWindowStateModel {
     Object? selectedQuickMarkId = _mainWindowStateUnset,
   }) {
     return MainWindowStateModel(
+      playerId: playerId == _mainWindowStateUnset
+          ? this.playerId
+          : playerId as int?,
       textureId: textureId == _mainWindowStateUnset
           ? this.textureId
           : textureId as int?,
@@ -200,9 +206,9 @@ class MainWindowStateStore extends ChangeNotifier {
     _set(_value.copyWith(viewportState: state));
   }
 
-  void setTextureId(int textureId) {
-    if (_value.textureId == textureId) return;
-    _set(_value.copyWith(textureId: textureId));
+  void setPlayerIdentity({required int playerId, int? textureId}) {
+    if (_value.playerId == playerId && _value.textureId == textureId) return;
+    _set(_value.copyWith(playerId: playerId, textureId: textureId));
   }
 
   void setLayout(LayoutState layout) {
@@ -218,6 +224,7 @@ class MainWindowStateStore extends ChangeNotifier {
   void resetAfterLastTrackRemoved() {
     _set(
       _value.copyWith(
+        playerId: null,
         textureId: null,
         viewportState: const ViewportDisplayState.empty(),
         isPlaying: false,

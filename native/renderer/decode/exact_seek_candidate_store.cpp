@@ -14,6 +14,8 @@ extern "C" {
 namespace vr {
 namespace {
 
+constexpr size_t kExactSeekPreTargetHistoryFrames = 2;
+
 uint64_t estimate_av_frame_cpu_bytes(const AVFrame* frame) {
     if (!frame || frame->width <= 0 || frame->height <= 0 ||
         frame->format == AV_PIX_FMT_NONE || frame->hw_frames_ctx) {
@@ -119,8 +121,19 @@ void ExactSeekCandidateStore::collect(ExactSeekCandidate candidate,
     if (!candidate.frame) {
         return;
     }
-    if (target_us >= 0 && candidate.pts_us < target_us) {
-        reorder_.clear();
+    const bool before_target = target_us >= 0 && candidate.pts_us < target_us;
+    const bool has_post_target = target_us >= 0 &&
+        std::any_of(reorder_.begin(), reorder_.end(), [target_us](const auto& item) {
+            return item.pts_us >= target_us;
+        });
+    if (before_target && !has_post_target) {
+        // Preserve the decoder's output order and keep enough history to put
+        // the immediate predecessor behind the selected exact-seek frame.
+        // This lets shared frame stepping resolve Fn -> Fn-1 without guessing
+        // from AVFrame.duration or sorting decoder output by timestamp.
+        while (reorder_.size() >= kExactSeekPreTargetHistoryFrames) {
+            reorder_.erase(reorder_.begin());
+        }
     } else if (target_us >= 0 && reorder_.empty()) {
         if (snapshot_if_needed) {
             snapshot_if_needed(candidate);

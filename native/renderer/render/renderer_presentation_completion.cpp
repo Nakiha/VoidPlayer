@@ -18,6 +18,16 @@ RendererPresentationCompletionDecision plan_presentation_completion(
         input.frame_callback_available &&
         !input.stale_layout_after_draw &&
         !input.shutting_down;
+    decision.release_discarded_target =
+        input.drew &&
+        input.stale_layout_after_draw &&
+        input.completed_frame_info &&
+        input.completed_frame_info->target_pixel_buffer_address != 0 &&
+        !input.shutting_down;
+    if (decision.release_discarded_target) {
+        decision.discarded_target_address =
+            input.completed_frame_info->target_pixel_buffer_address;
+    }
     decision.transient_backpressure =
         input.frame_failure_error &&
         is_transient_presentation_backpressure_error(input.frame_failure_error);

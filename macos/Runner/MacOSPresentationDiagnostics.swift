@@ -18,10 +18,10 @@ enum MacOSPresentationDiagnostics {
     if !targetInstalled {
       return "native-presentation-target-unavailable"
     }
-    let uploadCount = int64Diagnostic(perfStats?["rendererOwnedUploadCount"])
-    let failureCount = int64Diagnostic(perfStats?["rendererOwnedUploadFailureCount"])
+    let uploadCount = int64Diagnostic(perfStats?["nativeTargetUploadCount"])
+    let failureCount = int64Diagnostic(perfStats?["nativeTargetUploadFailureCount"])
     if uploadCount == 0 && failureCount > 0 {
-      return "renderer-owned-upload-failed"
+      return "native-target-upload-failed"
     }
     return "none"
   }
@@ -32,7 +32,7 @@ enum MacOSPresentationDiagnostics {
     targetInstalled: Bool,
     textureRegistered: Bool
   ) -> String {
-    switch perfStats?["rendererOwnedPresentPackageStorage"] as? String {
+    switch perfStats?["nativeTargetPresentPackageStorage"] as? String {
     case "cvpixelbuffer":
       return "metal-cvpixelbuffer-present-package"
     case "yuv":

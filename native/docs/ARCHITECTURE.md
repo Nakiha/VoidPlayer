@@ -1,23 +1,21 @@
 # Native 模块架构概览
 
-> 本文档是 native 模块入口，只描述当前架构和合同。
+> 本文档描述 back-to-native sandwich 分支的目标架构。
 
 ## 模块定位
 
-VoidPlayer native 是一套共享媒体播放与渲染调度内核，加平台 presentation backend：
+VoidPlayer native 保留共享媒体播放与渲染调度内核，重启平台 presentation：
 
 - shared demux/decode/playback/seek/loop/track/layout/render scheduler
-- Windows presentation backend：wgpu/D3D12 render core + DComp/DXGI present bridge
-- macOS presentation backend：wgpu/Metal / CVPixelBuffer / IOSurface target
-- shared audio engine：miniaudio 输出，Windows 与 macOS 使用各自系统设备后端
+- shared audio engine / miniaudio output
 - shared diagnostics / capture / UI automation hooks
+- macOS native Metal video target
+- Windows D3D11VA decode/shared-snapshot、runner-owned target ring、D3D11 viewport backend 与 passive DComp final composition
+- runner-owned final composition of native video + Flutter ARGB UI
 
-平台 runner 只负责 OS glue。Windows runner 负责 Win32、Flutter D3D12 surface
-acquisition、DComp/DXGI present target、HDR/SDR 与 device-loss 边界；macOS
-runner 负责 Cocoa、sandbox file access、platform channel、IOSurface /
-CVPixelBuffer lifecycle 和 frame notification。播放策略、seek、loop、track
-lifecycle、layout、refresh completion 和 failure state 都属于 shared native
-code。
+平台 runner 不再把视频伪装成 Flutter Texture 主路径，也不让 native backend
+代 Flutter 控制上屏。Flutter 继续拥有自己的透明 UI surface；native renderer
+只拥有视频纹理；runner 负责最终 compose。
 
 ## 当前架构
 
@@ -30,38 +28,30 @@ Dart UI / Actions
            -> shared Renderer scheduler
               -> RenderSink / PresentDecision
               -> RendererDrawSnapshot
-              -> platform PresentationBackend
-                  -> wgpu/D3D12 + DComp/DXGI present bridge on Windows
-                  -> wgpu/Metal / CVPixelBuffer / IOSurface on macOS
+              -> native video PresentationBackend
+                 -> runner-composed video layer
+                    + Flutter engine ARGB UI layer
+                    -> screen
 ```
 
-`Renderer` 拥有 playback/render cadence、track selection、carry-forward、layout constants 和 present
-decision。`PresentationBackend` 只消费 `RendererDrawSnapshot` / `PresentDecision`，把已经选好的帧变成平台纹理；
-backend 不决定播放时间，也不拥有 track state。
+See [SANDWICH_RENDERING.md](SANDWICH_RENDERING.md) for the presentation
+contract.
 
 ## 目录结构
 
 ```text
 native/
-├── common/              # platform-neutral logging and shared helpers
-├── media/               # demux、packet queue、seek controller
-├── audio/               # shared audio engine / miniaudio device output
-├── playback/            # playback controller、clock/audio coordination
-├── renderer/            # shared renderer scheduler、decode、buffer、render contracts
-│   ├── decode/          # DecodeThread、FrameConverter、hardware providers
-│   ├── render/          # PresentDecision、RendererDrawSnapshot、PresentationBackend
+├── common/              # platform-neutral logging and helpers
+├── media/               # demux, packet queue, seek controller
+├── audio/               # shared audio engine / miniaudio output
+├── playback/            # playback controller and clock/audio coordination
+├── renderer/            # shared scheduler, decode, buffer, render contracts
+│   ├── decode/          # DecodeThread, FrameConverter, hardware providers
+│   ├── render/          # RendererDrawSnapshot, PresentationBackend contracts
 │   ├── sync/            # RenderSink and present scheduling
-│   └── exports/         # C FFI and pybind11 C++ binding surfaces
-├── python/              # Python convenience package source for dist/python
-├── windows/             # Windows native facade, crash hooks, wgpu/D3D12, and legacy D3D11 backend
-│   ├── player/          # Windows NativePlayer facade
-│   ├── decode/          # Windows D3D12VA / legacy D3D11VA decode integration
-│   ├── wgpu/            # Windows wgpu/D3D12 backend and texture import bridge
-│   ├── d3d11/           # Legacy D3D11 backend, overlay, capture, and compatibility hooks
-│   └── common/          # Windows process-global helpers
+├── windows/             # D3D11VA、WindowsNativePlayer、D3D11 viewport backend
 ├── macos/               # macOS native bridge and Metal presentation backend
-├── examples/            # development-only demos and sample entrypoints
-├── tests/               # Catch2 tests on Windows-oriented native targets
+├── tests/               # Catch2 tests
 ├── tools/               # native smoke binaries and CLIs
 └── docs/
 ```
@@ -70,35 +60,42 @@ native/
 
 | 对象 | 当前职责 |
 | --- | --- |
-| `NativePlayer` | Shared playback facade，平级协调 playback、renderer、audio、capture |
+| `NativePlayer` | Shared playback facade，协调 playback、renderer、audio、capture |
 | `Renderer` | 共享 render scheduler，拥有 track lifecycle、seek/loop/layout command surface、present cadence |
 | `RenderSink` / `PresentDecision` | 平台无关的多轨 frame selection、identity、carry-forward、layout decision |
-| `RendererDrawSnapshot` | renderer 到 backend 的 immutable draw input |
-| `PresentationBackend` | 平台 presentation seam；Windows 目标实现 wgpu/D3D12，macOS 目标实现 wgpu/Metal/CVPixelBuffer |
-| `TrackPipeline` | 每轨 demux/decode/buffer state，使用 file id + generation 防止 remove/re-add 串帧 |
-| `FrameConverter` | AVFrame 到 `TextureFrame`；保留硬解 surface 或做确定性 CPU pack |
+| `RendererDrawSnapshot` | renderer 到 native video backend 的 immutable draw input |
+| `PresentationBackend` | native video texture/layer writer；不控制 Flutter 上屏 |
+| `TrackPipeline` | 每轨 demux/decode/buffer state |
+| `FrameConverter` | AVFrame 到 native-target frame storage；硬解 import 只在已实现 backend 上启用 |
 
-## Renderer ownership map
+### Exact playback pacing
 
-`Renderer` 是 public facade，`Renderer::Impl` 是 private composition root。新增 renderer 行为时优先落到
-下面的 ownership 组件，不要把长逻辑继续塞进 `Renderer::Impl`：
+Shared native playback uses a single `PlaybackPacingController` boundary.
+`RendererTrackPresentationModel` supplies immutable per-track queue-capacity
+and PTS-frontier facts; the pacing controller owns preroll, mid-stream
+rebuffer hysteresis, and the effective clock rate. Platform runners do not
+participate in playback admission.
 
-| 行为/状态 | 首选 owner |
-| --- | --- |
-| Playback/time/loop range/seek gate | `RendererTimelineController` |
-| Track lifetime、add/remove/recreate/seek/offset mutation | `RendererTrackMutationController` |
-| Track storage、slot/file id、generation、cached duration | `RendererTrackRegistry` |
-| Track snapshots、present decisions、paused preview、perf/memory diagnostics | `RendererTrackPresentationModel` |
-| Draw snapshot、paused redraw、layout redraw、present completion | `RendererPresentCommandProcessor` |
-| Render-thread cadence、preroll、paused preview scheduling、deadline sleep | `RendererRenderLoopCommandProcessor` + `RendererLoopDriver` |
-| Backend/device/texture/capture/callback storage | `RendererPresentationController` |
-| Layout revisions、pending layout intent、viewport compositor grace | `RendererLayoutState` |
-| Native event publication | `RendererEventBus` |
-| Presentation counters、timing、backpressure/device-loss diagnostics | `PresentationMetricsStore` |
+- The user-requested speed and effective clock speed are separate.
+- With no audible track, forward-buffer depletion may reduce effective speed
+  before an underrun. The fill ratio is normalized against
+  each track's attainable forward-frame target, so a full shallow hardware
+  decode queue remains at the requested speed throughout the frame interval.
+- PTS headroom is synchronization/frontier evidence, not a continuous clock
+  control input. Frame phase therefore cannot make wall-clock playback run
+  slow while every decoder queue is healthy.
+- With audible audio, pacing remains at the requested speed and uses an
+  audio/video hold instead of changing video rate without time stretching.
+- The slowest currently active, non-EOF track is the pacing bottleneck.
+- Positive-offset tracks do not constrain the clock before their global start.
+- `RenderSink::evaluate()` is non-mutating. A native presentation submission
+  must be accepted before `commit_presented()` advances queue cursors.
+- Queue heads are committed in global PTS order. The scheduler never greedily
+  skips decoded frames to catch a wall clock.
 
-`RendererTrackController` 目前仍是 compatibility facade，向 registry / mutation / presentation model 转发；
-它不持有 renderer locks、不调用 host/platform callbacks。present/render-loop command context 中的
-`*_locked` hooks 必须由调用方持有 `state_mutex_` 调用，详见 [线程模型](THREADING_MODEL.md)。
+Viewport interaction remains display-linked and independent: while playback is
+held for decode recovery, Windows/macOS runners continue reprojecting the last
+complete native source frame.
 
 ## 数据流总览
 
@@ -114,70 +111,50 @@ Media file
   -> PresentDecision
   -> RendererDrawSnapshot
   -> PresentationBackend::draw_frame()
-  -> platform final target / native capture
+  -> native video target
+  -> runner composition with Flutter ARGB UI
 ```
 
-Windows 和 macOS 共用从 demux 到 `RendererDrawSnapshot` 的主路径。差异从 hardware decode provider 和
-presentation backend 开始：
+Windows 和 macOS 共用从 demux 到 `RendererDrawSnapshot` 的主路径。差异从
+hardware decode provider 和 presentation backend 开始：
 
 | 平台 | 硬解 provider | presentation backend |
 | --- | --- | --- |
-| Windows | D3D12VA, legacy D3D11VA while compatibility remains | wgpu/D3D12 target + DComp/DXGI present bridge |
-| macOS | VideoToolbox | wgpu/Metal target backed by CVPixelBuffer / IOSurface |
+| Windows | D3D11VA；H.264/H.265/AV1/VP9 使用独立 decode device 与稳定 single-slice shared snapshot | `native-d3d11` 在 presentation device 直接采样 opened snapshot，完整 viewport shader 写入 runner-owned BGRA8/FP16 ring；DComp 合成 Flutter UI |
+| macOS | VideoToolbox CVPixelBuffer or explicit fallback package | native Metal target backed by CVPixelBuffer / IOSurface |
+
+### 交互 presentation cadence
+
+视频 source cadence 继续由 shared playback clock、PTS selection 与 render scheduler
+决定；viewport interaction cadence 则由平台 runner 拥有。runner 把最新 layout
+intent 应用到 shared `LayoutState`，并请求 backend 用最近的 source frame 重画，而不
+等待下一张解码帧。macOS 由 display link 驱动，Windows 由 runner interaction
+controller 提交并在 DXGI `Present(1)` 上按显示器节拍完成；两端最多允许两个交互帧
+in flight。这样 shared 层仍只拥有 frame selection/layout snapshot 语义，显示器时钟、
+GPU target ring 和最终 Flutter/native 合成都留在平台层。
+
+Shared interaction refresh 返回 `Presented / NotReady / Failed` 三态。新增轨道尚未
+preroll、完整多轨 `PresentDecision` 尚不可用时返回 `NotReady`；平台 display-linked
+controller 只重试最新 layout revision，不把 readiness gap 记成 backend failure，也不
+使用只覆盖部分活动轨道的旧 snapshot 上屏。
 
 ## 当前播放路径状态
 
-- Windows 正从 D3D11 产品路径迁到 D3D12VA + wgpu/D3D12 render core；
-  D3D11/DComp present/source/overlay bridge 只作为迁移期兼容层，仍需在
-  Windows host 上做 preservation gate。
-- macOS native playback 已进入 stabilization / release-readiness：shared scheduling、renderer-owned Metal
-  presentation、VideoToolbox zero-copy、software fallback、refresh completion、per-track diagnostics 都在 normal route。
-- macOS software decode fallback 是显式诊断路径，不是隐藏主路径。
-- 4K60 门槛仍属于 stabilization gate；先依赖 cadence diagnostics、fallback reason、upload stats 和 UI smoke 证据化。
+- macOS native Metal presentation builds and passes native smoke.
+- macOS VideoToolbox preserves native-target CVPixelBuffer frames when supported.
+- Windows native decode、cross-device GPU snapshot bridge、SDR/scRGB viewport shader
+  与 runner-composed D3D sandwich 已接通；当前产品 target 为 SDR BGRA8，HDR/scRGB policy
+  与 device-loss recovery 仍处于 stabilization。
+- Flutter premultiplied-alpha export remains a Flutter fork requirement, but
+  Flutter should not own video presentation.
 
 ## 文档索引
 
-### Current Architecture
-
 | 文档 | 内容 |
 | --- | --- |
-| [数据管线](DATA_PIPELINE.md) | 平台中立 frame/data path，Windows D3D11 与 macOS Metal 输出路径 |
-| [解码管线](DECODE_PIPELINE.md) | D3D11VA、VideoToolbox、software fallback、hwdownload/zero-copy 边界 |
-| [色彩管线](COLOR_PIPELINE.md) | YUV/RGB/P010、range/matrix、shader contract 和 parity gates |
+| [Sandwich rendering](SANDWICH_RENDERING.md) | 新 presentation 合同 |
+| [macOS Presentation Backend](MACOS_PRESENTATION_BACKEND.md) | macOS native Metal backend |
+| [数据管线](DATA_PIPELINE.md) | 平台中立 frame/data path |
+| [解码管线](DECODE_PIPELINE.md) | hardware/software decode boundary |
+| [色彩管线](COLOR_PIPELINE.md) | YUV/RGB/P010 and color metadata |
 | [线程模型](THREADING_MODEL.md) | 线程角色、锁顺序、render loop 与 callback 边界 |
-| [时钟与同步](CLOCK_AND_SYNC.md) | Clock、倍速、A/V sync、loop timing |
-| [缓冲合同](BUFFERING.md) | PacketQueue、TrackBuffer、preroll、BidiRingBuffer |
-| [Seek 策略](SEEK_STRATEGY.md) | seek controller、exact seek、preview publication |
-| [Native Event Pipeline](NATIVE_EVENT_PIPELINE.md) | native -> Dart EventChannel 事实事件合同 |
-
-### Platform Backend
-
-| 文档 | 内容 |
-| --- | --- |
-| [Windows Presentation Backend](WINDOWS_PRESENTATION_BACKEND.md) | Windows 产品上屏路线、资源所有权、fallback 与 diagnostics contract |
-| [macOS Readiness](MACOS_READINESS.md) | macOS readiness、runner 边界、remaining gates |
-| [macOS Presentation Backend](MACOS_PRESENTATION_BACKEND.md) | macOS renderer-owned Metal route, fallback adapter, refresh, and diagnostics contract |
-| [macOS HDR Exploration](MACOS_HDR_EXPLORATION.md) | macOS native compositor HDR/EDR path, Flutter fork pin, and validation evidence |
-
-### Readiness / Release / Tooling
-
-| 文档 | 内容 |
-| --- | --- |
-| [构建与测试](BUILD_AND_TEST.md) | dev.py、CMake targets、macOS stabilization gates、Windows preservation、package checks |
-| [FFI 与绑定](FFI_AND_BINDINGS.md) | C FFI、Python bindings、runtime ABI |
-| [Target 边界](TARGET_BOUNDARIES.md) | CMake target boundaries and feature options |
-| [Native 第三方清单](../THIRD_PARTY_NATIVE.md) | FFmpeg/zstd/spdlog/Catch2 license and package notes |
-
-### Analysis
-
-| 文档 | 内容 |
-| --- | --- |
-| [Analysis 模块](ANALYSIS_MODULE.md) | VAC2/VACHUNK generation、parsers、FFI、benchmarks |
-| [Analysis Cache](ANALYSIS_CACHE.md) | VAC2 base + VACHUNK derived chunk cache contract |
-| [Analysis Overlay](ANALYSIS_OVERLAY.md) | 主窗口 codec block overlay、native renderer、hit-test contract |
-| [VAC2](formats/VAC2.md) | base analysis container format |
-| [VACHUNK](formats/VACHUNK.md) | derived analysis chunk format |
-
-### Documentation Rule
-
-`native/docs/` only describes current behavior and contracts.

@@ -1,6 +1,13 @@
 #include "renderer/renderer_internal.h"
+#include "renderer/render/renderer_timing_utils.h"
 
 namespace vr {
+
+namespace {
+
+constexpr int64_t kInteractionPresentationHoldUs = 50'000;
+
+} // namespace
 
 RendererPresentCommandContext Renderer::Impl::present_command_context() {
     return RendererPresentCommandContext{
@@ -16,13 +23,7 @@ RendererPresentCommandContext Renderer::Impl::present_command_context() {
         shutting_down_,
         RendererPresentCommandHooks{
             [this]() {
-                return should_present_frame_consume_pending_layout();
-            },
-            [this]() {
                 consume_pending_layout_locked();
-            },
-            [this]() {
-                return should_suppress_playback_present_for_viewport_compositor();
             },
             [this]() {
                 return presentation_overlay_hooks();
@@ -34,32 +35,30 @@ RendererPresentCommandContext Renderer::Impl::present_command_context() {
                 return !timeline_.playing() ||
                        timeline_.playback().clock().is_paused();
             },
-            [this]() {
-                emit_playback_frame_ready_event();
-            },
         },
     };
 }
 
 bool Renderer::Impl::request_frame_refresh(const char* reason) {
+    return request_frame_refresh_result(reason) ==
+           RendererFrameRefreshResult::Presented;
+}
+
+RendererFrameRefreshResult Renderer::Impl::request_frame_refresh_result(
+    const char* reason) {
     {
         std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
         if (!initialized_.load(std::memory_order_acquire) ||
             shutting_down_.load(std::memory_order_acquire)) {
-            return false;
+            return RendererFrameRefreshResult::Failed;
         }
     }
     const char* refresh_reason = reason && reason[0] != '\0'
                                      ? reason
                                      : "request_frame_refresh";
-    const bool renderer_owned_refresh =
-        std::strcmp(refresh_reason, "macos-renderer-owned-refresh") == 0 ||
-        std::strcmp(refresh_reason, "request_frame_refresh") == 0;
-    const bool viewport_compositor_refresh =
-        std::strcmp(refresh_reason, "macos-renderer-owned-refresh") == 0;
-    if (viewport_compositor_refresh) {
-        note_viewport_compositor_activity();
-    }
+    const auto refresh_policy = renderer_frame_refresh_policy(refresh_reason);
+    const bool interaction_refresh = refresh_policy.interaction_refresh;
+    const bool renderer_owned_refresh = refresh_policy.retain_presented_frame;
     bool has_complete_cached_decision = false;
     bool preview_draw_pending = false;
     if (renderer_owned_refresh) {
@@ -70,17 +69,26 @@ bool Renderer::Impl::request_frame_refresh(const char* reason) {
         preview_draw_pending = loop_driver_.preview_pending();
     }
     if (renderer_owned_refresh) {
-        if (preview_draw_pending) {
-            return true;
+        // An interaction request is itself the display-linked consumer for the
+        // pending preview. Returning success here would acknowledge the input
+        // without publishing a frame and leave the ordinary playback loop to
+        // update it at source-video cadence.
+        if (preview_draw_pending && !interaction_refresh) {
+            return RendererFrameRefreshResult::Presented;
         }
         auto present_context = present_command_context();
-        if (RendererPresentCommandProcessor::redraw_layout(present_context)) {
-            return true;
+        const auto redraw_result =
+            RendererPresentCommandProcessor::redraw_layout(present_context);
+        if (redraw_result != RendererFrameRefreshResult::NotReady) {
+            return redraw_result;
+        }
+        if (interaction_refresh) {
+            return RendererFrameRefreshResult::NotReady;
         }
         if (has_complete_cached_decision ||
             (timeline_.playing() &&
              !timeline_.playback().clock().is_paused())) {
-            return false;
+            return RendererFrameRefreshResult::NotReady;
         }
     } else if (timeline_.playing() &&
                !timeline_.playback().clock().is_paused()) {
@@ -94,45 +102,20 @@ bool Renderer::Impl::request_frame_refresh(const char* reason) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         mark_paused_hevc_seek_preview_drawn_locked();
     }
-    return drew;
+    return drew ? RendererFrameRefreshResult::Presented
+                : RendererFrameRefreshResult::NotReady;
 }
 
-bool Renderer::Impl::recover_presentation_device_loss(
-    const char* reason,
-    long removed_reason) {
-#ifdef _WIN32
-    {
-        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-        if (!initialized_.load(std::memory_order_acquire) ||
-            shutting_down_.load(std::memory_order_acquire)) {
-            return false;
-        }
-    }
-    device_state_.store(RendererDeviceState::Lost, std::memory_order_release);
-    presentation_metrics_.note_device_lost();
-    const char* recovery_reason =
-        reason && reason[0] != '\0' ? reason : "presentation-device-loss";
-    const bool recovered =
-        presentation_.recover_d3d_device_loss(recovery_reason, removed_reason);
-    if (!recovered) {
-        return false;
-    }
-    {
-        std::lock_guard<std::mutex> lock(state_mutex_);
-        loop_driver_.force_preview_redraw();
-    }
-    device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
-    (void)request_frame_refresh("windows-device-recovery");
-    spdlog::info(
-        "[Renderer] recovered presentation device reason={} removed={:#x}",
-        recovery_reason,
-        static_cast<unsigned long>(removed_reason));
-    return true;
-#else
-    (void)reason;
-    (void)removed_reason;
-    return false;
-#endif
+RendererFrameRefreshResult Renderer::Impl::request_interaction_frame() {
+    interaction_presentation_until_us_.store(
+        steady_clock_us_now() + kInteractionPresentationHoldUs,
+        std::memory_order_release);
+    return request_frame_refresh_result("renderer-owned-interaction-refresh");
+}
+
+bool Renderer::Impl::interaction_presentation_active() const {
+    return interaction_presentation_until_us_.load(std::memory_order_acquire) >
+           steady_clock_us_now();
 }
 
 bool Renderer::Impl::recover_or_enter_terminal_device_lost_locked(
@@ -141,7 +124,7 @@ bool Renderer::Impl::recover_or_enter_terminal_device_lost_locked(
     const long reason = presentation_.device_removed_reason();
     device_state_.store(RendererDeviceState::Lost, std::memory_order_release);
     presentation_metrics_.note_device_lost();
-    if (presentation_.recover_d3d_device_loss(operation, reason)) {
+    if (presentation_.recover_device_loss(operation, reason)) {
         loop_driver_.force_preview_redraw();
         device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
         spdlog::info(
@@ -213,7 +196,7 @@ void Renderer::Impl::enter_terminal_render_loop_error_locked(const char* reason)
 
 bool Renderer::Impl::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!surface_state_.headless()) {
+    if (!surface_state_.offscreen()) {
         bgra.clear();
         width = 0;
         height = 0;
@@ -230,7 +213,7 @@ bool Renderer::Impl::capture_front_buffer_region(int x,
                                                  int& region_width,
                                                  int& region_height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!surface_state_.headless()) {
+    if (!surface_state_.offscreen()) {
         bgra.clear();
         region_width = 0;
         region_height = 0;

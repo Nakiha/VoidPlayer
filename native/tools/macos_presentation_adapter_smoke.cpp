@@ -75,9 +75,7 @@ int check_adapter_identity() {
       !vr::frame_storage_has_cpu_pixels(vr::FrameStorageKind::CpuRgba) ||
       !vr::frame_storage_has_cpu_pixels(vr::FrameStorageKind::CpuNv12) ||
       !vr::frame_storage_has_cpu_pixels(vr::FrameStorageKind::CpuPlanarYuv) ||
-      vr::frame_storage_has_cpu_pixels(vr::FrameStorageKind::D3D12Texture) ||
       vr::frame_storage_has_cpu_pixels(vr::FrameStorageKind::MacOSCVPixelBuffer) ||
-      vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::D3D12Texture) ||
       vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::MacOSCVPixelBuffer) ||
       vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::Empty)) {
     return fail("unexpected presentation adapter CPU storage support class");
@@ -512,7 +510,6 @@ int check_adapter_failure_statuses() {
   vr::TextureFrame frame;
   frame.width = 2;
   frame.height = 2;
-  frame.storage = vr::D3D12TextureFrameStorage{};
 
   std::vector<uint8_t> bgra(16, 0);
   VPMacOSNativeFrameInfo info{};
@@ -525,7 +522,7 @@ int check_adapter_failure_statuses() {
       frame.width * 4,
       &info);
   if (status != vp_macos::PresentationAdapterStatus::UnsupportedStorage) {
-    return fail("adapter did not reject renderer-owned texture storage");
+    return fail("adapter did not reject native-target texture storage");
   }
 
   frame.storage = vr::CpuRgbaFrameStorage{

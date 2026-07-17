@@ -6,6 +6,7 @@
 #include "renderer/buffer/track_buffer.h"
 
 #include <memory>
+#include <utility>
 
 using namespace vr;
 using MockTimeSource = vr::test::MockTimeSource;
@@ -74,6 +75,91 @@ TEST_CASE("RenderSink: present decisions carry track identity",
     REQUIRE(decision.track_generations[0] == 0);
 }
 
+TEST_CASE("RenderSink: commit requires current track identity",
+          "[render_sink]") {
+    MockTimeSource mt{0};
+    Clock clock([&mt]() { return mt.t; });
+    clock.play();
+
+    auto track = std::make_shared<TrackBuffer>(4, 2);
+    TextureFrame frame;
+    frame.pts_us = 0;
+    frame.texture_handle = reinterpret_cast<void*>(0x1);
+    track->push_frame(frame);
+
+    RenderSink sink(clock);
+    sink.set_track(0, track, 10, 7);
+    auto decision = sink.evaluate();
+    REQUIRE(decision.frames[0].has_value());
+
+    decision.track_generations[0] = 8;
+    REQUIRE(sink.commit_presented(decision) == 0);
+    REQUIRE(track->total_count() == 1);
+
+    decision.track_generations[0] = 7;
+    REQUIRE(sink.commit_presented(decision) == 1);
+    REQUIRE(track->total_count() == 0);
+}
+
+TEST_CASE("PresentationScheduler distinguishes equal-PTS decoded frames",
+          "[presentation_scheduler][render_sink]") {
+    MockTimeSource mt{0};
+    Clock clock([&mt]() { return mt.t; });
+    clock.play();
+
+    auto track = std::make_shared<TrackBuffer>(4, 2);
+    TextureFrame first;
+    first.pts_us = 0;
+    first.texture_handle = reinterpret_cast<void*>(0x1);
+    track->push_frame(first);
+    TextureFrame second = first;
+    second.texture_handle = reinterpret_cast<void*>(0x2);
+    track->push_frame(second);
+
+    RenderSink sink(clock);
+    sink.set_track(0, track, 10, 1);
+    PresentationScheduler scheduler;
+
+    auto first_tick = scheduler.tick(sink);
+    REQUIRE(first_tick.should_notify);
+    scheduler.commit_presented(first_tick.decision);
+    REQUIRE(sink.commit_presented(first_tick.decision) == 1);
+
+    auto second_tick = scheduler.tick(sink);
+    REQUIRE(second_tick.should_notify);
+    scheduler.commit_presented(second_tick.decision);
+    REQUIRE(sink.commit_presented(second_tick.decision) == 1);
+}
+
+TEST_CASE("PresentationScheduler retries a submission until it is committed",
+          "[presentation_scheduler][render_sink][playback_pacing]") {
+    MockTimeSource mt{0};
+    Clock clock([&mt]() { return mt.t; });
+    clock.play();
+
+    auto track = std::make_shared<TrackBuffer>(4, 2);
+    TextureFrame frame;
+    frame.pts_us = 0;
+    frame.texture_handle = reinterpret_cast<void*>(0x1);
+    track->push_frame(frame);
+
+    RenderSink sink(clock);
+    sink.set_track(0, track, 10, 1);
+    PresentationScheduler scheduler;
+
+    const auto rejected = scheduler.tick(sink);
+    REQUIRE(rejected.should_notify);
+    REQUIRE(track->total_count() == 1);
+
+    const auto retry = scheduler.tick(sink);
+    REQUIRE(retry.should_notify);
+    scheduler.commit_presented(retry.decision);
+    REQUIRE(sink.commit_presented(retry.decision) == 1);
+
+    const auto drained = scheduler.tick(sink);
+    REQUIRE_FALSE(drained.should_notify);
+}
+
 TEST_CASE("PresentationScheduler: held still frame does not mask newer video track",
           "[presentation_scheduler]") {
     MockTimeSource mt{0};
@@ -107,7 +193,16 @@ TEST_CASE("PresentationScheduler: held still frame does not mask newer video tra
     auto tick = scheduler.tick(sink);
     REQUIRE(tick.has_presentable_frame);
     REQUIRE(tick.should_notify);
+    REQUIRE(tick.selected_pts_us == 0);
+    scheduler.commit_presented(tick.decision);
+    REQUIRE(sink.commit_presented(tick.decision) == 1);
+
+    tick = scheduler.tick(sink);
+    REQUIRE(tick.has_presentable_frame);
+    REQUIRE(tick.should_notify);
     REQUIRE(tick.selected_pts_us == 1000000);
+    scheduler.commit_presented(tick.decision);
+    REQUIRE(sink.commit_presented(tick.decision) == 1);
 
     mt.t = 2000000;
     tick = scheduler.tick(sink);
@@ -171,7 +266,7 @@ TEST_CASE("RenderSink: single track with future PTS does not present", "[render_
     REQUIRE(decision.should_present == false);
 }
 
-TEST_CASE("RenderSink: expired frames advance to the stable tail frame", "[render_sink]") {
+TEST_CASE("RenderSink: overdue frames are committed one at a time", "[render_sink]") {
     MockTimeSource mt{0};
     Clock clock([&mt]() { return mt.t; });
     clock.play();
@@ -195,14 +290,25 @@ TEST_CASE("RenderSink: expired frames advance to the stable tail frame", "[rende
     RenderSink sink(clock);
     sink.set_track(0, track);
 
-    // Clock at 2000000, frame1 is expired by frame2's PTS. With no following
-    // PTS, frame2 is the stable tail frame and remains visible.
+    // Even though both frames are late, exact selection must expose frame1
+    // before frame2.
     mt.t = 2000000;
 
     PresentDecision decision = sink.evaluate();
     REQUIRE(decision.should_present == true);
     REQUIRE(decision.frames[0].has_value());
+    REQUIRE(decision.frames[0]->pts_us == 1000000);
+    REQUIRE(track->total_count() == 2);
+
+    REQUIRE(sink.commit_presented(decision) == 1);
+    REQUIRE(track->total_count() == 1);
+
+    decision = sink.evaluate();
+    REQUIRE(decision.should_present == true);
+    REQUIRE(decision.frames[0].has_value());
     REQUIRE(decision.frames[0]->pts_us == 1033000);
+    REQUIRE(sink.commit_presented(decision) == 1);
+    REQUIRE(track->total_count() == 0);
 }
 
 TEST_CASE("RenderSink: sparse single frame remains visible after nominal duration",
@@ -258,6 +364,7 @@ TEST_CASE("RenderSink: next PTS defines display window when duration metadata is
     REQUIRE(decision.should_present == true);
     REQUIRE(decision.frames[0].has_value());
     REQUIRE(decision.frames[0]->pts_us == 1000000);
+    REQUIRE(sink.commit_presented(decision) == 1);
 
     mt.t = 1033333;
     decision = sink.evaluate();
@@ -389,4 +496,56 @@ TEST_CASE("RenderSink: independent present when tracks have different timing", "
     REQUIRE(decision.should_present == true);
     REQUIRE(decision.frames[0].has_value());
     REQUIRE(!decision.frames[1].has_value());
+}
+
+TEST_CASE("RenderSink: multi-track exact events commit in global PTS order",
+          "[render_sink][playback_pacing]") {
+    MockTimeSource mt{0};
+    Clock clock([&mt]() { return mt.t; });
+    clock.play();
+
+    auto track1 = std::make_shared<TrackBuffer>(4, 2);
+    auto track2 = std::make_shared<TrackBuffer>(4, 2);
+    for (const auto [pts, handle] :
+         {std::pair<int64_t, uintptr_t>{33000, 1},
+          {66000, 2},
+          {99000, 3}}) {
+        TextureFrame frame;
+        frame.pts_us = pts;
+        frame.texture_handle = reinterpret_cast<void*>(handle);
+        track1->push_frame(frame);
+    }
+    for (const auto [pts, handle] :
+         {std::pair<int64_t, uintptr_t>{50000, 4},
+          {100000, 5}}) {
+        TextureFrame frame;
+        frame.pts_us = pts;
+        frame.texture_handle = reinterpret_cast<void*>(handle);
+        track2->push_frame(frame);
+    }
+
+    RenderSink sink(clock);
+    sink.set_track(0, track1, 10, 1);
+    sink.set_track(1, track2, 20, 1);
+    mt.t = 100000;
+
+    auto decision = sink.evaluate();
+    REQUIRE(decision.frames[0]->pts_us == 33000);
+    REQUIRE_FALSE(decision.frames[1].has_value());
+    REQUIRE(sink.commit_presented(decision) == 1);
+
+    decision = sink.evaluate();
+    REQUIRE_FALSE(decision.frames[0].has_value());
+    REQUIRE(decision.frames[1]->pts_us == 50000);
+    REQUIRE(sink.commit_presented(decision) == 1);
+
+    decision = sink.evaluate();
+    REQUIRE(decision.frames[0]->pts_us == 66000);
+    REQUIRE_FALSE(decision.frames[1].has_value());
+    REQUIRE(sink.commit_presented(decision) == 1);
+
+    decision = sink.evaluate();
+    REQUIRE(decision.frames[0]->pts_us == 99000);
+    REQUIRE(decision.frames[1]->pts_us == 100000);
+    REQUIRE(sink.commit_presented(decision) == 2);
 }

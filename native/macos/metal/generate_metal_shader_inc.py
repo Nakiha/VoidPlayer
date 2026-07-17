@@ -23,8 +23,10 @@ SHADER_FILES = [
 
 
 def generated_source(shader_dir: Path) -> str:
-    body = "".join((shader_dir / name).read_text() for name in SHADER_FILES)
-    return f'R"(\n{body})";\n'
+    literals = "".join(
+        f'R"(\n{(shader_dir / name).read_text()})",\n' for name in SHADER_FILES
+    )
+    return "{\n" + literals + "};\n"
 
 
 def main() -> int:

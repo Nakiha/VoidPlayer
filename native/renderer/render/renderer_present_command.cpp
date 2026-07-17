@@ -1,4 +1,5 @@
 #include "renderer/render/renderer_present_command.h"
+#include "renderer/render/renderer_frame_refresh_policy.h"
 
 #include "renderer/render/renderer_draw_snapshot_builder.h"
 #include "renderer/render/renderer_profiler_flags.h"
@@ -23,6 +24,7 @@ struct RendererPresentCompletionContext {
     RendererPresentHistory* history = nullptr;
     PresentationMetricsStore* metrics = nullptr;
     RendererLoopDriver* loop = nullptr;
+    RendererPresentationController* presentation = nullptr;
     std::atomic<bool>* shutting_down = nullptr;
 };
 
@@ -39,10 +41,8 @@ void finish_presented_draw(
     bool drew,
     const char* frame_failure_error,
     uint64_t backend_us,
-    const PresentationBackendFrameInfo* completed_frame_info,
-    bool source_cache_published = false,
-    uint64_t source_cache_ring_generation = 0,
-    uint64_t source_cache_frame_generation = 0) {
+    uint64_t backend_blocking_wait_us,
+    const PresentationBackendFrameInfo* completed_frame_info) {
     if (context.shutting_down->load(std::memory_order_acquire)) {
         return;
     }
@@ -61,12 +61,6 @@ void finish_presented_draw(
         }
         if (layout_commit.marked_presented) {
             context.metrics->note_layout_presented();
-        }
-        if (source_cache_published && context.history) {
-            context.history->set_source_cache_published(
-                snapshot.decision,
-                source_cache_ring_generation,
-                source_cache_frame_generation);
         }
         context.loop->mark_preview_presented(!stale_layout_after_draw);
     } else {
@@ -89,8 +83,15 @@ void finish_presented_draw(
         completed_frame_info,
     });
 
+    uint64_t callback_us = 0;
     if (completion.callback_published) {
+        const auto callback_start = std::chrono::steady_clock::now();
         frame_callback(completion.callback_frame_info_ptr);
+        callback_us += elapsed_us_since(callback_start);
+    }
+    if (completion.release_discarded_target) {
+        context.presentation->release_offscreen_target(reinterpret_cast<void*>(
+            static_cast<uintptr_t>(completion.discarded_target_address)));
     }
     if (completion.transient_backpressure) {
         const auto count = context.metrics->note_transient_backpressure(
@@ -107,11 +108,14 @@ void finish_presented_draw(
         }
     }
     if (completion.notify_frame_failure) {
+        const auto callback_start = std::chrono::steady_clock::now();
         frame_failure_callback(completion.frame_failure_error);
+        callback_us += elapsed_us_since(callback_start);
     }
 
     const auto total_us = elapsed_us_since(profiler_start);
-    context.metrics->record_draw_timing(total_us, backend_us);
+    context.metrics->record_draw_timing(
+        total_us, backend_us, callback_us, backend_blocking_wait_us);
     log_viewport_draw_trace(source,
                             snapshot,
                             snapshot_layout_revision,
@@ -134,6 +138,7 @@ RendererPresentCompletionContext completion_context(
         &context.history,
         &context.metrics,
         &context.loop,
+        &context.presentation,
         &context.shutting_down,
     };
 }
@@ -192,12 +197,10 @@ RendererPresentationSubmitDispatchHooks dispatch_hooks(
                 completion.draw.drew,
                 completion.draw.failure_error.c_str(),
                 completion.draw.backend_us,
+                completion.draw.backend_blocking_wait_us,
                 completion.draw.frame_info_available
                     ? &completion.draw.frame_info
-                    : nullptr,
-                completion.draw.source_cache_published,
-                completion.draw.source_cache_ring_generation,
-                completion.draw.source_cache_frame_generation);
+                    : nullptr);
         },
     };
 }
@@ -209,10 +212,9 @@ bool RendererPresentCommandProcessor::draw_paused_frame(
     const char* reason) {
     const bool interactive_refresh =
         reason && (std::strcmp(reason, "macos-renderer-owned-refresh") == 0 ||
-                   std::strcmp(reason, "request_frame_refresh") == 0 ||
-                   std::strcmp(reason, "windows-source-projection-refresh") == 0);
+                   std::strcmp(reason, "request_frame_refresh") == 0);
     const bool decoded_preview_refresh =
-        reason && std::strcmp(reason, "seek_frame_refresh") == 0;
+        renderer_frame_refresh_policy(reason).decoded_preview_refresh;
     PresentDecision decision;
     bool has_frame = false;
     {
@@ -250,7 +252,7 @@ bool RendererPresentCommandProcessor::draw_paused_frame(
     return true;
 }
 
-void RendererPresentCommandProcessor::present_frame(
+bool RendererPresentCommandProcessor::present_frame(
     RendererPresentCommandContext& context,
     const PresentDecision& decision) {
     const auto profiler_start = std::chrono::steady_clock::now();
@@ -260,9 +262,7 @@ void RendererPresentCommandProcessor::present_frame(
     {
         const auto snapshot_start = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(context.state_mutex);
-        if (context.hooks.should_consume_pending_layout()) {
-            context.hooks.consume_pending_layout_locked();
-        }
+        context.hooks.consume_pending_layout_locked();
         spdlog::debug("[present_frame] mode={}", context.layout.current_for_draw().mode);
         PresentDecision filtered_decision = decision;
         context.tracks.filter_present_decision(filtered_decision);
@@ -276,36 +276,16 @@ void RendererPresentCommandProcessor::present_frame(
         snapshot_us = elapsed_us_since(snapshot_start);
     }
     const bool attempted_draw = present_decision_has_frame(snapshot.decision);
-    if (attempted_draw &&
-        context.hooks
-            .should_suppress_playback_present_for_viewport_compositor()) {
-        const auto suppressed =
-            context.metrics.note_playing_layout_redraw_suppressed();
-        if (profiler_enabled("VOIDPLAYER_MACOS_PROFILER") &&
-            (suppressed % 120 == 0 || viewport_trace_log_all())) {
-            spdlog::info(
-                "[RendererProfiler] present_frame suppressed by viewport compositor "
-                "layout_rev={} suppressed={} tracks={}",
-                snapshot_layout_revision,
-                suppressed,
-                present_decision_frame_count(snapshot.decision));
-        }
-        if (context.hooks.playback_frame_ready_for_viewport_compositor) {
-            context.hooks.playback_frame_ready_for_viewport_compositor();
-        }
-        return;
-    }
-
     const auto completion_ctx = completion_context(context);
     RendererPresentationSubmitRequest request(snapshot, context.metrics);
     request.source = "present_frame";
-    request.headless = context.surface.headless();
+    request.offscreen = context.surface.offscreen();
     request.publish_swap_chain_after_sync_draw = true;
     request.poll_device_removed_label =
-        context.surface.headless() ? "headless present" : nullptr;
-    request.check_device_lost_after_draw = !context.surface.headless();
+        context.surface.offscreen() ? "offscreen present" : nullptr;
+    request.check_device_lost_after_draw = !context.surface.offscreen();
     request.overlay_hooks = context.hooks.overlay_hooks();
-    request.should_abort_headless_publish =
+    request.should_abort_offscreen_publish =
         [&shutting_down = context.shutting_down]() {
             return shutting_down.load(std::memory_order_acquire);
         };
@@ -329,11 +309,12 @@ void RendererPresentCommandProcessor::present_frame(
                 completion.success,
                 completion.error,
                 completion.backend_us,
+                0,
                 completion.frame_info);
         };
     RendererPresentationDrawResult sync_draw_result;
     bool sync_completed = false;
-    context.presentation.submit_and_dispatch(
+    const bool accepted = context.presentation.submit_and_dispatch(
         std::move(request),
         dispatch_hooks(context,
                        completion_ctx,
@@ -346,7 +327,7 @@ void RendererPresentCommandProcessor::present_frame(
                        &sync_completed,
                        &sync_draw_result));
     if (!sync_completed) {
-        return;
+        return accepted;
     }
     const auto total_us = elapsed_us_since(profiler_start);
     static std::atomic<uint64_t> present_profiler_count{0};
@@ -364,25 +345,26 @@ void RendererPresentCommandProcessor::present_frame(
         }
         spdlog::info(
             "[RendererProfiler] present_frame total_us={} snapshot_us={} backend_us={} "
-            "attempted={} drew={} headless={} tracks={} layout_rev={} preview_drawn={}",
+            "attempted={} drew={} offscreen={} tracks={} layout_rev={} preview_drawn={}",
             total_us,
             snapshot_us,
             sync_draw_result.backend_us,
             attempted_draw,
             sync_draw_result.drew,
-            context.surface.headless(),
+            context.surface.offscreen(),
             active_tracks,
             snapshot_layout_revision,
             final_preview_drawn);
     }
+    return accepted;
 }
 
-bool RendererPresentCommandProcessor::redraw_layout(
+RendererFrameRefreshResult RendererPresentCommandProcessor::redraw_layout(
     RendererPresentCommandContext& context) {
     if (context.metrics
             .transient_backpressure_remaining(steady_clock_us_now())
             .count() > 0) {
-        return false;
+        return RendererFrameRefreshResult::Failed;
     }
     const auto profiler_start = std::chrono::steady_clock::now();
     RendererDrawSnapshot snapshot;
@@ -404,7 +386,7 @@ bool RendererPresentCommandProcessor::redraw_layout(
                     snapshot_layout_revision,
                     decision_result.active_track_count);
             }
-            return false;
+            return RendererFrameRefreshResult::NotReady;
         }
         const auto& decision = decision_result.decision;
         context.history.set(decision);
@@ -419,13 +401,13 @@ bool RendererPresentCommandProcessor::redraw_layout(
     const auto completion_ctx = completion_context(context);
     RendererPresentationSubmitRequest request(snapshot, context.metrics);
     request.source = "viewport_composite";
-    request.headless = context.surface.headless();
+    request.offscreen = context.surface.offscreen();
     request.wait_idle_after_sync_draw_label =
-        context.surface.headless() ? nullptr : "viewport_composite";
+        context.surface.offscreen() ? nullptr : "viewport_composite";
     request.poll_device_removed_label =
-        context.surface.headless() ? "headless redraw" : "viewport_composite";
+        context.surface.offscreen() ? "offscreen redraw" : "viewport_composite";
     request.overlay_hooks = context.hooks.overlay_hooks();
-    request.should_abort_headless_publish =
+    request.should_abort_offscreen_publish =
         [&shutting_down = context.shutting_down]() {
             return shutting_down.load(std::memory_order_acquire);
         };
@@ -448,6 +430,7 @@ bool RendererPresentCommandProcessor::redraw_layout(
                                   completion.success,
                                   completion.error,
                                   completion.backend_us,
+                                  0,
                                   completion.frame_info);
         };
     return context.presentation.submit_and_dispatch(
@@ -461,7 +444,9 @@ bool RendererPresentCommandProcessor::redraw_layout(
                        profiler_start,
                        attempted_draw,
                        nullptr,
-                       nullptr));
+                       nullptr))
+        ? RendererFrameRefreshResult::Presented
+        : RendererFrameRefreshResult::Failed;
 }
 
 } // namespace vr

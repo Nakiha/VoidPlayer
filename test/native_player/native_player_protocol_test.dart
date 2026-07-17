@@ -3,7 +3,7 @@ import 'package:void_player/video_renderer_controller.dart';
 
 void main() {
   test(
-    'create player result rejects missing texture id with protocol error',
+    'create player result rejects missing player identity with protocol error',
     () {
       expect(
         () => CreatePlayerResult.fromMap(const {'tracks': <Object>[]}),

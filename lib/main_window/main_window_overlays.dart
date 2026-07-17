@@ -192,7 +192,7 @@ class _FloatingSidePanelStack extends StatelessWidget {
       availableWidth - _sidePanelShadowPadding,
     );
     final profilerPanelWidth = math.min(
-      560.0,
+      StatsPage.preferredWidth,
       math.max(360.0, mediaPanelWidth),
     );
     final profilerMaxHeight = math.min(520.0, math.max(0.0, availableHeight));
@@ -232,13 +232,14 @@ class _FloatingSidePanelStack extends StatelessWidget {
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     minWidth: 360,
-                    maxWidth: 560,
+                    maxWidth: profilerPanelWidth,
                     maxHeight: profilerMaxHeight,
                   ),
                   child: _FloatingPanelFrame(
                     icon: Icons.speed,
                     title: AppLocalizations.of(context)!.performanceMonitor,
                     onClose: onCloseProfiler,
+                    maxWidth: profilerPanelWidth,
                     child: StatsPage(dataSource: statsDataSource),
                   ),
                 ),

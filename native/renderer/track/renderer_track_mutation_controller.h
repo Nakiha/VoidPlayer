@@ -68,12 +68,15 @@ public:
         SeekType type,
         bool playing,
         bool force_recreate_paused_hevc,
-        const RendererTrackSeekHooks& hooks);
+        const RendererTrackSeekHooks& hooks,
+        const StepBackwardTrackSeekTargets* target_overrides = nullptr);
     bool apply_seek_to_all_and_log(int64_t target_pts_us,
                                    SeekType type,
                                    bool playing,
                                    bool force_recreate_paused_hevc,
-                                   const RendererTrackSeekHooks& hooks);
+                                   const RendererTrackSeekHooks& hooks,
+                                   const StepBackwardTrackSeekTargets*
+                                       target_overrides = nullptr);
 
 private:
     RendererTrackRegistry& registry_;

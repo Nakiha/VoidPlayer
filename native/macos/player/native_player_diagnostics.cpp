@@ -46,9 +46,9 @@ void fill_process_memory_stats(VPMacOSNativePlayerPerfStats* out) {
 
 }  // namespace
 
-int VPMacOSNativePlayerRendererOwnedPresentationActive(VPMacOSNativePlayer* player) {
-  VPMacOSNativeRendererOwnedPresentationState state = {};
-  if (VPMacOSNativePlayerCopyRendererOwnedPresentationState(player, &state) != 0) {
+int VPMacOSNativePlayerNativeTargetPresentationActive(VPMacOSNativePlayer* player) {
+  VPMacOSNativeTargetPresentationState state = {};
+  if (VPMacOSNativePlayerCopyNativeTargetPresentationState(player, &state) != 0) {
     return 0;
   }
   return state.renderer_initialized != 0 &&
@@ -59,32 +59,32 @@ int VPMacOSNativePlayerRendererOwnedPresentationActive(VPMacOSNativePlayer* play
              : 0;
 }
 
-int VPMacOSNativePlayerLastRendererOwnedPresentationSucceeded(
+int VPMacOSNativePlayerLastNativeTargetPresentationSucceeded(
     VPMacOSNativePlayer* player) {
   if (!player) {
     return 0;
   }
   std::lock_guard<std::mutex> lock(player->callback_mutex);
-  return player->last_renderer_owned_presentation_succeeded ? 1 : 0;
+  return player->last_native_target_presentation_succeeded ? 1 : 0;
 }
 
-int VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(
+int VPMacOSNativePlayerCopyLastNativeTargetFrameInfo(
     VPMacOSNativePlayer* player,
     VPMacOSNativeFrameInfo* out) {
   if (!player || !out) {
     return -1;
   }
   std::lock_guard<std::mutex> lock(player->callback_mutex);
-  if (!player->last_renderer_owned_frame_info_available) {
+  if (!player->last_native_target_frame_info_available) {
     return -1;
   }
-  *out = player->last_renderer_owned_frame_info;
+  *out = player->last_native_target_frame_info;
   return 0;
 }
 
-int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
+int VPMacOSNativePlayerCopyNativeTargetPresentationState(
     VPMacOSNativePlayer* player,
-    VPMacOSNativeRendererOwnedPresentationState* out) {
+    VPMacOSNativeTargetPresentationState* out) {
   if (!player || !out) {
     return -1;
   }
@@ -103,28 +103,28 @@ int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
     out->target_height = player->presentation_target_height;
     out->target_generation = player->presentation_target_generation;
     out->last_draw_succeeded =
-        player->last_renderer_owned_presentation_succeeded ? 1 : 0;
+        player->last_native_target_presentation_succeeded ? 1 : 0;
     out->consecutive_draw_failures =
-        player->renderer_owned_presentation_consecutive_failures;
+        player->native_target_presentation_consecutive_failures;
     out->draw_failure_count =
-        player->renderer_owned_presentation_draw_failure_count;
-    out->upload_count = player->renderer_owned_presentation_upload_count;
-    out->upload_failure_count = player->renderer_owned_presentation_failure_count;
+        player->native_target_presentation_draw_failure_count;
+    out->upload_count = player->native_target_presentation_upload_count;
+    out->upload_failure_count = player->native_target_presentation_failure_count;
     out->upload_interval_p95_ms =
-        player->renderer_owned_presentation_upload_interval_p95_ms;
+        player->native_target_presentation_upload_interval_p95_ms;
     out->target_warmup_generation =
-        player->renderer_owned_target_warmup_generation;
+        player->native_target_warmup_generation;
     out->target_warmup_remaining =
-        player->renderer_owned_target_warmup_remaining;
+        player->native_target_warmup_remaining;
     out->target_warmup_sample_count =
-        player->renderer_owned_target_warmup_sample_count;
-    out->target_warmup_last_ms = player->renderer_owned_target_warmup_last_ms;
-    out->target_warmup_p95_ms = player->renderer_owned_target_warmup_p95_ms;
+        player->native_target_warmup_sample_count;
+    out->target_warmup_last_ms = player->native_target_warmup_last_ms;
+    out->target_warmup_p95_ms = player->native_target_warmup_p95_ms;
     out->last_successful_frame_pts_us =
-        player->last_renderer_owned_frame_info_available
-            ? player->last_renderer_owned_frame_info.pts_us
+        player->last_native_target_frame_info_available
+            ? player->last_native_target_frame_info.pts_us
             : 0;
-    last_error = player->renderer_owned_presentation_last_error;
+    last_error = player->native_target_presentation_last_error;
   }
   {
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -351,49 +351,49 @@ int VPMacOSNativePlayerCopyTrackDiagnostics(
   return 0;
 }
 
-void VPMacOSNativePlayerResetRendererOwnedPresentationStats(VPMacOSNativePlayer* player) {
+void VPMacOSNativePlayerResetNativeTargetPresentationStats(VPMacOSNativePlayer* player) {
   if (!player) {
     return;
   }
   std::lock_guard<std::mutex> lock(player->callback_mutex);
-  player->last_renderer_owned_presentation_succeeded = false;
-  player->last_renderer_owned_frame_info_available = false;
-  player->last_renderer_owned_frame_info = {};
-  player->last_renderer_owned_layout_revision = 0;
-  player->renderer_owned_presentation_upload_count = 0;
-  player->renderer_owned_presentation_failure_count = 0;
-  player->renderer_owned_presentation_draw_failure_count = 0;
-  player->renderer_owned_presentation_consecutive_failures = 0;
-  player->renderer_owned_presentation_upload_intervals_ns.clear();
-  player->renderer_owned_presentation_upload_interval_p95_ms = 0;
-  player->renderer_owned_target_warmup_generation =
+  player->last_native_target_presentation_succeeded = false;
+  player->last_native_target_frame_info_available = false;
+  player->last_native_target_frame_info = {};
+  player->last_native_target_layout_revision = 0;
+  player->native_target_presentation_upload_count = 0;
+  player->native_target_presentation_failure_count = 0;
+  player->native_target_presentation_draw_failure_count = 0;
+  player->native_target_presentation_consecutive_failures = 0;
+  player->native_target_presentation_upload_intervals_ns.clear();
+  player->native_target_presentation_upload_interval_p95_ms = 0;
+  player->native_target_warmup_generation =
       player->presentation_target_generation;
-  player->renderer_owned_target_warmup_remaining = 0;
-  player->renderer_owned_target_warmup_sample_count = 0;
-  player->renderer_owned_target_warmup_last_ms = 0;
-  player->renderer_owned_target_warmup_p95_ms = 0;
-  player->renderer_owned_target_warmup_intervals_ns.clear();
-  player->renderer_owned_presentation_last_error.clear();
-  player->renderer_owned_presentation_first_upload_time = {};
-  player->renderer_owned_presentation_last_upload_time = {};
+  player->native_target_warmup_remaining = 0;
+  player->native_target_warmup_sample_count = 0;
+  player->native_target_warmup_last_ms = 0;
+  player->native_target_warmup_p95_ms = 0;
+  player->native_target_warmup_intervals_ns.clear();
+  player->native_target_presentation_last_error.clear();
+  player->native_target_presentation_first_upload_time = {};
+  player->native_target_presentation_last_upload_time = {};
 }
 
-uint64_t VPMacOSNativePlayerRendererOwnedPresentationUploadCount(
+uint64_t VPMacOSNativePlayerNativeTargetPresentationUploadCount(
     VPMacOSNativePlayer* player) {
   if (!player) {
     return 0;
   }
   std::lock_guard<std::mutex> lock(player->callback_mutex);
-  return player->renderer_owned_presentation_upload_count;
+  return player->native_target_presentation_upload_count;
 }
 
-uint64_t VPMacOSNativePlayerRendererOwnedPresentationFailureCount(
+uint64_t VPMacOSNativePlayerNativeTargetPresentationFailureCount(
     VPMacOSNativePlayer* player) {
   if (!player) {
     return 0;
   }
   std::lock_guard<std::mutex> lock(player->callback_mutex);
-  return player->renderer_owned_presentation_failure_count;
+  return player->native_target_presentation_failure_count;
 }
 
 int VPMacOSNativePlayerHardwareDecodeActive(VPMacOSNativePlayer* player) {
@@ -443,13 +443,13 @@ int VPMacOSNativePlayerCopyPresentationSchedulerStats(
   }
   *out = {};
   std::lock_guard<std::mutex> lock(player->callback_mutex);
-  out->tick_count = player->renderer_owned_presentation_upload_count;
-  out->presentable_tick_count = player->renderer_owned_presentation_upload_count;
-  out->frame_notification_count = player->renderer_owned_presentation_upload_count;
-  out->last_selected_pts_us = player->last_renderer_owned_frame_info.pts_us;
-  out->last_present_frame_count = player->last_renderer_owned_frame_info_available ? 1 : 0;
+  out->tick_count = player->native_target_presentation_upload_count;
+  out->presentable_tick_count = player->native_target_presentation_upload_count;
+  out->frame_notification_count = player->native_target_presentation_upload_count;
+  out->last_selected_pts_us = player->last_native_target_frame_info.pts_us;
+  out->last_present_frame_count = player->last_native_target_frame_info_available ? 1 : 0;
   out->cached_present_decision_available =
-      player->last_renderer_owned_frame_info_available ? 1 : 0;
+      player->last_native_target_frame_info_available ? 1 : 0;
   out->deadline_sleep_count = 0;
   out->last_deadline_sleep_us = 0;
   return 0;
@@ -596,25 +596,25 @@ int VPMacOSNativePlayerCopyPerfStats(
       out->packet_queue_memory_bytes = memory_stats.packet_queue_bytes;
       const auto backend_stats = player->renderer->presentation_backend_stats();
       const auto backend_metrics = player->renderer->presentation_backend_metrics();
-      out->renderer_owned_direct_yuv_upload_count =
+      out->native_target_direct_yuv_upload_count =
           backend_stats.direct_yuv_upload_count;
-      out->renderer_owned_cvpixelbuffer_upload_count =
+      out->native_target_cvpixelbuffer_upload_count =
           backend_stats.cvpixelbuffer_upload_count;
-      out->renderer_owned_present_package_upload_count =
+      out->native_target_present_package_upload_count =
           backend_stats.present_package_upload_count;
-      out->renderer_owned_present_package_copy_us =
+      out->native_target_present_package_copy_us =
           backend_stats.last_present_package_copy_us;
-      out->renderer_owned_present_package_gpu_wait_us =
+      out->native_target_present_package_gpu_wait_us =
           backend_stats.last_present_package_gpu_wait_us;
-      out->renderer_owned_present_package_total_us =
+      out->native_target_present_package_total_us =
           backend_stats.last_present_package_total_us;
-      out->renderer_owned_present_package_storage =
+      out->native_target_present_package_storage =
           backend_stats.last_present_package_storage;
-      out->renderer_owned_staging_allocation_count =
+      out->native_target_staging_allocation_count =
           backend_stats.staging_allocation_count;
-      out->renderer_owned_staging_reuse_count =
+      out->native_target_staging_reuse_count =
           backend_stats.staging_reuse_count;
-      out->renderer_owned_staging_max_bytes =
+      out->native_target_staging_max_bytes =
           backend_stats.staging_max_bytes;
       out->renderer_draw_count = backend_metrics.draw_count;
       if (backend_metrics.draw_count > 0) {
@@ -672,23 +672,23 @@ int VPMacOSNativePlayerCopyPerfStats(
   }
   {
     std::lock_guard<std::mutex> lock(player->callback_mutex);
-    out->renderer_owned_upload_count =
-        player->renderer_owned_presentation_upload_count;
-    out->renderer_owned_upload_failure_count =
-        player->renderer_owned_presentation_failure_count;
-    if (player->renderer_owned_presentation_upload_count > 1 &&
-        player->renderer_owned_presentation_last_upload_time >=
-            player->renderer_owned_presentation_first_upload_time) {
-      out->renderer_owned_upload_elapsed_ms =
+    out->native_target_upload_count =
+        player->native_target_presentation_upload_count;
+    out->native_target_upload_failure_count =
+        player->native_target_presentation_failure_count;
+    if (player->native_target_presentation_upload_count > 1 &&
+        player->native_target_presentation_last_upload_time >=
+            player->native_target_presentation_first_upload_time) {
+      out->native_target_upload_elapsed_ms =
           std::chrono::duration_cast<std::chrono::milliseconds>(
-              player->renderer_owned_presentation_last_upload_time -
-              player->renderer_owned_presentation_first_upload_time)
+              player->native_target_presentation_last_upload_time -
+              player->native_target_presentation_first_upload_time)
               .count();
-      if (out->renderer_owned_upload_elapsed_ms > 0) {
-        out->renderer_owned_upload_fps =
-            static_cast<double>(player->renderer_owned_presentation_upload_count - 1) *
+      if (out->native_target_upload_elapsed_ms > 0) {
+        out->native_target_upload_fps =
+            static_cast<double>(player->native_target_presentation_upload_count - 1) *
             1000.0 /
-            static_cast<double>(out->renderer_owned_upload_elapsed_ms);
+            static_cast<double>(out->native_target_upload_elapsed_ms);
       }
     }
   }

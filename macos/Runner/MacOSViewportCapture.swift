@@ -6,7 +6,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 enum MacOSViewportCapture {
-  static func capture(texture: MacOSVideoTexture?) -> Any {
+  static func capture(texture: MacOSVideoSurface?) -> Any {
     guard let texture else {
       return FlutterError(
         code: "NO_PLAYER",
@@ -29,7 +29,7 @@ enum MacOSViewportCapture {
     ]
   }
 
-  static func captureRegion(texture: MacOSVideoTexture?, arguments: Any?) -> Any {
+  static func captureRegion(texture: MacOSVideoSurface?, arguments: Any?) -> Any {
     guard let texture else {
       return FlutterError(
         code: "NO_PLAYER",

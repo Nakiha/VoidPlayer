@@ -67,36 +67,18 @@ void RendererLoopDriver::clear_pending_resize() {
     pending_height_.store(0);
 }
 
-void RendererLoopDriver::reset_preroll_state() {
-    was_buffering_ = false;
+void RendererLoopDriver::reset_playback_pacing() {
+    playback_pacing_.reset();
 }
 
-RendererLoopPrerollDecision RendererLoopDriver::evaluate_preroll(
-    bool playing,
-    bool clock_paused,
-    bool any_buffering,
-    int64_t current_pts_us) {
-    RendererLoopPrerollDecision decision;
-    decision.clock_paused = clock_paused;
-    if (was_buffering_ && !any_buffering) {
-        decision.force_preview_redraw = true;
-        decision.log_transition_complete = true;
-    }
-    was_buffering_ = any_buffering;
+PlaybackPacingDecision RendererLoopDriver::evaluate_playback_pacing(
+    const PlaybackPacingInput& input) {
+    return playback_pacing_.evaluate(input);
+}
 
-    if (any_buffering && !decision.clock_paused) {
-        decision.pause_clock = true;
-        decision.clock_paused = true;
-        decision.log_preroll_pending = true;
-    } else if (!any_buffering && decision.clock_paused && playing) {
-        decision.resume_decode = true;
-        decision.resume_clock = true;
-        decision.force_preview_redraw = true;
-        decision.clock_paused = false;
-        decision.preroll_complete_pts_s = static_cast<double>(current_pts_us) / 1e6;
-        decision.log_preroll_complete = true;
-    }
-    return decision;
+PlaybackPacingDiagnostics
+RendererLoopDriver::playback_pacing_diagnostics() const {
+    return playback_pacing_.diagnostics();
 }
 
 void RendererLoopDriver::reset_preview_state() {
@@ -146,6 +128,11 @@ void RendererLoopDriver::reset_presentation_scheduler() {
 
 PresentationSchedulerTick RendererLoopDriver::tick_presentation(RenderSink& sink) {
     return presentation_scheduler_.tick(sink);
+}
+
+void RendererLoopDriver::commit_presented(
+    const PresentDecision& decision) {
+    presentation_scheduler_.commit_presented(decision);
 }
 
 std::chrono::microseconds RendererLoopDriver::frame_deadline_sleep(

@@ -74,16 +74,6 @@ class DebugFailNativeCompositorAction extends AutomationAction {
   }) : super('DEBUG_FAIL_NATIVE_COMPOSITOR');
 }
 
-class DebugSimulateWindowsDeviceLossAction extends AutomationAction {
-  final String target;
-  final String reason;
-
-  const DebugSimulateWindowsDeviceLossAction({
-    required this.target,
-    this.reason = 'debug-simulated-device-loss',
-  }) : super('DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS');
-}
-
 class ResetNativePerfCountersAction extends AutomationAction {
   const ResetNativePerfCountersAction() : super('RESET_NATIVE_PERF_COUNTERS');
 }
@@ -198,6 +188,20 @@ class DragViewportNative extends AutomationAction {
     this.stepMs = 16,
     this.button = 'secondary',
   }) : super('DRAG_VIEWPORT_NATIVE');
+}
+
+class DragViewportWin32Message extends AutomationAction {
+  final double dx;
+  final double dy;
+  final int steps;
+  final int stepMs;
+
+  const DragViewportWin32Message(
+    this.dx,
+    this.dy, {
+    this.steps = 24,
+    this.stepMs = 16,
+  }) : super('DRAG_VIEWPORT_WIN32_MESSAGE');
 }
 
 class DragSplitHandleNative extends AutomationAction {
@@ -318,6 +322,13 @@ class HoverTimeline extends AutomationAction {
     : super('HOVER_TIMELINE');
 }
 
+class AssertWindowsAxTree extends AutomationAction {
+  final List<String> requiredNames;
+
+  const AssertWindowsAxTree(this.requiredNames)
+    : super('ASSERT_WINDOWS_AXTREE');
+}
+
 class ClickMediaHeaderOverlayButtonNative extends AutomationAction {
   const ClickMediaHeaderOverlayButtonNative()
     : super('CLICK_MEDIA_HEADER_OVERLAY_BUTTON_NATIVE');
@@ -326,6 +337,25 @@ class ClickMediaHeaderOverlayButtonNative extends AutomationAction {
 class ClickMediaHeaderOverlayButton extends AutomationAction {
   const ClickMediaHeaderOverlayButton()
     : super('CLICK_MEDIA_HEADER_OVERLAY_BUTTON');
+}
+
+class InvokeWindowsAxAction extends AutomationAction {
+  final String actionName;
+
+  const InvokeWindowsAxAction(this.actionName)
+    : super('INVOKE_WINDOWS_AX_ACTION');
+}
+
+class PressKeyNative extends AutomationAction {
+  final String key;
+
+  const PressKeyNative(this.key) : super('PRESS_KEY_NATIVE');
+}
+
+class PressKeyWin32Message extends AutomationAction {
+  final String key;
+
+  const PressKeyWin32Message(this.key) : super('PRESS_KEY_WIN32_MESSAGE');
 }
 
 class ClickMediaHeaderRemoveButton extends AutomationAction {

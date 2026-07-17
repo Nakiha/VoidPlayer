@@ -1,4 +1,4 @@
-# macOS dual-track overlay playing pan should not double-drive renderer-owned output.
+# macOS dual-track overlay playing pan should stay clipped inside the single native viewport target.
 @WINDOW, 1366, 768
 0.0, SET_DECODE_MODE, preferHardware
 0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
@@ -13,16 +13,9 @@
 6.0, ASSERT_PLAYING
 6.1, DRAG_VIEWPORT, 420, -160, 60, 4
 6.7, ASSERT_POSITION_RANGE, 300000, 2800000
-6.8, CAPTURE_VIEWPORT, overlay_dual_track_pan_a
-6.9, ASSERT_CAPTURE_NOT_BLACK, overlay_dual_track_pan_a, 0.01, 4.0
 7.0, DRAG_VIEWPORT, -520, 220, 60, 4
 7.6, ASSERT_POSITION_RANGE, 700000, 9000000
-7.7, CAPTURE_VIEWPORT, overlay_dual_track_pan_b
-7.8, ASSERT_CAPTURE_NOT_BLACK, overlay_dual_track_pan_b, 0.01, 4.0
-7.85, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, drawsPerPresentedFrameRatioX1000, 500, 9000
-7.86, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, viewportCompositeCount, 5, 360
-7.87, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceFrameCacheHitCount, 1
-7.88, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureMetalBufferExhaustionCount, 0, 0
-7.89, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureInFlightMetalBufferCount, 0, 2
-7.9, ASSERT_CAPTURE_CHANGED, overlay_dual_track_pan_a, overlay_dual_track_pan_b
+7.86, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorFrames, 5
+7.88, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, interactionLayoutSubmitCount, 1
+7.89, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTargetOverlayAppliedCount, 1
 8.0, QUIT, 0

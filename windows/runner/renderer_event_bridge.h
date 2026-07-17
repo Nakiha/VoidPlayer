@@ -1,57 +1,47 @@
 #pragma once
 
-#include <string>
+#include "renderer/renderer_api_types.h"
 
-#include <flutter/standard_method_codec.h>
 #include <flutter/event_sink.h>
+#include <flutter/standard_method_codec.h>
 #include <windows.h>
-
-#include "windows/player/native_player.h"
 
 #include <atomic>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <string>
 
-class RendererEventBridge {
-public:
-    struct Diagnostics {
-        int64_t listen_count = 0;
-        int64_t emit_count = 0;
-        int64_t drop_no_sink_count = 0;
-    };
+class RendererEventBridge final {
+ public:
+  RendererEventBridge() = default;
+  ~RendererEventBridge();
 
-    RendererEventBridge() = default;
-    ~RendererEventBridge();
+  RendererEventBridge(const RendererEventBridge&) = delete;
+  RendererEventBridge& operator=(const RendererEventBridge&) = delete;
 
-    RendererEventBridge(const RendererEventBridge&) = delete;
-    RendererEventBridge& operator=(const RendererEventBridge&) = delete;
+  void RegisterDrainWindow();
+  void Shutdown();
+  void SetSink(
+      std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink);
+  void ClearSink();
+  void Queue(const vr::RendererEvent& event);
+  void QueueNativeCompositorState(bool active,
+                                  bool requested,
+                                  const std::string& mode,
+                                  const std::string& phase,
+                                  const std::string& reason,
+                                  const std::string& failure);
+  void PostTask(std::function<void()> task);
+  void Drain();
 
-    void RegisterDrainWindow();
-    void Shutdown();
-
-    void SetSink(std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink);
-    void ClearSink();
-    void Queue(const vr::RendererEvent& event);
-    void QueueNativeCompositorState(bool active,
-                                    bool requested,
-                                    bool edr_enabled,
-                                    const std::string& mode,
-                                    const std::string& phase,
-                                    int64_t serial,
-                                    const std::string& reason,
-                                    const std::string& failure);
-    void Drain();
-    Diagnostics diagnostics() const;
-
-private:
-    HWND event_hwnd_ = nullptr;
-    mutable std::mutex mutex_;
-    std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink_;
-    std::deque<flutter::EncodableValue> pending_events_;
-    std::atomic<int64_t> sequence_{0};
-    int64_t listen_count_ = 0;
-    int64_t emit_count_ = 0;
-    int64_t drop_no_sink_count_ = 0;
+ private:
+  HWND event_hwnd_ = nullptr;
+  mutable std::mutex mutex_;
+  std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink_;
+  std::deque<flutter::EncodableValue> pending_events_;
+  std::deque<std::function<void()>> pending_tasks_;
+  std::atomic<int64_t> sequence_{0};
 };

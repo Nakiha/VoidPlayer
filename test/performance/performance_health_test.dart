@@ -11,6 +11,17 @@ void main() {
     expect(snapshot.kind, PerformanceHealthKind.ok);
   });
 
+  test('uses independent interaction submissions as layout draw cadence', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'layoutIntentHz': 74.0,
+      'layoutDrawHz': 0.0,
+      'interactionLayoutSubmitHz': 68.0,
+    });
+
+    expect(snapshot.layoutDrawHz, 68.0);
+  });
+
   test('classifies native render pressure from renderer latency', () {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
       'trackCount': 1,
@@ -26,20 +37,65 @@ void main() {
     expect(snapshot.reason, 'native-render');
   });
 
-  test('uses retained WGPU timings for source-provider native pressure', () {
+  test('ignores blocking Windows compositor callback in draw pressure', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 3,
+      'isPlaying': true,
+      'presentationBackend': 'windows-native-d3d11',
+      'displayRefreshHzEstimate': 120.0,
+      'displayTickHz': 120.0,
+      'nativeCompositorEnabled': true,
+      'nativeCompositorCompositeHz': 120.0,
+      'nativeRendererDrawP95Us': 16700.0,
+      'nativeRendererDrawWorkP95Us': 1300.0,
+      'nativeRendererDrawCallbackP95Us': 8300.0,
+      'nativeRendererDrawBlockingWaitP95Us': 7100.0,
+      'nativeRendererDrawBackendP95Us': 8300.0,
+      'nativeRendererDrawBackendWorkP95Us': 1200.0,
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.ok);
+    expect(snapshot.kind, PerformanceHealthKind.ok);
+    expect(snapshot.drawP95Us, 1300.0);
+    expect(snapshot.diagnosticSummary, isNot(contains('gpu-completion-high')));
+  });
+
+  test('still reports pressure from split renderer work timing', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 3,
+      'isPlaying': true,
+      'presentationBackend': 'windows-native-d3d11',
+      'displayRefreshHzEstimate': 120.0,
+      'displayTickHz': 120.0,
+      'nativeCompositorEnabled': true,
+      'nativeCompositorCompositeHz': 120.0,
+      'nativeRendererDrawP95Us': 20500.0,
+      'nativeRendererDrawWorkP95Us': 12200.0,
+      'nativeRendererDrawCallbackP95Us': 8300.0,
+      'nativeRendererDrawBlockingWaitP95Us': 0.0,
+      'nativeRendererDrawBackendP95Us': 11100.0,
+      'nativeRendererDrawBackendWorkP95Us': 11100.0,
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.warning);
+    expect(snapshot.kind, PerformanceHealthKind.nativeRenderPressure);
+    expect(snapshot.drawP95Us, 12200.0);
+  });
+
+  test('uses native compositor timings for retained native pressure', () {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
       'trackCount': 1,
       'isPlaying': true,
       'displayRefreshHzEstimate': 120.0,
-      'presentationBackend': 'native-wgpu-metal-source-provider',
-      'nativeCompositorBackend': 'wgpu-metal-thin-runner',
+      'presentationBackend': 'native-metal-cvpixelbuffer-target',
+      'nativeCompositorBackend': 'metal',
       'nativeCompositorCompositeHz': 120.0,
       'nativeRendererDrawP95Us': 12000.0,
       'nativeRendererDrawBackendP95Us': 11000.0,
       'metalCommandCompletionP95Us': 10500.0,
       'nativeCompositorFrameCpuP95Ms': 0.28,
-      'nativeCompositorWgpuSubmitCpuP95Ms': 0.19,
-      'nativeCompositorWgpuCompletionP95Ms': 3.85,
+      'nativeCompositorBackendSubmitCpuP95Ms': 0.19,
+      'nativeCompositorBackendCompletionP95Ms': 3.85,
     });
 
     expect(snapshot.level, PerformanceHealthLevel.ok);
@@ -447,8 +503,6 @@ void main() {
       'displayRefreshHzEstimate': 120.0,
       'displayTickHz': 0.0,
       'nativeCompositorCompositeHz': 86.4,
-      'nativeCompositorSourceCacheHz': 29.7,
-      'nativeCompositorSourceProjectionHz': 119.1,
     });
     late String detail;
 
@@ -465,8 +519,6 @@ void main() {
     );
 
     expect(detail, startsWith('compositor 86/120Hz'));
-    expect(detail, contains('source 30Hz'));
-    expect(detail, contains('projection 119Hz'));
     expect(detail, contains('display-link idle/120Hz'));
   });
 

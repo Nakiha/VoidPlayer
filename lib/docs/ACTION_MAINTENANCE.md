@@ -64,6 +64,18 @@ Automation command 是 release UI test 的正式能力，但不属于用户操�
 
 `ActionFocus` 默认在焦点位于 `EditableText`（`TextField`、`TextFormField` 等）时放行所有按键。如果未来有输入控件需要部分拦截，需要修改 `handleKey` 中的判断逻辑。
 
+Windows 产品路径的应用级快捷键由 runner message pump 通过
+`void_player/windows_runner_shortcuts` 交给 `ActionRegistry`；原始 key message 仍正常
+进入 Flutter 供文本输入使用。`HardwareKeyboard` 对同一快捷键只标记 `platformOwned`，
+不可再次执行 Action。runner channel 必须只接收当前 runner / Flutter child HWND 的消息，
+文件选择器等 owned HWND 的按键不得转发。
+
+快捷键失效回归优先使用 `PRESS_KEY_WIN32_MESSAGE`，它按当前进程 PID 定位 runner 与
+Flutter child HWND 后直接投递 key down/up，不抢前台、不移动用户键鼠；需要覆盖真实
+前台激活时才使用 `PRESS_KEY_NATIVE`。不要用直接执行 `TOGGLE_PLAY_PAUSE` 代替键盘链路。需要先激活按钮时使用
+`INVOKE_WINDOWS_AX_ACTION` 按稳定语义名调用 accessibility default action，避免依赖窗口
+位置和 DPI 的鼠标坐标。
+
 ### 窗口注意事项
 
 设置、统计、内存入口都在主窗口内显示，不再创建额外 Flutter engine。快捷键显示使用 `PlayerAction.shortcutEntries` 静态列表，不依赖运行时注册状态。
@@ -128,9 +140,11 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `STORE_VIEW_CENTER` | name | 记录归一化视图中心基线 |
 | `STORE_RESOURCE_USAGE` | name | 记录进程 RSS / 专用显存基线 |
 | `STORE_NATIVE_SEEK_COUNT` | name | 记录当前 native 插件 seek 日志计数 |
-| `RESET_NATIVE_PERF_COUNTERS` | — | 清空 native compositor high-refresh 诊断采样窗口 |
+| `RESET_NATIVE_PERF_COUNTERS` | — | 清空 native compositor 诊断采样窗口（含 Flutter surface publish） |
 | `BEGIN_NATIVE_INTERACTION_SAMPLE` | label? | 开始 native high-refresh 交互采样窗口 |
 | `END_NATIVE_INTERACTION_SAMPLE` | label? | 结束 native high-refresh 交互采样窗口 |
+| `DRAG_VIEWPORT_WIN32_MESSAGE` | dx, dy, steps?, stepMs? | 按当前进程 HWND 投递右键拖动消息，不移动系统鼠标，覆盖 Windows embedder pointer 路径 |
+| `PRESS_KEY_WIN32_MESSAGE` | key | 按当前进程 HWND 投递 Win32 key down/up，覆盖 runner shortcut channel 且不抢前台 |
 | `DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL` | dx, dy, key, value, steps?, stepMs?, minMatches? | 拖动 viewport 期间采样 native 诊断布尔值，命中次数需达到 `minMatches` |
 | `CLICK_MEDIA_HEADER_REMOVE_BUTTON` | fileId | 点击指定 fileId 的 media header 移除按钮，覆盖真实按钮路径 |
 | `SET_MEDIA_SOURCE_ID` | slot, sourceId | 声明指定 slot 媒体的源 lineage（同源不同编码的 join key），写入 storage catalog |

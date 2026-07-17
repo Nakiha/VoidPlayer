@@ -13,13 +13,12 @@ set(_shader_files
     overlay_layer.metal
     overlay_legacy_composite.metal)
 
-set(_body "")
+set(_expected "{\n")
 foreach(_shader_file IN LISTS _shader_files)
     file(READ "${_shader_dir}/${_shader_file}" _shader_source)
-    string(APPEND _body "${_shader_source}")
+    string(APPEND _expected "R\"(\n${_shader_source})\",\n")
 endforeach()
-
-set(_expected "R\"(\n${_body})\";\n")
+string(APPEND _expected "};\n")
 file(READ "${_generated_inc}" _actual)
 if(NOT _actual STREQUAL _expected)
     message(FATAL_ERROR

@@ -48,7 +48,7 @@ void main() {
     'immediate viewport resize applies pending layout before native resize',
     () async {
       final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
         ..setLayout(const LayoutState());
       addTearDown(stateStore.dispose);
       final trackManager = TrackManager();
@@ -83,7 +83,7 @@ void main() {
     tester,
   ) async {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setNativeCompositorActive(true)
       ..setLayout(const LayoutState());
     addTearDown(stateStore.dispose);
@@ -117,7 +117,7 @@ void main() {
     'preempt viewport resize lets native resize rescale applied pending layout',
     () async {
       final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
         ..setLayout(const LayoutState());
       addTearDown(stateStore.dispose);
       final trackManager = TrackManager();
@@ -151,7 +151,7 @@ void main() {
 
   test('queued logical viewport width delta preempts native resize', () async {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setLayout(const LayoutState());
     addTearDown(stateStore.dispose);
     final trackManager = TrackManager();
@@ -177,42 +177,41 @@ void main() {
     expect(coordinator.viewportHeight, 200);
   });
 
-  test('native compositor preempt resize republishes source cache', () async {
-    final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
-      ..setNativeCompositorActive(true)
-      ..setLayout(const LayoutState(order: [1, -1, -1, -1]));
-    addTearDown(stateStore.dispose);
-    final trackManager = TrackManager()..setTracks([track(1)]);
-    addTearDown(trackManager.dispose);
-    final controller = _FakeNativePlayerController();
-    final coordinator = MainWindowLayoutCoordinator(
-      vsync: const TestVSync(),
-      controller: controller,
-      stateStore: stateStore,
-      trackManager: trackManager,
-      mounted: () => true,
-    );
-    addTearDown(coordinator.dispose);
-    coordinator.viewportWidth = 2196;
-    coordinator.viewportHeight = 876;
-    controller.currentSize = const Size(2196, 876);
+  test(
+    'native compositor preempt resize refreshes native target layout',
+    () async {
+      final stateStore = MainWindowStateStore()
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
+        ..setNativeCompositorActive(true)
+        ..setLayout(const LayoutState(order: [1, -1, -1, -1]));
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager()..setTracks([track(1)]);
+      addTearDown(trackManager.dispose);
+      final controller = _FakeNativePlayerController();
+      final coordinator = MainWindowLayoutCoordinator(
+        vsync: const TestVSync(),
+        controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
+        mounted: () => true,
+      );
+      addTearDown(coordinator.dispose);
+      coordinator.viewportWidth = 2196;
+      coordinator.viewportHeight = 876;
+      controller.currentSize = const Size(2196, 876);
 
-    await coordinator.preemptViewportResize(width: 1516, height: 876);
+      await coordinator.preemptViewportResize(width: 1516, height: 876);
 
-    expect(controller.resizes, const [Size(1516, 876)]);
-    expect(controller.calls, const [
-      'resize',
-      'getLayout',
-      'prepareNativeCompositorSourceCache',
-    ]);
-    expect(coordinator.viewportWidth, 1516);
-    expect(coordinator.viewportHeight, 876);
-  });
+      expect(controller.resizes, const [Size(1516, 876)]);
+      expect(controller.calls, const ['resize', 'getLayout']);
+      expect(coordinator.viewportWidth, 1516);
+      expect(coordinator.viewportHeight, 876);
+    },
+  );
 
   test('visible marks sidebar width changes preempt native resize', () async {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setMarksSidebarVisible(true)
       ..setMarksSidebarWidth(340)
       ..setLayout(const LayoutState());
@@ -246,7 +245,7 @@ void main() {
     'hiding marks sidebar removes Flutter panel before native resize',
     (tester) async {
       final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
         ..setMarksSidebarVisible(true)
         ..setMarksSidebarWidth(320)
         ..setLayout(const LayoutState());
@@ -290,7 +289,7 @@ void main() {
 
   test('zoom combo changes are clamped through shared zoom path', () {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setLayout(const LayoutState());
     addTearDown(stateStore.dispose);
     final trackManager = TrackManager();
@@ -309,221 +308,10 @@ void main() {
     expect(stateStore.value.layout.zoomRatio, LayoutState.zoomMax);
   });
 
-  test(
-    'paused native compositor pan keeps source cache after final layout',
-    () async {
-      final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
-        ..setNativeCompositorActive(true)
-        ..setPlaying(false)
-        ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
-      addTearDown(stateStore.dispose);
-      final trackManager = TrackManager()..setTracks([track(1), track(2)]);
-      addTearDown(trackManager.dispose);
-      final controller = _FakeNativePlayerController();
-      final coordinator = MainWindowLayoutCoordinator(
-        vsync: const TestVSync(),
-        controller: controller,
-        stateStore: stateStore,
-        trackManager: trackManager,
-        mounted: () => true,
-        sourceProjectionEnabled: () => true,
-      );
-      addTearDown(coordinator.dispose);
-      coordinator.viewportWidth = 1600;
-      coordinator.viewportHeight = 900;
-
-      coordinator.onPan(const Offset(160, -90));
-      await pumpEventQueue();
-
-      expect(controller.appliedLayouts, isEmpty);
-      expect(controller.calls, contains('prepareNativeCompositorSourceCache'));
-      expect(controller.transforms, isEmpty);
-      expect(stateStore.value.layout.viewOffsetX, 160);
-      expect(stateStore.value.layout.viewOffsetY, -90);
-
-      coordinator.onPointerButton(false, false);
-      await coordinator.flushPendingLayout();
-
-      expect(controller.appliedLayouts, hasLength(1));
-      expect(controller.appliedLayouts.single.viewOffsetX, 160);
-      expect(controller.appliedLayouts.single.viewOffsetY, -90);
-      expect(controller.transforms, isEmpty);
-      expect(
-        controller.calls,
-        isNot(
-          contains(
-            'clearNativeCompositorSourceCache:authoritative layout applied',
-          ),
-        ),
-      );
-      expect(
-        controller.calls.where(
-          (call) => call == 'prepareNativeCompositorSourceCache',
-        ),
-        hasLength(2),
-      );
-    },
-  );
-
-  test(
-    'paused native compositor split pan uses full source projection',
-    () async {
-      final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
-        ..setNativeCompositorActive(true)
-        ..setPlaying(false)
-        ..setLayout(
-          const LayoutState(
-            mode: LayoutMode.splitScreen,
-            order: [1, 2, -1, -1],
-          ),
-        );
-      addTearDown(stateStore.dispose);
-      final trackManager = TrackManager()..setTracks([track(1), track(2)]);
-      addTearDown(trackManager.dispose);
-      final controller = _FakeNativePlayerController();
-      final coordinator = MainWindowLayoutCoordinator(
-        vsync: const TestVSync(),
-        controller: controller,
-        stateStore: stateStore,
-        trackManager: trackManager,
-        mounted: () => true,
-        sourceProjectionEnabled: () => true,
-      );
-      addTearDown(coordinator.dispose);
-      coordinator.viewportWidth = 1600;
-      coordinator.viewportHeight = 900;
-
-      coordinator.onPan(const Offset(160, 0));
-      await pumpEventQueue();
-
-      expect(controller.appliedLayouts, isEmpty);
-      expect(controller.transforms, isEmpty);
-      expect(controller.calls, contains('prepareNativeCompositorSourceCache'));
-    },
-  );
-
-  test(
-    'single source projection uses viewport geometry, not surface geometry',
-    () async {
-      final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
-        ..setNativeCompositorActive(true)
-        ..setPlaying(true)
-        ..setLayout(const LayoutState(order: [1, -1, -1, -1]));
-      addTearDown(stateStore.dispose);
-      final trackManager = TrackManager()..setTracks([track(1)]);
-      addTearDown(trackManager.dispose);
-      final controller = _FakeNativePlayerController();
-      final coordinator = MainWindowLayoutCoordinator(
-        vsync: const TestVSync(),
-        controller: controller,
-        stateStore: stateStore,
-        trackManager: trackManager,
-        mounted: () => true,
-        sourceProjectionEnabled: () => true,
-      );
-      addTearDown(coordinator.dispose);
-      coordinator.viewportWidth = 1880;
-      coordinator.viewportHeight = 920;
-
-      coordinator.refreshNativeCompositorOverlay();
-      await pumpEventQueue();
-
-      final projection = controller.sourceCacheProjections.single;
-      expect(projection.sourceSlots, const [0]);
-      expect(projection.activeTrackCount, 1);
-      expect(projection.displayOffsetY[0], closeTo(0.0, 1e-6));
-      expect(projection.invDisplaySizeY[0], closeTo(1.0, 1e-6));
-      expect(projection.displayOffsetX[0], closeTo(0.065, 0.001));
-      expect(projection.invDisplaySizeX[0], closeTo(1.149, 0.001));
-    },
-  );
-
-  test(
-    'native compositor split drag uses projection and defers full layout',
-    () async {
-      final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
-        ..setNativeCompositorActive(true)
-        ..setPlaying(false)
-        ..setLayout(
-          const LayoutState(
-            mode: LayoutMode.splitScreen,
-            splitPos: 0.5,
-            order: [1, 2, -1, -1],
-          ),
-        );
-      addTearDown(stateStore.dispose);
-      final trackManager = TrackManager()..setTracks([track(1), track(2)]);
-      addTearDown(trackManager.dispose);
-      final controller = _FakeNativePlayerController();
-      final coordinator = MainWindowLayoutCoordinator(
-        vsync: const TestVSync(),
-        controller: controller,
-        stateStore: stateStore,
-        trackManager: trackManager,
-        mounted: () => true,
-        sourceProjectionEnabled: () => true,
-      );
-      addTearDown(coordinator.dispose);
-      coordinator.viewportWidth = 1600;
-      coordinator.viewportHeight = 900;
-
-      coordinator.onSplit(0.62);
-      await pumpEventQueue();
-
-      expect(stateStore.value.layout.splitPos, 0.62);
-      expect(controller.appliedLayouts, isEmpty);
-      expect(controller.transforms, isEmpty);
-      expect(controller.calls, contains('prepareNativeCompositorSourceCache'));
-
-      coordinator.onPointerButton(false, false);
-      await coordinator.flushPendingLayout();
-
-      expect(controller.appliedLayouts, hasLength(1));
-      expect(controller.appliedLayouts.single.splitPos, 0.62);
-      expect(controller.calls.last, 'prepareNativeCompositorSourceCache');
-    },
-  );
-
-  test(
-    'native compositor overlay refresh republishes source cache without layout dirty',
-    () async {
-      final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
-        ..setNativeCompositorActive(true)
-        ..setPlaying(false)
-        ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
-      addTearDown(stateStore.dispose);
-      final trackManager = TrackManager()..setTracks([track(1), track(2)]);
-      addTearDown(trackManager.dispose);
-      final controller = _FakeNativePlayerController();
-      final coordinator = MainWindowLayoutCoordinator(
-        vsync: const TestVSync(),
-        controller: controller,
-        stateStore: stateStore,
-        trackManager: trackManager,
-        mounted: () => true,
-        sourceProjectionEnabled: () => true,
-      );
-      addTearDown(coordinator.dispose);
-      coordinator.viewportWidth = 1600;
-      coordinator.viewportHeight = 900;
-
-      coordinator.refreshNativeCompositorOverlay();
-      await pumpEventQueue();
-
-      expect(controller.appliedLayouts, isEmpty);
-      expect(controller.calls, ['prepareNativeCompositorSourceCache']);
-    },
-  );
-
-  test('inactive native compositor clears retained source cache', () async {
+  test('pan submits the complete renderer layout', () async {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
-      ..setNativeCompositorActive(true);
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
+      ..setLayout(const LayoutState());
     addTearDown(stateStore.dispose);
     final trackManager = TrackManager()..setTracks([track(1)]);
     addTearDown(trackManager.dispose);
@@ -534,188 +322,20 @@ void main() {
       stateStore: stateStore,
       trackManager: trackManager,
       mounted: () => true,
-      sourceProjectionEnabled: () => true,
     );
     addTearDown(coordinator.dispose);
 
-    coordinator.onNativeCompositorAvailabilityChanged(active: false);
-    await pumpEventQueue();
+    coordinator.panByDelta(24, -12);
+    await coordinator.flushPendingLayout();
 
-    expect(
-      controller.calls,
-      contains('clearNativeCompositorSourceCache:native compositor inactive'),
-    );
-  });
-
-  test('zero tracks clear retained native compositor source cache', () async {
-    final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
-      ..setNativeCompositorActive(true);
-    addTearDown(stateStore.dispose);
-    final trackManager = TrackManager();
-    addTearDown(trackManager.dispose);
-    final controller = _FakeNativePlayerController();
-    final coordinator = MainWindowLayoutCoordinator(
-      vsync: const TestVSync(),
-      controller: controller,
-      stateStore: stateStore,
-      trackManager: trackManager,
-      mounted: () => true,
-      sourceProjectionEnabled: () => true,
-    );
-    addTearDown(coordinator.dispose);
-
-    coordinator.onTrackSetChanged();
-    await pumpEventQueue();
-
-    expect(
-      controller.calls,
-      contains('clearNativeCompositorSourceCache:zero tracks'),
-    );
-  });
-
-  test(
-    'playing native compositor pan subscribes live source cache, defers commit',
-    () async {
-      final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
-        ..setNativeCompositorActive(true)
-        ..setPlaying(true)
-        ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
-      addTearDown(stateStore.dispose);
-      final trackManager = TrackManager()..setTracks([track(1), track(2)]);
-      addTearDown(trackManager.dispose);
-      final controller = _FakeNativePlayerController();
-      final coordinator = MainWindowLayoutCoordinator(
-        vsync: const TestVSync(),
-        controller: controller,
-        stateStore: stateStore,
-        trackManager: trackManager,
-        mounted: () => true,
-        sourceProjectionEnabled: () => true,
-      );
-      addTearDown(coordinator.dispose);
-      coordinator.viewportWidth = 1600;
-      coordinator.viewportHeight = 900;
-
-      coordinator.onPan(const Offset(160, -90));
-      await pumpEventQueue();
-
-      // Playing pan subscribes the source cache too (native re-bakes the ring
-      // per frame); projection updates immediately and the authoritative native
-      // layout is deferred until pointer-up.
-      expect(controller.calls, contains('prepareNativeCompositorSourceCache'));
-      expect(controller.transforms, isEmpty);
-      expect(controller.appliedLayouts, isEmpty);
-
-      // Continued panning still does not commit mid-interaction.
-      coordinator.onPan(const Offset(40, 0));
-      await pumpEventQueue();
-      expect(controller.appliedLayouts, isEmpty);
-
-      // Pointer-up commits the authoritative layout once and keeps the live
-      // source cache/projection active for the native compositor.
-      coordinator.onPointerButton(false, false);
-      await coordinator.flushPendingLayout();
-      expect(controller.appliedLayouts, hasLength(1));
-      expect(controller.appliedLayouts.single.viewOffsetX, 200);
-      expect(controller.appliedLayouts.single.viewOffsetY, -90);
-      expect(
-        controller.calls,
-        isNot(
-          contains(
-            'clearNativeCompositorSourceCache:authoritative layout applied',
-          ),
-        ),
-      );
-      expect(controller.calls.last, 'prepareNativeCompositorSourceCache');
-    },
-  );
-
-  test(
-    'playback transition flushes deferred pan layout before play starts',
-    () async {
-      final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
-        ..setNativeCompositorActive(true)
-        ..setPlaying(false)
-        ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
-      addTearDown(stateStore.dispose);
-      final trackManager = TrackManager()..setTracks([track(1), track(2)]);
-      addTearDown(trackManager.dispose);
-      final controller = _FakeNativePlayerController();
-      final coordinator = MainWindowLayoutCoordinator(
-        vsync: const TestVSync(),
-        controller: controller,
-        stateStore: stateStore,
-        trackManager: trackManager,
-        mounted: () => true,
-        sourceProjectionEnabled: () => true,
-      );
-      addTearDown(coordinator.dispose);
-      coordinator.viewportWidth = 1600;
-      coordinator.viewportHeight = 900;
-
-      coordinator.onPan(const Offset(160, -90));
-      await pumpEventQueue();
-      expect(controller.appliedLayouts, isEmpty);
-
-      // Play transition: deferred layout must reach native before playback
-      // starts; the source projection remains live for compositor overlays.
-      await coordinator.onPlaybackStateChanged(playing: true);
-
-      expect(controller.appliedLayouts, hasLength(1));
-      expect(controller.appliedLayouts.single.viewOffsetX, 160);
-      expect(controller.appliedLayouts.single.viewOffsetY, -90);
-      expect(
-        controller.calls,
-        isNot(
-          contains(
-            'clearNativeCompositorSourceCache:authoritative layout applied',
-          ),
-        ),
-      );
-      expect(controller.calls.last, 'prepareNativeCompositorSourceCache');
-
-      // A pan right after the transition starts a fresh interaction.
-      stateStore.setPlaying(true);
-      coordinator.onPan(const Offset(20, 0));
-      await pumpEventQueue();
-      expect(controller.calls.last, 'prepareNativeCompositorSourceCache');
-    },
-  );
-
-  test('playback transition without interaction state is a no-op', () async {
-    final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
-      ..setNativeCompositorActive(true)
-      ..setPlaying(false)
-      ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
-    addTearDown(stateStore.dispose);
-    final trackManager = TrackManager()..setTracks([track(1), track(2)]);
-    addTearDown(trackManager.dispose);
-    final controller = _FakeNativePlayerController();
-    final coordinator = MainWindowLayoutCoordinator(
-      vsync: const TestVSync(),
-      controller: controller,
-      stateStore: stateStore,
-      trackManager: trackManager,
-      mounted: () => true,
-    );
-    addTearDown(coordinator.dispose);
-    coordinator.viewportWidth = 1600;
-    coordinator.viewportHeight = 900;
-
-    await coordinator.onPlaybackStateChanged(playing: true);
-    await coordinator.onPlaybackStateChanged(playing: false);
-
-    expect(controller.appliedLayouts, isEmpty);
-    expect(controller.transforms, isEmpty);
+    expect(controller.calls, ['applyLayout']);
+    expect(controller.appliedLayouts.single.viewOffsetX, 24);
+    expect(controller.appliedLayouts.single.viewOffsetY, -12);
   });
 
   test('layout mode changes keep normalized view center stable', () {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setLayout(
         const LayoutState(
           zoomRatio: 2,
@@ -769,7 +389,7 @@ void main() {
 
   test('focus quick mark centers a rectangle with visual padding', () {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
     addTearDown(stateStore.dispose);
     final trackManager = TrackManager()..setTracks([track(1), track(2)]);
@@ -815,7 +435,7 @@ void main() {
 
   test('focus quick mark centers an arrow on its head', () {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
     addTearDown(stateStore.dispose);
     final trackManager = TrackManager()..setTracks([track(1), track(2)]);
@@ -889,8 +509,6 @@ class _FakeNativePlayerController extends NativePlayerController {
   final List<String> calls = [];
   final List<Size> resizes = [];
   final List<LayoutState> appliedLayouts = [];
-  final List<_NativeCompositorTransformCall> transforms = [];
-  final List<_NativeCompositorSourceCacheCall> sourceCacheProjections = [];
   LayoutState nativeLayout;
   Size currentSize = const Size(100, 100);
   int getLayoutCalls = 0;
@@ -923,68 +541,7 @@ class _FakeNativePlayerController extends NativePlayerController {
   }
 
   @override
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  }) async {
-    calls.add('setNativeCompositorViewportTransform');
-    transforms.add(
-      _NativeCompositorTransformCall(
-        enabled: enabled,
-        scaleX: scaleX,
-        scaleY: scaleY,
-        translateX: translateX,
-        translateY: translateY,
-        mode: mode,
-        splitPos: splitPos,
-        activeTrackCount: activeTrackCount,
-      ),
-    );
-  }
-
-  @override
-  Future<void> prepareNativeCompositorSourceCache({
-    required List<int> sourceSlots,
-    required List<int> sourceOrder,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-    required List<double> displayOffsetX,
-    required List<double> displayOffsetY,
-    required List<double> invDisplaySizeX,
-    required List<double> invDisplaySizeY,
-    required List<double> viewOffsetUvX,
-    required List<double> viewOffsetUvY,
-  }) async {
-    calls.add('prepareNativeCompositorSourceCache');
-    sourceCacheProjections.add(
-      _NativeCompositorSourceCacheCall(
-        sourceSlots: List<int>.of(sourceSlots),
-        sourceOrder: List<int>.of(sourceOrder),
-        activeTrackCount: activeTrackCount,
-        displayOffsetX: List<double>.of(displayOffsetX),
-        displayOffsetY: List<double>.of(displayOffsetY),
-        invDisplaySizeX: List<double>.of(invDisplaySizeX),
-        invDisplaySizeY: List<double>.of(invDisplaySizeY),
-      ),
-    );
-  }
-
-  @override
   Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) async {}
-
-  @override
-  Future<void> clearNativeCompositorSourceCache({
-    required String reason,
-  }) async {
-    calls.add('clearNativeCompositorSourceCache:$reason');
-  }
 
   @override
   Future<LayoutState> getLayout() async {
@@ -992,46 +549,4 @@ class _FakeNativePlayerController extends NativePlayerController {
     getLayoutCalls++;
     return nativeLayout;
   }
-}
-
-class _NativeCompositorTransformCall {
-  final bool enabled;
-  final double scaleX;
-  final double scaleY;
-  final double translateX;
-  final double translateY;
-  final int mode;
-  final double splitPos;
-  final int activeTrackCount;
-
-  const _NativeCompositorTransformCall({
-    required this.enabled,
-    required this.scaleX,
-    required this.scaleY,
-    required this.translateX,
-    required this.translateY,
-    required this.mode,
-    required this.splitPos,
-    required this.activeTrackCount,
-  });
-}
-
-class _NativeCompositorSourceCacheCall {
-  final List<int> sourceSlots;
-  final List<int> sourceOrder;
-  final int activeTrackCount;
-  final List<double> displayOffsetX;
-  final List<double> displayOffsetY;
-  final List<double> invDisplaySizeX;
-  final List<double> invDisplaySizeY;
-
-  const _NativeCompositorSourceCacheCall({
-    required this.sourceSlots,
-    required this.sourceOrder,
-    required this.activeTrackCount,
-    required this.displayOffsetX,
-    required this.displayOffsetY,
-    required this.invDisplaySizeX,
-    required this.invDisplaySizeY,
-  });
 }

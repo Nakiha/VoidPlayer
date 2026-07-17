@@ -41,7 +41,7 @@ Dart timeline/action seek
   -> renderer presents paused preview frame
   -> native emits seekPreviewPresented(requestId, trackFileId, ptsUs, dtsUs)
   -> MainWindowPlaybackCoordinator accepts latest requestId
-  -> MainWindowAnalysisCoordinator.refreshOverlayForPresentedFrame(ptsUs, dtsUs)
+  -> MainWindowAnalysisCoordinator.refreshOverlayForPresentedFrame(requestId, ptsUs, dtsUs)
   -> VAC2 frame lookup requires PTS + DTS match
   -> ensure selected VACHUNK windows
   -> reload native overlay track
@@ -54,6 +54,8 @@ Dart timeline/action seek
 - `seekPreviewPresented` 代表可以安全地按实际上屏帧生成 overlay chunk。
 - VACHUNK 生成进入现有 `SerialAnalysisGenerationQueue`，仍在后台排队。
 - 生成完成后 reload overlay track，再请求 redraw。
+- overlay 状态到达 runner 后只能复用最后已上屏的 `PresentDecision` 重合成，不能
+  再次 evaluate decode buffer 或推进 paused preview。
 
 ## Dart State Machine
 
@@ -71,6 +73,8 @@ PendingSeek {
 事件处理规则：
 
 - 只接受 `requestId == latestPendingSeek.requestId` 的 `seekPreviewPresented`。
+- seek 命令开始时立即推进 overlay request epoch；异步 cache/chunk 工作在提交
+  native overlay 状态前必须再次校验 epoch，旧 seek 不能回写新画面。
 - 收到旧 request id 的事件时忽略，但保留 debug 日志。
 - 收到事件后取消 seek-settled timer fallback。
 - 如果 event stream 断开或超时，fallback 调用一次当前 `refreshOverlayForCurrentFrame()`。

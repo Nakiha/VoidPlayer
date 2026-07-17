@@ -21,7 +21,7 @@ extension MainWindowViewActionBinding on MainWindowController {
       toolbar: MainWindowToolbarActions(
         onViewModeChanged: (mode) {
           log.fine(
-            '[WindowsCompositorDebug] toolbar viewMode click mode=$mode '
+            '[NativeCompositorDebug] toolbar viewMode click mode=$mode '
             'canChange=${_capabilities.canChangeViewMode}',
           );
           if (!_capabilities.canChangeViewMode) return;
@@ -29,7 +29,7 @@ extension MainWindowViewActionBinding on MainWindowController {
         },
         onOpenFile: () {
           log.fine(
-            '[WindowsCompositorDebug] toolbar openFile click '
+            '[NativeCompositorDebug] toolbar openFile click '
             'canOpen=${_capabilities.canOpenLocalMedia} '
             'canAdd=${_capabilities.canAddTrack} '
             'tracks=${trackManager.count}',
@@ -41,7 +41,7 @@ extension MainWindowViewActionBinding on MainWindowController {
         },
         onOpenNetworkMedia: (url) {
           log.fine(
-            '[WindowsCompositorDebug] toolbar openNetwork click '
+            '[NativeCompositorDebug] toolbar openNetwork click '
             'canOpen=${_capabilities.canOpenNetworkMedia} '
             'canAdd=${_capabilities.canAddTrack} '
             'tracks=${trackManager.count}',
@@ -66,7 +66,7 @@ extension MainWindowViewActionBinding on MainWindowController {
         },
         onMediaInfo: () {
           log.fine(
-            '[WindowsCompositorDebug] toolbar mediaInfo click '
+            '[NativeCompositorDebug] toolbar mediaInfo click '
             'canOpen=${_capabilities.canOpenMediaInfo} '
             'tracks=${trackManager.count} visible=$_mediaInfoVisible',
           );
@@ -75,7 +75,7 @@ extension MainWindowViewActionBinding on MainWindowController {
         },
         onAnalysis: () {
           log.fine(
-            '[WindowsCompositorDebug] toolbar analysis click '
+            '[NativeCompositorDebug] toolbar analysis click '
             'canRun=${_capabilities.canRunAnalysis} '
             'tracks=${trackManager.count}',
           );
@@ -96,7 +96,7 @@ extension MainWindowViewActionBinding on MainWindowController {
         },
         onProfiler: () {
           log.fine(
-            '[WindowsCompositorDebug] toolbar profiler click '
+            '[NativeCompositorDebug] toolbar profiler click '
             'canOpen=${_capabilities.canOpenProfiler} '
             'visible=$_profilerVisible',
           );
@@ -105,14 +105,14 @@ extension MainWindowViewActionBinding on MainWindowController {
         },
         onSettings: () {
           log.fine(
-            '[WindowsCompositorDebug] toolbar settings click '
+            '[NativeCompositorDebug] toolbar settings click '
             'visible=$_settingsVisible',
           );
           stateStore.setSettingsVisible(!_settingsVisible);
         },
         onMarksSidebarToggle: () {
           log.fine(
-            '[WindowsCompositorDebug] toolbar marksSidebar click '
+            '[NativeCompositorDebug] toolbar marksSidebar click '
             'visible=$_marksSidebarVisible '
             'width=${_state.marksSidebarWidth}',
           );
@@ -122,7 +122,7 @@ extension MainWindowViewActionBinding on MainWindowController {
       viewport: MainWindowViewportActions(
         onPan: (delta) {
           if (!_capabilities.canPanViewport) return;
-          ViewportProjectionDiagnostics.instance.record('viewportActionPan');
+          ViewportInteractionDiagnostics.instance.record('viewportActionPan');
           _boostNativeCompositorFlutterInteraction(reason: 'viewport-pan');
           layoutCoordinator.onPan(delta);
         },
@@ -132,7 +132,7 @@ extension MainWindowViewActionBinding on MainWindowController {
         },
         onZoom: (factor, localPos) {
           if (!_capabilities.canZoomViewport) return;
-          ViewportProjectionDiagnostics.instance.record('viewportActionZoom');
+          ViewportInteractionDiagnostics.instance.record('viewportActionZoom');
           _boostNativeCompositorFlutterInteraction(reason: 'viewport-zoom');
           layoutCoordinator.onZoom(factor, localPos);
         },

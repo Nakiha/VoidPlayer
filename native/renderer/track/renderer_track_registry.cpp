@@ -2,7 +2,6 @@
 
 #include "renderer/track/track_lifecycle.h"
 #include "renderer/track/track_present_policy.h"
-#include "renderer/track/track_preroll_policy.h"
 #include "renderer/track/track_step_policy.h"
 
 #include <algorithm>
@@ -18,12 +17,8 @@ std::unique_ptr<TrackPipeline> RendererTrackRegistry::create_pipeline(
     const SeekRequest* initial_seek) const {
     TrackPipelineOpenOptions options;
     options.render_backend = render_backend;
-    if (render_backend == RenderBackendKind::WgpuD3D12 && render_device) {
-        options.use_default_decode_device_mode = false;
-        options.decode_device_mode = DecodeDeviceMode::SharedRenderDevice;
-        options.render_device = render_device;
-        options.device_mutex = device_mutex;
-    }
+    (void)render_device;
+    (void)device_mutex;
     return factory_.create_opened_pipeline(
         path, hw_decode, initial_seek, options);
 }
@@ -127,10 +122,6 @@ bool RendererTrackRegistry::has_active_tracks() const {
 
 size_t RendererTrackRegistry::count() const {
     return tracks_.count();
-}
-
-bool RendererTrackRegistry::has_preroll_blocking_track() const {
-    return vr::has_preroll_blocking_track(tracks_);
 }
 
 bool RendererTrackRegistry::has_buffering_track() const {

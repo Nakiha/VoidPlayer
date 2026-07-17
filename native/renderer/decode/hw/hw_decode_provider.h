@@ -15,7 +15,7 @@ namespace vr {
 
 enum class HwDecodeType {
     None = 0,
-    D3D12VA,
+    D3D11VA,
     CUDA,
     DXVA2,
     Vulkan,
@@ -41,7 +41,7 @@ struct HwDecodeInitParams {
 };
 
 /// Abstract interface for hardware decode providers.
-/// Each backend (D3D12VA, VideoToolbox, etc.) implements this interface.
+/// Each platform backend implements this interface.
 /// The factory function try_hw_decode_providers() probes providers in priority order.
 class HwDecodeProvider {
 public:
@@ -61,15 +61,8 @@ public:
     virtual void shutdown() = 0;
 
     /// Flush the hardware decode device context to ensure GPU commands are
-    /// submitted. Required for cross-device shared resource visibility —
-    /// DXGI mandates Flush() on the producing device before the consuming
-    /// device can read shared texture data.
+    /// submitted before a platform presenter consumes the decoded frame.
     virtual void flush() = 0;
-
-    /// Block until previously submitted decode-device work is complete.
-    /// Use sparingly for paused exact-seek previews where a deterministic
-    /// still frame matters more than throughput.
-    virtual void wait_idle() { flush(); }
 
     virtual HwDecodeType type() const = 0;
     virtual const char* name() const = 0;

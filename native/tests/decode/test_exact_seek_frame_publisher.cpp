@@ -87,17 +87,18 @@ TEST_CASE("ExactSeekFramePublisher: publishes selected preview window and clears
         store,
         1,
         output_buffer,
-        publisher,
-        hw_enabled,
-        nullptr,
-        hw_visibility_flush_pending);
+        publisher);
 
     REQUIRE(result.can_publish);
     REQUIRE_FALSE(result.conversion_failed);
     REQUIRE(result.selected_pts_us == 133);
     REQUIRE(result.published_count == 4);
+    REQUIRE(result.history_count == 1);
     REQUIRE(result.pending_count == 0);
     REQUIRE(output_buffer.total_count() == 4);
+    REQUIRE(output_buffer.peek(-1)->pts_us == 100);
+    REQUIRE(output_buffer.peek(0)->pts_us == 133);
+    REQUIRE(output_buffer.last_presented_pts_us() == 0);
     REQUIRE(store.reorder_empty());
     REQUIRE(store.pending_empty());
 }
@@ -163,10 +164,7 @@ TEST_CASE("ExactSeekFramePublisher: conversion failure clears candidates",
         store,
         0,
         output_buffer,
-        publisher,
-        hw_enabled,
-        nullptr,
-        hw_visibility_flush_pending);
+        publisher);
 
     REQUIRE(result.can_publish);
     REQUIRE(result.conversion_failed);

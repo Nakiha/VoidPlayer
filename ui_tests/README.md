@@ -12,7 +12,6 @@ python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
 
 Pick scripts by the area touched by the change. For broad UI refactors, run a
 small smoke script first, then one or more scripts from the affected folder.
-See [`AUDIT.md`](AUDIT.md) for the current cleanup audit and growth policy.
 
 ## Commands
 
@@ -22,7 +21,8 @@ See [`AUDIT.md`](AUDIT.md) for the current cleanup audit and growth policy.
   `/usr/bin/open`, copies scripts/media into the app sandbox, rewrites
   `ADD_MEDIA` fixture paths, re-signs/registers the bundle, and scans macOS
   crash reports. Use it for `ui_tests/macos/` and for macOS app-bundle,
-  sandbox, Metal/FlutterTexture, VideoToolbox, audio, or window lifecycle risks.
+  sandbox, native target ring/Metal composition, VideoToolbox, audio, or window
+  lifecycle risks.
 
 ## Governance
 
@@ -49,7 +49,7 @@ paths unless the current change specifically touches that risk.
 
 | Folder | Scope |
 | --- | --- |
-| `macos/` | macOS runner, FlutterTexture bridge, and shared native facade visible-path smokes. |
+| `macos/` | macOS runner, native target ring, Metal compositor, VideoToolbox, and shared native facade smokes. |
 | `smoke/` | Fast app sanity checks. Use this for unrelated Flutter UI changes before picking a narrower regression. |
 | `analysis/` | Main-window analysis spawning, analysis child-window behavior, and analysis IPC track updates. Changes under `lib/windows/analysis/`, analysis launch flow, or analysis IPC should use this folder. |
 | `timeline/` | Real timeline pointer/click paths and repeated timeline seek regressions. Prefer this over direct `SEEK_TO` when a user-facing timeline interaction changed. |

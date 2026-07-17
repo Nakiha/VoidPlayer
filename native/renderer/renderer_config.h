@@ -13,9 +13,9 @@ using RendererBackendType = RenderBackendKind;
 class PresentationBackendProvider;
 
 /// Platform-specific renderer interop values.
-/// Backends that present into a host-owned target, such as macOS Metal writing
-/// into a CVPixelBuffer or Windows wgpu-d3d12 writing into an external target,
-/// use `output`.
+/// Backends that render into a runner-owned native video layer, such as macOS
+/// Metal writing into a CVPixelBuffer/IOSurface target or Windows D3D11 writing
+/// into a runner-owned target ring, use `output`.
 struct RendererBackendInterop {
     RendererBackendType type = default_render_backend_kind();
     void* adapter = nullptr;
@@ -24,7 +24,6 @@ struct RendererBackendInterop {
     const PresentationBackendProvider* provider = nullptr;
     ColorOutputTarget output_target = ColorOutputTarget::kSDRToneMappedBT709;
     double sdr_white_level_nits = 80.0;
-    bool shared_fp16_output = false;
 };
 
 struct RendererConfig {
@@ -35,10 +34,10 @@ struct RendererConfig {
     bool use_hardware_decode = true;
     int initial_file_id = 1;
 
-    /// Headless mode: render to offscreen texture instead of swap chain.
-    bool headless = false;
+    /// Offscreen mode: render into a runner-consumable target instead of a swap chain.
+    bool offscreen = false;
 
-    /// Native backend interop for headless mode.
+    /// Native backend interop for offscreen mode.
     RendererBackendInterop backend;
 
     /// Logging configuration. Applied during initialize().

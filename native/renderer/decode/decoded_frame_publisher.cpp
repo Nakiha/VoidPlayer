@@ -51,6 +51,10 @@ void DecodedFramePublisher::flush_visibility_if_needed() {
     if (!hw_enabled_ || !hw_provider_ || !hw_visibility_flush_pending_) {
         return;
     }
+    if (converter_.hardware_snapshot_submits_shared_visibility()) {
+        hw_visibility_flush_pending_ = false;
+        return;
+    }
     const auto start = std::chrono::steady_clock::now();
     hw_provider_->flush();
     if (stage_perf_) {
@@ -61,6 +65,10 @@ void DecodedFramePublisher::flush_visibility_if_needed() {
 
 void DecodedFramePublisher::flush_before_publish_if_needed(bool force_for_shared_surface) {
     if (!hw_enabled_ || !hw_provider_) {
+        return;
+    }
+    if (converter_.hardware_snapshot_submits_shared_visibility()) {
+        hw_visibility_flush_pending_ = false;
         return;
     }
     if (!force_for_shared_surface && !converter_.downloads_hardware_to_cpu()) {

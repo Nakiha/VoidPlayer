@@ -10,12 +10,7 @@
 namespace vr {
 
 class PresentationBackend;
-struct SourceCacheTrackDescriptor;
-struct SharedSourceCacheBundleSnapshot;
 struct AnalysisOverlayPrimitivePackage;
-struct SharedFp16TextureSnapshot;
-struct PresentationExternalD3D12Surface;
-struct WindowsSourceProjection;
 
 using PresentationBackendAsyncDrawCompleted =
     std::function<void(bool, const char*, uint64_t, const PresentationBackendFrameInfo*)>;
@@ -45,16 +40,16 @@ public:
     virtual const char* name() const = 0;
     virtual bool initialize(const PresentationBackendConfig& config) = 0;
     virtual void shutdown() = 0;
-    virtual bool headless() const = 0;
-    virtual bool renderer_manages_headless_publish() const { return false; }
-    virtual bool begin_renderer_managed_headless_frame() { return true; }
-    virtual std::function<void()> publish_renderer_managed_headless_frame(const char*) {
+    virtual bool offscreen() const = 0;
+    virtual bool renderer_manages_offscreen_publish() const { return false; }
+    virtual bool begin_renderer_managed_offscreen_frame() { return true; }
+    virtual std::function<void()> publish_renderer_managed_offscreen_frame(const char*) {
         return {};
     }
-    virtual bool resize_renderer_managed_headless_output(int, int) { return false; }
-    virtual bool prewarm_renderer_managed_headless_output(int, int) { return false; }
-    virtual void cleanup_renderer_managed_headless_pending_buffers() {}
-    virtual bool set_renderer_managed_headless_frame_callback(std::function<void()>) {
+    virtual bool resize_renderer_managed_offscreen_target(int, int) { return false; }
+    virtual bool prewarm_renderer_managed_offscreen_target(int, int) { return false; }
+    virtual void cleanup_renderer_managed_offscreen_pending_buffers() {}
+    virtual bool set_renderer_managed_offscreen_frame_callback(std::function<void()>) {
         return false;
     }
     virtual bool completes_draw_asynchronously() const { return false; }
@@ -66,41 +61,26 @@ public:
     virtual bool present_swap_chain(int) { return false; }
     virtual void reset_track(size_t) {}
     virtual void move_track(size_t, size_t) {}
-    virtual bool update_headless_output(void*, int, int, int) { return false; }
-    virtual bool update_headless_output_ring(const void* const*,
+    virtual bool update_offscreen_target(void*, int, int, int) { return false; }
+    virtual bool update_offscreen_target_ring(const void* const*,
                                              size_t,
                                              void*,
                                              void*,
                                              int,
                                              int,
                                              int) { return false; }
-    virtual void mark_headless_output_displayed(void*) {}
-    virtual void protect_headless_output(void*) {}
-    virtual void release_headless_output(void*) {}
-    virtual void clear_headless_output() {}
+    virtual void mark_offscreen_target_displayed(void*) {}
+    virtual void protect_offscreen_target(void*) {}
+    virtual void release_offscreen_target(void*) {}
+    virtual void clear_offscreen_target() {}
     virtual bool update_sdr_white_level(double) { return false; }
     virtual void* native_render_device() const { return nullptr; }
     virtual void* native_render_command_queue() const { return nullptr; }
-#ifdef _WIN32
-    virtual bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot&) {
-        return false;
-    }
-    virtual void release_shared_fp16_texture(int, uint64_t) {}
-    virtual void set_shared_fp16_frame_callback(std::function<void()>) {}
-    virtual bool update_external_flutter_surface(
-        const PresentationExternalD3D12Surface&) {
-        return false;
-    }
-    virtual void clear_external_flutter_surface() {}
-    virtual bool draw_frame_to_external_d3d12_target(
-        const RendererDrawSnapshot&,
-        const PresentationBackendDrawHooks&,
-        const PresentationExternalD3D12RenderTarget&) {
-        return false;
-    }
-#endif
     virtual PresentationBackendStats presentation_stats() const { return {}; }
     virtual PresentationBackendDiagnostics diagnostics() const { return {}; }
+    // Time spent in an explicit synchronous backend wait during the most
+    // recent draw. This is pacing/synchronization, not CPU submission work.
+    virtual uint64_t last_draw_blocking_wait_us() const { return 0; }
     virtual bool copy_last_frame_info(PresentationBackendFrameInfo*) const { return false; }
     virtual bool capture_front_buffer(std::vector<uint8_t>&, int&, int&) { return false; }
     virtual bool capture_front_buffer_region(int,
@@ -110,19 +90,6 @@ public:
                                              std::vector<uint8_t>&,
                                              int&,
                                              int&) { return false; }
-#ifdef _WIN32
-    virtual bool configure_source_cache(
-        const std::vector<SourceCacheTrackDescriptor>&) { return false; }
-    virtual void clear_source_cache(const char*) {}
-    virtual bool update_source_projection(const WindowsSourceProjection&) {
-        return false;
-    }
-    virtual void clear_source_projection() {}
-    virtual bool acquire_source_cache_bundle(
-        SharedSourceCacheBundleSnapshot&) { return false; }
-    virtual void release_source_cache_bundle(int, uint64_t) {}
-    virtual void set_source_cache_frame_callback(std::function<void()>) {}
-#endif
     virtual const char* last_error() const { return ""; }
     virtual bool draw_frame(const RendererDrawSnapshot& snapshot,
                             const PresentationBackendDrawHooks& hooks) = 0;

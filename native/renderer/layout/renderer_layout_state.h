@@ -17,8 +17,7 @@ struct RendererLayoutPresentationCommit {
 };
 
 // Lock contract:
-// - Owns layout state, pending-layout mutex, layout revisions, background color,
-//   and viewport-compositor activity deadline.
+// - Owns layout state, pending-layout mutex, layout revisions, and background color.
 // - Current layout/revision methods are called while the owner holds
 //   state_mutex_; pending-layout methods lock only the internal pending mutex.
 // - Does not include or retain renderer owner objects and does not touch
@@ -57,10 +56,6 @@ public:
     void set_background_color(float r, float g, float b, float a);
     void copy_background_color(float out[4]) const;
 
-    void note_viewport_compositor_activity(int64_t active_until_us);
-    void set_viewport_compositor_active(bool active);
-    bool viewport_compositor_persistent_active() const;
-    bool viewport_compositor_active(int64_t now_us) const;
 
 private:
     LayoutController controller_;
@@ -72,8 +67,6 @@ private:
     uint64_t revision_ = 0;
     uint64_t last_presented_revision_ = 0;
     float background_color_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-    std::atomic<int64_t> viewport_compositor_active_until_us_{0};
-    std::atomic<bool> viewport_compositor_active_{false};
 };
 
 } // namespace vr

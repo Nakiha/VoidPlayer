@@ -11,7 +11,7 @@ import '../video_renderer_controller.dart';
 import '../viewport/display_geometry.dart';
 import '../viewport/viewport_display_state.dart';
 import '../viewport/viewport_interaction.dart';
-import '../viewport/viewport_projection_diagnostics.dart';
+import '../viewport/viewport_interaction_diagnostics.dart';
 import 'axtree_region.dart';
 import 'quick_mark_overlay.dart';
 
@@ -140,7 +140,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     }
     _lastDebugInteractionSampleAt = now;
     final message =
-        '[WindowsCompositorDebug] viewport interaction sample '
+        '[NativeCompositorDebug] viewport interaction sample '
         'stage=$stage moves=$_debugPointerMoveCount '
         'hovers=$_debugPointerHoverCount buttons=${event.buttons} '
         'local=(${event.localPosition.dx.toStringAsFixed(1)},'
@@ -665,7 +665,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
       if (shouldLogResize) {
         _lastResizePacingLogAt = now;
         log.info(
-          '[WindowsResizePacing] flutter viewportReport '
+          '[NativeResizePacing] flutter viewportReport '
           'count=$_debugResizeReportCount '
           'logical=${logicalWidth.toStringAsFixed(1)}x'
           '${logicalHeight.toStringAsFixed(1)} '
@@ -676,7 +676,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
         );
       }
       log.fine(
-        '[WindowsCompositorDebug] viewport resize report '
+        '[NativeCompositorDebug] viewport resize report '
         'logical=${logicalWidth.toStringAsFixed(1)}x'
         '${logicalHeight.toStringAsFixed(1)} '
         'physical=${physicalWidth}x$physicalHeight '
@@ -737,7 +737,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (shouldLogRect) {
       _lastViewportRectPacingLogAt = now;
       log.info(
-        '[WindowsResizePacing] flutter viewportRect '
+        '[NativeResizePacing] flutter viewportRect '
         'count=$_debugViewportRectReportCount '
         'physical=($left,$top ${width}x$height) '
         'surface=${surfaceWidth}x$surfaceHeight '
@@ -749,7 +749,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
       );
     }
     log.fine(
-      '[WindowsCompositorDebug] native compositor viewport rect '
+      '[NativeCompositorDebug] native compositor viewport rect '
       'physical=($left,$top ${width}x$height) '
       'surface=${surfaceWidth}x$surfaceHeight '
       'logicalOffset=(${globalOffset.dx.toStringAsFixed(1)},'
@@ -782,26 +782,30 @@ class _ViewportPanelState extends State<ViewportPanel> {
           sizing: StackFit.expand,
           children: [
             // State 0: Loading
-            Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 48,
-                    height: 48,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 3,
-                      color: Theme.of(context).colorScheme.primary,
+            TickerMode(
+              key: const ValueKey('viewport-loading-ticker-mode'),
+              enabled: widget.viewportState.stackIndex == 0,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    AppLocalizations.of(context)!.initializing,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    const SizedBox(height: 8),
+                    Text(
+                      AppLocalizations.of(context)!.initializing,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             // State 1: Empty
@@ -861,7 +865,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   Widget _buildActiveViewport(BuildContext context) {
-    if (widget.textureId == null) {
+    if (widget.textureId == null && !widget.nativeCompositorHole) {
       return const SizedBox.shrink();
     }
     final devicePixelRatio = View.of(context).devicePixelRatio;
@@ -894,7 +898,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           behavior: HitTestBehavior.opaque,
           onPointerDown: (e) {
             log.fine(
-              '[WindowsCompositorDebug] viewport pointerDown '
+              '[NativeCompositorDebug] viewport pointerDown '
               'kind=${e.kind.name} buttons=${e.buttons} '
               'local=(${e.localPosition.dx.toStringAsFixed(1)},'
               '${e.localPosition.dy.toStringAsFixed(1)}) '
@@ -926,7 +930,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           },
           onPointerUp: (e) {
             log.fine(
-              '[WindowsCompositorDebug] viewport pointerUp '
+              '[NativeCompositorDebug] viewport pointerUp '
               'kind=${e.kind.name} buttons=${e.buttons} '
               'local=(${e.localPosition.dx.toStringAsFixed(1)},'
               '${e.localPosition.dy.toStringAsFixed(1)}) '
@@ -950,7 +954,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           },
           onPointerCancel: (_) {
             log.fine(
-              '[WindowsCompositorDebug] viewport pointerCancel '
+              '[NativeCompositorDebug] viewport pointerCancel '
               'panning=$_panning splitting=$_splitting '
               'quickMark=$_quickMarkDragging splitHandle=$_splitHandleDragging',
             );
@@ -998,7 +1002,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
             _lastMouseLocalPos = e.localPosition;
 
             if (_panning) {
-              ViewportProjectionDiagnostics.instance.record(
+              ViewportInteractionDiagnostics.instance.record(
                 'pointerMovePanDispatch',
               );
               widget.onPan(physicalDelta);
@@ -1022,7 +1026,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           },
           onPointerPanZoomStart: (_) => _resetPanZoom(),
           onPointerPanZoomUpdate: (e) {
-            ViewportProjectionDiagnostics.instance.record(
+            ViewportInteractionDiagnostics.instance.record(
               'pointerPanZoomUpdate',
             );
             if (e.scale > 0 && e.scale.isFinite && _lastPanZoomScale > 0) {
@@ -1037,7 +1041,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
                   );
               if (scaleIntent && scaleDelta != 1.0) {
                 _panZoomScaling = true;
-                ViewportProjectionDiagnostics.instance.record(
+                ViewportInteractionDiagnostics.instance.record(
                   'pointerPanZoomScaleDispatch',
                 );
                 _zoomByFactor(scaleDelta, e.localPosition * devicePixelRatio);
@@ -1053,7 +1057,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
             if (_panZoomScaling) return;
             final physicalPanDelta = e.panDelta * devicePixelRatio;
             if (physicalPanDelta != Offset.zero) {
-              ViewportProjectionDiagnostics.instance.record(
+              ViewportInteractionDiagnostics.instance.record(
                 'pointerPanZoomPanDispatch',
               );
               widget.onPan(physicalPanDelta);
@@ -1068,7 +1072,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (!widget.nativeCompositorHole)
+              if (!widget.nativeCompositorHole && widget.textureId != null)
                 ExcludeSemantics(child: Texture(textureId: widget.textureId!)),
               QuickMarkOverlay(
                 layout: widget.layout,

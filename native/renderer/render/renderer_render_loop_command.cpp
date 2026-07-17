@@ -65,48 +65,71 @@ void RendererRenderLoopCommandProcessor::run_body(
         }
 
 #ifdef _WIN32
-        presentation_.cleanup_renderer_managed_headless_pending_buffers();
+        presentation_.cleanup_renderer_managed_offscreen_pending_buffers();
 #endif
 
         bool playing_snapshot;
         bool clock_paused_snapshot;
-        RendererLoopPrerollDecision preroll_decision;
+        PlaybackPacingDecision pacing_decision;
+        PlaybackPacingSnapshot pacing_snapshot;
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             playing_snapshot = timeline_.playing();
-            const bool any_buffering =
-                track_controller_.has_preroll_blocking_track();
-            preroll_decision = loop_driver_.evaluate_preroll(
+            const int64_t current_pts_us =
+                timeline_.playback().clock().current_pts_us();
+            pacing_snapshot =
+                track_controller_.playback_pacing_snapshot(current_pts_us);
+            pacing_decision = loop_driver_.evaluate_playback_pacing({
                 playing_snapshot,
-                timeline_.playback().clock().is_paused(),
-                any_buffering,
-                timeline_.playback().clock().current_pts_us());
-            if (preroll_decision.force_preview_redraw) {
-                loop_driver_.force_preview_redraw();
+                timeline_.playback().pacing_held(),
+                !timeline_.audio() ||
+                    timeline_.audio()->active_track() < 0,
+                timeline_.playback().speed(),
+                steady_clock_us_now(),
+                pacing_snapshot,
+            });
+            if (pacing_decision.update_effective_speed) {
+                timeline_.playback().set_effective_speed(
+                    pacing_decision.effective_speed);
             }
-            if (preroll_decision.pause_clock) {
-                timeline_.playback().clock().pause();
+            if (pacing_decision.hold_for_pacing) {
+                timeline_.playback().hold_for_pacing();
             }
-            if (preroll_decision.resume_decode) {
+            if (pacing_decision.resume_decode) {
                 context.hooks.set_decode_paused_for_all_tracks(false);
             }
-            if (preroll_decision.resume_clock) {
-                timeline_.playback().clock().resume();
+            if (pacing_decision.release_pacing_hold) {
+                timeline_.playback().release_pacing_hold();
             }
-            clock_paused_snapshot = preroll_decision.clock_paused;
+            if (pacing_decision.resumed_running) {
+                loop_driver_.force_preview_redraw();
+            }
+            clock_paused_snapshot =
+                timeline_.playback().clock().is_paused();
         }
-        if (preroll_decision.log_transition_complete) {
-            spdlog::info("[Renderer] Preroll transition complete, forcing preview redraw");
+        if (pacing_decision.entered_preroll) {
+            spdlog::info(
+                "[PlaybackPacing] preroll hold: bottleneck={} buffer={} "
+                "headroom={:.1f}ms",
+                pacing_snapshot.bottleneck_slot,
+                pacing_snapshot.min_buffered_frames,
+                pacing_snapshot.headroom_us / 1e3);
         }
-        if (preroll_decision.log_preroll_pending) {
-            spdlog::info("[Renderer] Preroll: clock PENDING, some track buffering, "
-                         "(playing={})", playing_snapshot);
+        if (pacing_decision.entered_rebuffering) {
+            spdlog::warn(
+                "[PlaybackPacing] decode underrun: holding clock, "
+                "bottleneck={} buffer={} headroom={:.1f}ms",
+                pacing_snapshot.bottleneck_slot,
+                pacing_snapshot.min_buffered_frames,
+                pacing_snapshot.headroom_us / 1e3);
         }
-        if (preroll_decision.log_preroll_complete) {
-            spdlog::info("[Renderer] === Preroll COMPLETE: all tracks ready, clock resumed, "
-                         "playing_={}, pts={:.3f}s)",
-                         playing_snapshot,
-                         preroll_decision.preroll_complete_pts_s);
+        if (pacing_decision.resumed_running) {
+            spdlog::info(
+                "[PlaybackPacing] buffers recovered: clock resumed at "
+                "{:.3f}x, bottleneck={} headroom={:.1f}ms",
+                pacing_decision.effective_speed,
+                pacing_snapshot.bottleneck_slot,
+                pacing_snapshot.headroom_us / 1e3);
         }
 
         if (!playing_snapshot || clock_paused_snapshot) {
@@ -116,6 +139,14 @@ void RendererRenderLoopCommandProcessor::run_body(
                 backoff.count() > 0) {
                 std::this_thread::sleep_for(
                     std::min(backoff, std::chrono::microseconds(2000)));
+                continue;
+            }
+            // A runner-owned display-linked interaction lane is already
+            // consuming the newest layout. Do not let the ordinary paused
+            // preview loop race it after a stale completion, otherwise both
+            // lanes acquire offscreen targets for the same interaction tick.
+            if (context.hooks.interaction_presentation_active()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 continue;
             }
             // While paused/prerolling, draw current frame if not yet drawn.
@@ -211,6 +242,15 @@ void RendererRenderLoopCommandProcessor::run_body(
             continue;
         }
 
+        if (const auto backoff =
+                presentation_metrics_.transient_backpressure_remaining(
+                    steady_clock_us_now());
+            backoff.count() > 0) {
+            std::this_thread::sleep_for(
+                std::min(backoff, std::chrono::microseconds(2000)));
+            continue;
+        }
+
         auto scheduler_tick = loop_driver_.tick_presentation(*render_sink_);
         auto decision = scheduler_tick.decision;
         {
@@ -226,6 +266,20 @@ void RendererRenderLoopCommandProcessor::run_body(
             const auto diagnostic =
                 loop_driver_.take_diagnostic_decision(now, pts);
             if (diagnostic.should_emit) {
+                const auto pacing =
+                    loop_driver_.playback_pacing_diagnostics();
+                spdlog::info(
+                    "[diag] pacing: state={} requested={:.3f}x "
+                    "effective={:.3f}x bottleneck={} buffer={}/{} "
+                    "headroom={:.1f}ms rebuffers={}",
+                    playback_pacing_state_name(pacing.state),
+                    pacing.requested_speed,
+                    pacing.effective_speed,
+                    pacing.bottleneck_slot,
+                    pacing.bottleneck_buffered_frames,
+                    pacing.bottleneck_target_frames,
+                    pacing.headroom_us / 1e3,
+                    pacing.rebuffer_count);
                 std::vector<RenderLoopTrackDiagnosticSnapshot> diagnostics;
                 {
                     std::lock_guard<std::mutex> lock(state_mutex_);
@@ -246,14 +300,6 @@ void RendererRenderLoopCommandProcessor::run_body(
         }
 
         if (decision.should_present && scheduler_tick.should_notify) {
-            if (const auto backoff =
-                    presentation_metrics_.transient_backpressure_remaining(
-                        steady_clock_us_now());
-                backoff.count() > 0) {
-                std::this_thread::sleep_for(
-                    std::min(backoff, std::chrono::microseconds(2000)));
-                continue;
-            }
             // Independent presentation: fill missing tracks from last decision
             // so each track always shows a frame (new or carried over). Once a
             // track has started, keep carrying its last frame even after that
@@ -263,12 +309,40 @@ void RendererRenderLoopCommandProcessor::run_body(
                 track_controller_.apply_carry_forward(
                     present_history_.snapshot(), decision);
             }
-            auto present_context = context.hooks.present_command_context();
-            RendererPresentCommandProcessor::present_frame(
-                present_context, decision);
-            {
-                std::lock_guard<std::mutex> lock(state_mutex_);
-                present_history_.set(decision);
+            const bool interaction_presentation_active =
+                context.hooks.interaction_presentation_active();
+            bool presentation_accepted =
+                interaction_presentation_active;
+            if (!interaction_presentation_active) {
+                auto present_context = context.hooks.present_command_context();
+                presentation_accepted =
+                    RendererPresentCommandProcessor::present_frame(
+                        present_context, decision);
+            }
+            if (presentation_accepted) {
+                bool committed = false;
+                {
+                    std::lock_guard<std::mutex> lock(state_mutex_);
+                    // Presentation is submitted without holding state_mutex_.
+                    // A track can be removed and the retained history compacted
+                    // before the backend accepts this older decision. Revalidate
+                    // its file/generation identities inside the same state
+                    // transaction that advances all presentation cursors so a
+                    // stale pre-topology decision cannot overwrite the compacted
+                    // per-track anchor.
+                    track_controller_.filter_present_decision(decision);
+                    if (present_decision_has_frame(decision)) {
+                        render_sink_->commit_presented(decision);
+                        loop_driver_.commit_presented(decision);
+                        present_history_.set(decision);
+                        committed = true;
+                    }
+                }
+                if (!committed) {
+                    spdlog::info(
+                        "[TrackTopology] discarded accepted present decision "
+                        "invalidated by a concurrent track mutation");
+                }
             }
         } else if (playing_snapshot) {
             uint64_t layout_revision = 0;
@@ -297,22 +371,25 @@ void RendererRenderLoopCommandProcessor::run_body(
             }
         }
 
-        // Frame-driven clock: when buffer is empty, clamp clock to the end of
-        // the last presented frame so PTS does not run ahead.
+        // EOF settlement is separate from mid-stream pacing. The pacing
+        // controller handles decode underrun; this boundary only stops a
+        // completed timeline at its declared or observed tail.
         {
             bool settled_eof = false;
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
-                const auto eof_clamp =
-                    track_controller_.empty_buffer_eof_clamp(
+                const auto eof_boundary =
+                    track_controller_.playback_eof_boundary(
                         present_history_.snapshot());
-                if (eof_clamp.all_active_buffers_empty &&
-                    eof_clamp.max_end_pts_us > 0) {
+                if (eof_boundary.all_active_tracks_bounded &&
+                    eof_boundary.max_end_pts_us > 0) {
                     int64_t current = timeline_.playback().clock().current_pts_us();
-                    if (current > eof_clamp.max_end_pts_us) {
-                        timeline_.playback().clock().seek(eof_clamp.max_end_pts_us);
+                    if (current > eof_boundary.max_end_pts_us) {
+                        timeline_.playback().clock().seek(
+                            eof_boundary.max_end_pts_us);
                     }
-                    if (context.hooks.settle_eof_locked(eof_clamp.max_end_pts_us)) {
+                    if (context.hooks.settle_eof_locked(
+                            eof_boundary.max_end_pts_us)) {
                         settled_eof = true;
                     }
                 }
@@ -335,7 +412,8 @@ void RendererRenderLoopCommandProcessor::run_body(
                 next_event_pts = track_controller_.next_frame_event_pts_us(current_pts);
             }
             if (next_event_pts.has_value()) {
-                double spd = timeline_.playback().clock().speed();
+                double spd =
+                    timeline_.playback().clock().effective_speed();
                 const auto sleep_for = loop_driver_.frame_deadline_sleep(
                     current_pts, *next_event_pts, spd, MAX_SLEEP_US);
                 if (sleep_for.count() > 0) {

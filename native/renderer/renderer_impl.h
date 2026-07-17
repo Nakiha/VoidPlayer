@@ -53,10 +53,6 @@ class TextureManager;
 class AudioCoordinator;
 class SeekCoordinator;
 class AnalysisOverlayRenderer;
-struct SharedFp16TextureSnapshot;
-struct SourceCacheTrackDescriptor;
-struct SharedSourceCacheBundleSnapshot;
-struct WindowsSourceProjection;
 
 class Renderer::Impl {
 public:
@@ -118,17 +114,14 @@ public:
     /// Get per-track performance stats snapshot (thread-safe).
     std::vector<TrackPerfStats> track_perf_stats() const;
     RendererPresentedAnchorDiagnostics presented_anchor_diagnostics() const;
+    PlaybackPacingDiagnostics playback_pacing_diagnostics() const;
     PresentationBackendMetrics presentation_backend_metrics() const;
-    PresentationBackendMetrics d3d_backend_metrics() const;
     PresentationBackendStats presentation_backend_stats() const;
     PresentationBackendDiagnostics presentation_backend_diagnostics() const;
     std::string presentation_backend_last_error() const;
     bool copy_last_presentation_frame_info(PresentationBackendFrameInfo* out) const;
     RendererGpuMemoryStats gpu_memory_stats() const;
 
-    bool d3d_device_lost() const;
-    long d3d_device_removed_reason() const;
-    bool recover_presentation_device_loss(const char* reason, long removed_reason);
     RendererDeviceState device_state() const;
 
     /// Set per-track sync offset in microseconds.
@@ -140,6 +133,7 @@ public:
 
     /// Atomically apply layout state and trigger redraw if paused.
     void apply_layout(const LayoutState& state);
+    void apply_interaction_layout(const LayoutState& state);
 
     /// Set the viewport fill color used outside video bounds.
     void set_background_color(float r, float g, float b, float a);
@@ -147,89 +141,52 @@ public:
     /// Get a snapshot of the current layout state (thread-safe).
     LayoutState layout() const;
 
-    // -- Headless mode: texture sharing --
+    // -- Offscreen target publication --
 
-    /// Set callback invoked after each frame is drawn in headless mode.
+    /// Set callback invoked after each frame is drawn in offscreen mode.
     void set_frame_callback(RendererFrameCallback cb);
     void set_frame_failure_callback(std::function<void(const char*)> cb);
 
     /// Set callback invoked for low-frequency renderer/player events.
     void set_event_callback(RendererEventCallback cb);
 
-    /// Get actual texture dimensions (may lag behind resize request).
-    int texture_width() const;
-    int texture_height() const;
-
-    /// Acquire the current headless texture and shared handle as one snapshot.
-    /// The returned texture is AddRef'd and must be released by the caller.
-    bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const;
-    void release_shared_texture(int buffer_index, uint64_t buffer_generation) const;
-    void* native_render_device() const;
-    void* native_render_command_queue() const;
-    bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
-    void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation) const;
-    void set_shared_fp16_frame_callback(std::function<void()> cb);
-    bool update_external_flutter_surface(
-        const PresentationExternalD3D12Surface& surface);
-    void clear_external_flutter_surface();
-    bool draw_current_frame_to_external_d3d12_target(
-        const PresentationExternalD3D12RenderTarget& target,
-        const char* reason);
-    bool configure_source_cache(
-        const std::vector<SourceCacheTrackDescriptor>& descriptors);
-    void clear_source_cache(const char* reason);
-    bool update_source_projection(const WindowsSourceProjection& projection);
-    void clear_source_projection();
-    bool acquire_source_cache_bundle(
-        SharedSourceCacheBundleSnapshot& snapshot) const;
-    void release_source_cache_bundle(
-        int buffer_index, uint64_t ring_generation) const;
-    void set_source_cache_frame_callback(std::function<void()> cb);
     bool prewarm_presentation_target(int width, int height);
 
-    /// Resize the offscreen shared texture (headless mode only).
+    /// Resize the offscreen target (offscreen mode only).
     /// Stores pending dimensions; render loop applies at controlled rate.
     void resize(int width, int height);
-    bool update_headless_output(void* output,
+    bool update_offscreen_target(void* output,
                                 int width,
                                 int height,
                                 int max_track_slots);
-    bool install_headless_output(void* output,
+    bool install_offscreen_target(void* output,
                                  int width,
                                  int height,
                                  int max_track_slots);
-    bool install_headless_output_ring(const void* const* pixel_buffers,
+    bool install_offscreen_target_ring(const void* const* pixel_buffers,
                                       size_t pixel_buffer_count,
                                       void* displayed_pixel_buffer,
                                       void* protected_pixel_buffer,
                                       int width,
                                       int height,
                                       int max_track_slots);
-    void mark_headless_output_displayed(void* pixel_buffer);
-    void protect_headless_output(void* pixel_buffer);
-    void release_headless_output(void* pixel_buffer);
-    void clear_headless_output();
+    void mark_offscreen_target_displayed(void* pixel_buffer);
+    void protect_offscreen_target(void* pixel_buffer);
+    void release_offscreen_target(void* pixel_buffer);
+    void clear_offscreen_target();
 
     /// Request an immediate redraw of the currently presentable frame.
     /// Returns false when the renderer cannot issue a refresh command.
     bool request_frame_refresh(const char* reason);
+    RendererFrameRefreshResult request_frame_refresh_result(const char* reason);
+    RendererFrameRefreshResult request_interaction_frame();
+    bool interaction_presentation_active() const;
     bool update_presentation_sdr_white_level(double nits);
     bool commit_paused_preview_frame(int timeout_ms,
                                      PresentationBackendFrameInfo* out,
                                      std::string* error);
-    bool commit_source_provider_preview_frame(int timeout_ms,
-                                              const int* expected_file_ids,
-                                              size_t expected_file_id_count,
-                                              PresentationBackendFrameInfo* out,
-                                              std::string* error);
-    bool draw_current_frame_sources(PresentationBackend& backend,
-                                    PresentationSourceFrameTarget* targets,
-                                    size_t target_count,
-                                    std::string* error);
-    std::shared_ptr<const AnalysisOverlayPrimitivePackage> current_overlay_primitives(
-        std::string* error);
 
-    /// Capture the currently published headless frame as packed BGRA bytes.
+    /// Capture the currently published offscreen frame as packed BGRA bytes.
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
     bool capture_front_buffer_region(int x,
                                      int y,
@@ -243,8 +200,6 @@ public:
     // through render-thread or host-callback timing.
     bool has_event_callback_for_test() const;
     void enter_terminal_render_loop_error_for_test(const char* reason);
-    void note_viewport_compositor_activity();
-    void set_viewport_compositor_active(bool active);
 
 private:
     class SeekCommandProcessor {
@@ -254,7 +209,9 @@ private:
                          int64_t target_pts_us,
                          SeekType type,
                          bool allow_deferred = true,
-                         bool force_recreate_paused_hevc = false);
+                         bool force_recreate_paused_hevc = false,
+                         const StepBackwardTrackSeekTargets*
+                             target_overrides = nullptr);
     };
 
     void render_loop() noexcept;
@@ -273,11 +230,14 @@ private:
     void emit_playback_clock_event(bool force);
     void emit_playback_frame_ready_event();
     void clear_event_callback();
-    void apply_layout_locked(const LayoutState& state, uint64_t revision);
+    void apply_layout_locked(const LayoutState& state,
+                             uint64_t revision,
+                             bool schedule_preview = true);
+    void apply_layout_impl(const LayoutState& state,
+                           bool schedule_preview,
+                           const char* trace_source);
     bool consume_pending_layout_locked();
     void clear_pending_layout_intent();
-    bool should_present_frame_consume_pending_layout() const;
-    bool should_suppress_playback_present_for_viewport_compositor() const;
     RendererPresentCommandContext present_command_context();
 
     /// Apply pending resize on the render thread.
@@ -326,6 +286,7 @@ private:
 
     std::atomic<bool> initialized_{false};
     std::atomic<bool> shutting_down_{false};
+    std::atomic<int64_t> interaction_presentation_until_us_{0};
     std::atomic<RendererDeviceState> device_state_{RendererDeviceState::Ready};
     mutable PresentationMetricsStore presentation_metrics_;
 
@@ -336,7 +297,7 @@ private:
     mutable std::mutex state_mutex_;
     RendererEventBus event_bus_;
     RendererPresentHistory present_history_;
-    PresentDecision external_d3d12_visible_decision_;
+    std::optional<int64_t> step_forward_exact_seek_anchor_us_;
     std::chrono::steady_clock::time_point last_playback_clock_event_time_{};
 
 };

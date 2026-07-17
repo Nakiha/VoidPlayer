@@ -5,13 +5,6 @@
 
 namespace vr {
 
-DecodeDeviceMode default_decode_device_mode(AVCodecID codec_id) {
-    if (codec_id == AV_CODEC_ID_AV1 || codec_id == AV_CODEC_ID_VP9) {
-        return DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
-    }
-    return DecodeDeviceMode::IndependentDevice;
-}
-
 std::unique_ptr<TrackPipeline> TrackPipelineFactory::create_opened_pipeline(
     const std::string& path,
     bool hw_decode,
@@ -87,11 +80,8 @@ std::unique_ptr<TrackPipeline> TrackPipelineFactory::create_opened_pipeline(
     }
 
     if (hw_decode) {
-        const auto decode_device_mode = options.use_default_decode_device_mode
-            ? default_decode_device_mode(stats.codec_params->codec_id)
-            : options.decode_device_mode;
         pipeline->decode_thread->enable_hardware_decode(
-            decode_device_mode,
+            options.decode_device_mode,
             options.render_device,
             options.device_mutex,
             options.render_backend);

@@ -7,7 +7,7 @@
 #include "renderer/track/track_lifecycle.h"
 #include "renderer/track/track_pipeline_factory.h"
 #include "renderer/track/track_perf_baseline.h"
-#include "renderer/track/track_preroll_policy.h"
+#include "renderer/track/track_playback_pacing.h"
 #include "renderer/track/track_present_policy.h"
 #include "renderer/track/track_preview_policy.h"
 #include "renderer/track/track_snapshot.h"
@@ -547,7 +547,8 @@ TEST_CASE("TrackSnapshot builds track perf stats",
     REQUIRE(snapshot.stats.slot == 3);
     REQUIRE(snapshot.stats.file_id == 42);
     REQUIRE(snapshot.stats.buffer_count == 1);
-    REQUIRE(snapshot.stats.buffer_capacity == 4);
+    REQUIRE(snapshot.stats.buffer_capacity == 5);
+    REQUIRE(snapshot.stats.buffer_preroll_target == 4);
     REQUIRE(snapshot.stats.buffer_state == TrackState::Ready);
     REQUIRE(snapshot.stats.current_pts_us == 1234567);
     REQUIRE(snapshot.stats.current_dts_us == 1200000);
@@ -588,7 +589,8 @@ TEST_CASE("TrackSnapshot collects track perf stats in slot order",
     REQUIRE(collection.stats[0].slot == 1);
     REQUIRE(collection.stats[0].file_id == 11);
     REQUIRE(collection.stats[0].buffer_count == 1);
-    REQUIRE(collection.stats[0].buffer_capacity == 2);
+    REQUIRE(collection.stats[0].buffer_capacity == 3);
+    REQUIRE(collection.stats[0].buffer_preroll_target == 2);
     REQUIRE(collection.stats[0].buffer_state == TrackState::Ready);
     REQUIRE(collection.stats[0].current_pts_us == 2222);
     REQUIRE(collection.stats[0].current_dts_us == 1111);
@@ -624,6 +626,11 @@ TEST_CASE("TrackSnapshot builds track GPU memory stats",
     decode_stats.estimated_hw_frame_bytes = 1024;
     decode_stats.estimated_hw_pool_bytes = 8192;
     decode_stats.snapshot_pool.estimated_bytes = 512;
+    decode_stats.snapshot_pool.completion_wait_count = 9;
+    decode_stats.snapshot_pool.completion_wait_total_us = 27000;
+    decode_stats.snapshot_pool.completion_wait_max_us = 12000;
+    decode_stats.snapshot_pool.completion_wait_over_budget_count = 2;
+    decode_stats.snapshot_pool.completion_wait_timeout_count = 0;
     decode_stats.exact_seek_candidate_cpu_bytes = 128;
     decode_stats.exact_seek_stable_cpu_bytes = 256;
     decode_stats.exact_seek_reorder_count = 5;
@@ -651,6 +658,11 @@ TEST_CASE("TrackSnapshot builds track GPU memory stats",
     REQUIRE(stats.decoder_frame_bytes == 1024);
     REQUIRE(stats.decoder_pool_bytes == 8192);
     REQUIRE(stats.exact_seek_snapshot_bytes == 512);
+    REQUIRE(stats.snapshot_completion_wait_count == 9);
+    REQUIRE(stats.snapshot_completion_wait_total_us == 27000);
+    REQUIRE(stats.snapshot_completion_wait_max_us == 12000);
+    REQUIRE(stats.snapshot_completion_wait_over_budget_count == 2);
+    REQUIRE(stats.snapshot_completion_wait_timeout_count == 0);
     REQUIRE(stats.presenter_copy_texture_bytes == 4096);
     REQUIRE(stats.exact_seek_candidate_cpu_bytes == 128);
     REQUIRE(stats.exact_seek_stable_cpu_bytes == 256);
@@ -716,14 +728,26 @@ TEST_CASE("TrackLifecycle compacts cached present decisions",
     decision.frames[0] = frame0;
     decision.frames[1] = frame1;
     decision.frames[2] = frame2;
+    decision.file_ids[0] = 10;
+    decision.file_ids[1] = 11;
+    decision.file_ids[2] = 12;
+    decision.track_generations[0] = 20;
+    decision.track_generations[1] = 21;
+    decision.track_generations[2] = 22;
 
     compact_present_decision_frames(decision, 1);
 
     REQUIRE(decision.frames[0]);
     REQUIRE(decision.frames[0]->pts_us == 1000);
+    REQUIRE(decision.file_ids[0] == 10);
+    REQUIRE(decision.track_generations[0] == 20);
     REQUIRE(decision.frames[1]);
     REQUIRE(decision.frames[1]->pts_us == 3000);
+    REQUIRE(decision.file_ids[1] == 12);
+    REQUIRE(decision.track_generations[1] == 22);
     REQUIRE_FALSE(decision.frames[2]);
+    REQUIRE(decision.file_ids[2] == -1);
+    REQUIRE(decision.track_generations[2] == 0);
     REQUIRE_FALSE(decision.frames[3]);
 }
 
@@ -1091,32 +1115,141 @@ TEST_CASE("TrackStepPolicy computes minimum current frame duration",
     REQUIRE(compute_min_current_frame_duration_us(oversized_manager) == 33333);
 }
 
-TEST_CASE("TrackPrerollPolicy detects preroll-blocking tracks",
-          "[track_pipeline][track_preroll_policy]") {
+TEST_CASE("TrackPlaybackPacing snapshots preroll and underrun frontiers",
+          "[track_pipeline][playback_pacing]") {
     TrackPipelineManager manager;
-    REQUIRE_FALSE(has_preroll_blocking_track(manager));
+    auto empty = snapshot_track_playback_pacing(manager, 0);
+    REQUIRE_FALSE(empty.has_active_tracks);
 
     auto ready = std::make_unique<TrackPipeline>();
     ready->track_buffer = std::make_shared<TrackBuffer>();
-    ready->track_buffer->set_state(TrackState::Ready);
+    ready->packet_queue = std::make_unique<PacketQueue>();
+    for (int i = 0; i < 4; ++i) {
+        TextureFrame frame;
+        frame.pts_us = i * 33333;
+        frame.duration_us = 33333;
+        frame.texture_handle =
+            reinterpret_cast<void*>(static_cast<uintptr_t>(i + 1));
+        ready->track_buffer->push_frame(frame);
+    }
+    ready->track_buffer->set_state(TrackState::Buffering);
     manager[0] = std::move(ready);
-    REQUIRE_FALSE(has_preroll_blocking_track(manager));
+    auto buffering = snapshot_track_playback_pacing(manager, 0);
+    REQUIRE(buffering.preroll_blocked);
+    REQUIRE_FALSE(buffering.starvation_risk);
+    REQUIRE(buffering.resume_ready);
+    REQUIRE(buffering.safe_frontier_us == 99999);
 
-    manager[0]->track_buffer->set_state(TrackState::Buffering);
-    REQUIRE(has_preroll_blocking_track(manager));
+    manager[0]->track_buffer->set_state(TrackState::Ready);
+    auto ready_snapshot = snapshot_track_playback_pacing(manager, 50000);
+    REQUIRE_FALSE(ready_snapshot.preroll_blocked);
+    REQUIRE_FALSE(ready_snapshot.starvation_risk);
+    REQUIRE(ready_snapshot.bottleneck_slot == 0);
+    REQUIRE(ready_snapshot.bottleneck_buffered_frames == 4);
+    REQUIRE(ready_snapshot.bottleneck_target_frames == 3);
+    REQUIRE(ready_snapshot.headroom_us == 49999);
 
-    manager[0]->track_buffer->set_state(TrackState::Empty);
-    REQUIRE(has_preroll_blocking_track(manager));
+    manager[0]->track_buffer->advance();
+    manager[0]->track_buffer->advance();
+    manager[0]->track_buffer->advance();
+    auto final_frame = snapshot_track_playback_pacing(manager, 99999);
+    REQUIRE_FALSE(final_frame.starvation_risk);
+    REQUIRE(final_frame.resume_ready);
+    REQUIRE(final_frame.min_buffered_frames == 1);
 
-    manager[0]->track_buffer->set_state(TrackState::Flushing);
-    REQUIRE(has_preroll_blocking_track(manager));
+    REQUIRE(manager[0]->track_buffer->advance());
+    auto starved = snapshot_track_playback_pacing(manager, 99999);
+    REQUIRE(starved.starvation_risk);
+    REQUIRE_FALSE(starved.resume_ready);
+    REQUIRE(starved.min_buffered_frames == 0);
 
-    manager[0]->track_buffer->set_state(TrackState::Error);
-    REQUIRE_FALSE(has_preroll_blocking_track(manager));
+    manager[0]->packet_queue->signal_eof();
+    auto eof = snapshot_track_playback_pacing(manager, 99999);
+    REQUIRE(eof.all_active_tracks_eof);
+    REQUIRE_FALSE(eof.starvation_risk);
+    REQUIRE(eof.resume_ready);
+}
 
-    auto missing_buffer = std::make_unique<TrackPipeline>();
-    manager[1] = std::move(missing_buffer);
-    REQUIRE(has_preroll_blocking_track(manager));
+TEST_CASE("TrackPlaybackPacing admits the only forward frame before waiting",
+          "[track_pipeline][playback_pacing]") {
+    TrackPipelineManager manager;
+    auto track = std::make_unique<TrackPipeline>();
+    track->track_buffer = std::make_shared<TrackBuffer>(1, 1);
+    track->packet_queue = std::make_unique<PacketQueue>();
+
+    TextureFrame frame;
+    frame.pts_us = 6000;
+    frame.duration_us = 33333;
+    frame.texture_handle = reinterpret_cast<void*>(1);
+    track->track_buffer->push_frame(frame);
+    track->track_buffer->set_state(TrackState::Ready);
+    manager[0] = std::move(track);
+
+    const auto admitted = snapshot_track_playback_pacing(manager, 6000);
+    REQUIRE(admitted.has_active_tracks);
+    REQUIRE_FALSE(admitted.preroll_blocked);
+    REQUIRE_FALSE(admitted.starvation_risk);
+    REQUIRE(admitted.resume_ready);
+    REQUIRE_FALSE(admitted.frontier_limited);
+    REQUIRE(admitted.min_buffered_frames == 1);
+
+    TextureFrame successor;
+    successor.pts_us = 39333;
+    successor.duration_us = 33333;
+    successor.texture_handle = reinterpret_cast<void*>(2);
+    manager[0]->track_buffer->push_frame(successor);
+    const auto saturated = snapshot_track_playback_pacing(manager, 6000);
+    REQUIRE(saturated.frontier_limited);
+    REQUIRE(saturated.resume_ready);
+    REQUIRE(saturated.bottleneck_buffered_frames == 2);
+    REQUIRE(saturated.bottleneck_target_frames == 2);
+    REQUIRE(saturated.headroom_us == saturated.high_watermark_us);
+
+    const auto half_frame_remaining =
+        snapshot_track_playback_pacing(manager, 22667);
+    REQUIRE(half_frame_remaining.resume_ready);
+    REQUIRE(half_frame_remaining.bottleneck_buffered_frames == 2);
+    REQUIRE(half_frame_remaining.bottleneck_target_frames == 2);
+    REQUIRE(half_frame_remaining.headroom_us <
+            half_frame_remaining.high_watermark_us);
+
+    REQUIRE(manager[0]->track_buffer->advance());
+    REQUIRE(manager[0]->track_buffer->advance());
+    const auto waiting = snapshot_track_playback_pacing(manager, 39333);
+    REQUIRE(waiting.starvation_risk);
+    REQUIRE_FALSE(waiting.resume_ready);
+    REQUIRE(waiting.min_buffered_frames == 0);
+}
+
+TEST_CASE("TrackPlaybackPacing ignores tracks before positive offset start",
+          "[track_pipeline][playback_pacing]") {
+    const auto make_ready_track = [](int64_t offset_us,
+                                     int64_t interval_us) {
+        auto track = std::make_unique<TrackPipeline>();
+        track->offset_us = offset_us;
+        track->packet_queue = std::make_unique<PacketQueue>();
+        track->track_buffer = std::make_shared<TrackBuffer>();
+        for (int i = 0; i < 4; ++i) {
+            TextureFrame frame;
+            frame.pts_us = i * interval_us;
+            frame.duration_us = interval_us;
+            frame.texture_handle =
+                reinterpret_cast<void*>(static_cast<uintptr_t>(
+                    offset_us + i + 1));
+            track->track_buffer->push_frame(frame);
+        }
+        track->track_buffer->set_state(TrackState::Ready);
+        return track;
+    };
+
+    TrackPipelineManager manager;
+    manager[0] = make_ready_track(0, 40000);
+    manager[1] = make_ready_track(1000000, 10000);
+
+    const auto snapshot = snapshot_track_playback_pacing(manager, 0);
+    REQUIRE(snapshot.bottleneck_slot == 0);
+    REQUIRE(snapshot.safe_frontier_us == 120000);
+    REQUIRE(snapshot.headroom_us == 120000);
 }
 
 TEST_CASE("TrackPreviewPolicy builds paused preview snapshots",
@@ -1346,7 +1479,7 @@ TEST_CASE("TrackPresentPolicy carries forward active last frames",
     REQUIRE_FALSE(decision.frames[3].has_value());
 }
 
-TEST_CASE("TrackPresentPolicy computes empty-buffer EOF clamp facts",
+TEST_CASE("TrackPresentPolicy computes playback EOF boundary",
           "[track_pipeline][track_present_policy]") {
     const auto make_frame = [](int64_t pts_us, int64_t duration_us) {
         TextureFrame frame;
@@ -1374,8 +1507,8 @@ TEST_CASE("TrackPresentPolicy computes empty-buffer EOF clamp facts",
         };
 
     TrackPipelineManager empty_manager;
-    auto empty = compute_empty_buffer_eof_clamp(empty_manager, PresentDecision());
-    REQUIRE(empty.all_active_buffers_empty);
+    auto empty = compute_playback_eof_boundary(empty_manager, PresentDecision());
+    REQUIRE(empty.all_active_tracks_bounded);
     REQUIRE(empty.max_end_pts_us == 0);
 
     TrackPipelineManager manager;
@@ -1385,25 +1518,25 @@ TEST_CASE("TrackPresentPolicy computes empty-buffer EOF clamp facts",
     last_decision.frames[0] = make_frame(1000, 40);
     last_decision.frames[1] = make_frame(2000, 50);
 
-    auto clamp = compute_empty_buffer_eof_clamp(manager, last_decision);
-    REQUIRE(clamp.all_active_buffers_empty);
+    auto clamp = compute_playback_eof_boundary(manager, last_decision);
+    REQUIRE(clamp.all_active_tracks_bounded);
     REQUIRE(clamp.max_end_pts_us == 2030);
 
     manager[2] = make_track(0, make_frame(3000, 30), false);
-    auto non_empty = compute_empty_buffer_eof_clamp(manager, last_decision);
-    REQUIRE_FALSE(non_empty.all_active_buffers_empty);
+    auto non_empty = compute_playback_eof_boundary(manager, last_decision);
+    REQUIRE_FALSE(non_empty.all_active_tracks_bounded);
 
     TrackPipelineManager bounded_manager;
     bounded_manager[0] =
         make_track(250, make_frame(3000, 30), false, 9000);
-    auto bounded = compute_empty_buffer_eof_clamp(bounded_manager, PresentDecision());
-    REQUIRE(bounded.all_active_buffers_empty);
+    auto bounded = compute_playback_eof_boundary(bounded_manager, PresentDecision());
+    REQUIRE(bounded.all_active_tracks_bounded);
     REQUIRE(bounded.max_end_pts_us == 9250);
 
     TrackPipelineManager tail_manager;
     tail_manager[0] = make_track(100, make_frame(3000, 30), true);
-    auto tail = compute_empty_buffer_eof_clamp(tail_manager, PresentDecision());
-    REQUIRE(tail.all_active_buffers_empty);
+    auto tail = compute_playback_eof_boundary(tail_manager, PresentDecision());
+    REQUIRE(tail.all_active_tracks_bounded);
     REQUIRE(tail.max_end_pts_us == 3130);
 
     TrackPipelineManager eof_buffered_manager;
@@ -1411,8 +1544,8 @@ TEST_CASE("TrackPresentPolicy computes empty-buffer EOF clamp facts",
         make_track(100, make_frame(3000, 30), true, 10000);
     eof_buffered_manager[0]->track_buffer->push_frame(make_frame(4000, 30));
     auto eof_buffered =
-        compute_empty_buffer_eof_clamp(eof_buffered_manager, PresentDecision());
-    REQUIRE(eof_buffered.all_active_buffers_empty);
+        compute_playback_eof_boundary(eof_buffered_manager, PresentDecision());
+    REQUIRE(eof_buffered.all_active_tracks_bounded);
     REQUIRE(eof_buffered.max_end_pts_us == 10100);
 
     TrackPipelineManager missing_buffer_manager;
@@ -1421,8 +1554,8 @@ TEST_CASE("TrackPresentPolicy computes empty-buffer EOF clamp facts",
     PresentDecision missing_last;
     missing_last.frames[0] = make_frame(10, 5);
     auto missing_buffer =
-        compute_empty_buffer_eof_clamp(missing_buffer_manager, missing_last);
-    REQUIRE(missing_buffer.all_active_buffers_empty);
+        compute_playback_eof_boundary(missing_buffer_manager, missing_last);
+    REQUIRE(missing_buffer.all_active_tracks_bounded);
     REQUIRE(missing_buffer.max_end_pts_us == 22);
 }
 
@@ -1646,8 +1779,22 @@ TEST_CASE("TrackStepPolicy applies step-forward decisions",
     REQUIRE(application.has_clock_target);
     REQUIRE(application.presented_pts_us == 200);
     REQUIRE(application.clock_target_us == 250);
-    REQUIRE(manager[0]->track_buffer->peek(0)->pts_us == 300);
-    REQUIRE(manager[1]->track_buffer->peek(0)->pts_us == 300);
+    REQUIRE(manager[0]->track_buffer->peek(-1)->pts_us == 100);
+    REQUIRE(manager[0]->track_buffer->peek(0)->pts_us == 200);
+    REQUIRE(manager[1]->track_buffer->peek(-1)->pts_us == 100);
+    REQUIRE(manager[1]->track_buffer->peek(0)->pts_us == 200);
+
+    PresentDecision last_decision = decision;
+    set_present_decision_track_identity(last_decision, 0, *manager[0]);
+    set_present_decision_track_identity(last_decision, 1, *manager[1]);
+    PresentDecision backward;
+    REQUIRE(build_step_backward_decision(
+        manager, application.clock_target_us, last_decision, backward));
+    const auto backward_application =
+        apply_step_backward_decision(manager, backward);
+    REQUIRE(backward_application.has_clock_target);
+    REQUIRE(manager[0]->track_buffer->peek(0)->pts_us == 100);
+    REQUIRE(manager[1]->track_buffer->peek(0)->pts_us == 100);
 }
 
 TEST_CASE("TrackStepPolicy chooses fair multi-track step-forward target",
@@ -1871,6 +2018,21 @@ TEST_CASE("TrackStepPolicy chooses step-forward exact-seek fallback targets",
     REQUIRE(future_last_target.base_pts_us == 70100);
     REQUIRE(future_last_target.target_pts_us == 111100);
 
+    const auto chained_exact_step_target = choose_step_forward_exact_seek_target(
+        future_manager, 30000, 0, future_last_decision, 30000);
+    REQUIRE(chained_exact_step_target.base_pts_us == 30000);
+    REQUIRE(chained_exact_step_target.target_pts_us == 71000);
+    REQUIRE(chained_exact_step_target.decode_target_pts_us == 71000);
+
+    TextureFrame overshot_frame;
+    overshot_frame.pts_us = 100000;
+    future_last_decision.frames[0] = overshot_frame;
+    const auto overshot_exact_step_target = choose_step_forward_exact_seek_target(
+        future_manager, 30000, 0, future_last_decision, 30000);
+    REQUIRE(overshot_exact_step_target.target_pts_us == 71000);
+    REQUIRE(overshot_exact_step_target.visible_pts_us == 100100);
+    REQUIRE(overshot_exact_step_target.decode_target_pts_us == 101100);
+
     const auto clamped_target = choose_step_forward_exact_seek_target(
         manager, 9000, 20000, last_decision);
     REQUIRE(clamped_target.target_pts_us == 20000);
@@ -1886,8 +2048,8 @@ TEST_CASE("TrackStepPolicy chooses step-backward exact-seek fallback targets",
     REQUIRE(empty_target.base_pts_us == 10000);
     REQUIRE(empty_target.clock_pts_us == 10000);
     REQUIRE(empty_target.frame_duration_us == 33333);
-    REQUIRE(empty_target.target_pts_us == 0);
-    REQUIRE(empty_target.clamped_to_zero);
+    REQUIRE(empty_target.target_pts_us == 9999);
+    REQUIRE_FALSE(empty_target.clamped_to_zero);
 
     auto track = std::make_unique<TrackPipeline>();
     track->track_buffer = std::make_shared<TrackBuffer>();
@@ -1904,13 +2066,14 @@ TEST_CASE("TrackStepPolicy chooses step-backward exact-seek fallback targets",
     REQUIRE(target.base_pts_us == 90000);
     REQUIRE(target.clock_pts_us == 90000);
     REQUIRE(target.frame_duration_us == 40000);
-    REQUIRE(target.target_pts_us == 49000);
+    REQUIRE(target.target_pts_us == 89999);
     REQUIRE_FALSE(target.clamped_to_zero);
 
     const auto clamped_target = choose_step_backward_exact_seek_target(
         manager, 40500, PresentDecision{});
-    REQUIRE(clamped_target.target_pts_us == 0);
-    REQUIRE(clamped_target.clamped_to_zero);
+    REQUIRE(clamped_target.base_pts_us == 1000);
+    REQUIRE(clamped_target.target_pts_us == 999);
+    REQUIRE_FALSE(clamped_target.clamped_to_zero);
 
     TextureFrame visible_frame;
     visible_frame.pts_us = 60000;
@@ -1920,7 +2083,19 @@ TEST_CASE("TrackStepPolicy chooses step-backward exact-seek fallback targets",
     const auto visible_target = choose_step_backward_exact_seek_target(
         manager, 90000, last_decision);
     REQUIRE(visible_target.base_pts_us == 60000);
-    REQUIRE(visible_target.target_pts_us == 19000);
+    REQUIRE(visible_target.target_pts_us == 59999);
+
+    TextureFrame far_behind_visible_frame;
+    far_behind_visible_frame.pts_us = 2066578;
+    PresentDecision far_behind_last_decision;
+    far_behind_last_decision.frames[0] = far_behind_visible_frame;
+    set_present_decision_track_identity(
+        far_behind_last_decision, 0, *manager[0]);
+    const auto far_behind_visible_target =
+        choose_step_backward_exact_seek_target(
+            manager, 3060000, far_behind_last_decision);
+    REQUIRE(far_behind_visible_target.base_pts_us == 2066578);
+    REQUIRE(far_behind_visible_target.target_pts_us == 2066577);
 
     TextureFrame future_visible_frame;
     future_visible_frame.pts_us = 130000;
@@ -1931,7 +2106,7 @@ TEST_CASE("TrackStepPolicy chooses step-backward exact-seek fallback targets",
     const auto future_visible_target = choose_step_backward_exact_seek_target(
         manager, 90000, future_last_decision);
     REQUIRE(future_visible_target.base_pts_us == 130000);
-    REQUIRE(future_visible_target.target_pts_us == 89000);
+    REQUIRE(future_visible_target.target_pts_us == 129999);
 
     PresentDecision stale_future_last_decision;
     stale_future_last_decision.frames[0] = future_visible_frame;
@@ -1940,7 +2115,33 @@ TEST_CASE("TrackStepPolicy chooses step-backward exact-seek fallback targets",
         choose_step_backward_exact_seek_target(
             manager, 90000, stale_future_last_decision);
     REQUIRE(stale_future_visible_target.base_pts_us == 90000);
-    REQUIRE(stale_future_visible_target.target_pts_us == 49000);
+    REQUIRE(stale_future_visible_target.target_pts_us == 89999);
+
+    auto second_track = std::make_unique<TrackPipeline>();
+    second_track->offset_us = 5000;
+    second_track->track_buffer = std::make_shared<TrackBuffer>();
+    TextureFrame second_current;
+    second_current.pts_us = 70000;
+    second_track->track_buffer->push_frame(second_current);
+    manager[1] = std::move(second_track);
+
+    PresentDecision multi_track_anchor;
+    TextureFrame first_anchor;
+    first_anchor.pts_us = 100000;
+    TextureFrame second_anchor;
+    second_anchor.pts_us = 80000;
+    multi_track_anchor.frames[0] = first_anchor;
+    multi_track_anchor.frames[1] = second_anchor;
+    set_present_decision_track_identity(
+        multi_track_anchor, 0, *manager[0]);
+    set_present_decision_track_identity(
+        multi_track_anchor, 1, *manager[1]);
+
+    const auto reconstruction_plan = build_step_backward_reconstruction_plan(
+        manager, 110000, multi_track_anchor);
+    REQUIRE(reconstruction_plan.reference.target_pts_us == 99999);
+    REQUIRE(reconstruction_plan.track_targets[0] == 99999);
+    REQUIRE(reconstruction_plan.track_targets[1] == 84999);
 }
 
 TEST_CASE("TrackStepPolicy discards consumed step-forward frames",
@@ -1980,9 +2181,12 @@ TEST_CASE("TrackStepPolicy discards consumed step-forward frames",
         decision,
         last_decision);
 
-    REQUIRE(manager[0]->track_buffer->peek(0)->pts_us == 300);
-    REQUIRE(manager[1]->track_buffer->peek(0)->pts_us == 300);
-    REQUIRE(manager[2]->track_buffer->peek(0)->pts_us == 300);
+    REQUIRE(manager[0]->track_buffer->peek(-1)->pts_us == 100);
+    REQUIRE(manager[0]->track_buffer->peek(0)->pts_us == 200);
+    REQUIRE(manager[1]->track_buffer->peek(-1)->pts_us == 100);
+    REQUIRE(manager[1]->track_buffer->peek(0)->pts_us == 200);
+    REQUIRE(manager[2]->track_buffer->peek(-1)->pts_us == 100);
+    REQUIRE(manager[2]->track_buffer->peek(0)->pts_us == 200);
 }
 
 TEST_CASE("TrackLifecycle prepares add-track seek to current clock",
@@ -2047,6 +2251,53 @@ TEST_CASE("TrackLifecycle prepares add-track seek to current clock",
     REQUIRE(pending_seek->target_pts_us == 1750000);
     REQUIRE(pending_seek->type == SeekType::Keyframe);
     REQUIRE(audio_pause_count == 2);
+}
+
+TEST_CASE("TrackLifecycle prepares add-track initial seek before demux start",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipeline track;
+    track.offset_us = 250000;
+    track.packet_queue = std::make_unique<PacketQueue>();
+    track.audio_packet_queue = std::make_unique<PacketQueue>();
+    track.track_buffer = std::make_shared<TrackBuffer>(4, 1);
+    track.seek_controller = std::make_unique<SeekController>();
+
+    TextureFrame frame;
+    frame.pts_us = 1000;
+    track.track_buffer->push_frame(frame);
+
+    const auto result = prepare_add_track_initial_seek(track, 1000000, false);
+    REQUIRE(result.applied);
+    REQUIRE(result.target_pts_us == 750000);
+    REQUIRE(result.seek_type == SeekType::Exact);
+    REQUIRE(track.track_buffer->total_count() == 1);
+    REQUIRE(track.packet_queue->try_pop().status == PacketPopStatus::Empty);
+    REQUIRE(track.audio_packet_queue->try_pop().status == PacketPopStatus::Empty);
+
+    const auto pending_seek = track.seek_controller->take_pending();
+    REQUIRE(pending_seek);
+    REQUIRE(pending_seek->target_pts_us == 750000);
+    REQUIRE(pending_seek->type == SeekType::Exact);
+}
+
+TEST_CASE("TrackLifecycle initial add seek backs away from EOF",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineFactory factory;
+    auto pipeline = factory.create_opened_pipeline(
+        video_test_dir() + "/h264_9s_1920x1080.mp4",
+        false);
+    REQUIRE(pipeline);
+    pipeline->offset_us = 250000;
+    const int64_t track_end_us =
+        track_pts_end_us_from_stats(pipeline->demux_thread->stats());
+    REQUIRE(track_end_us > 1000);
+
+    const auto result = prepare_add_track_initial_seek(
+        *pipeline, track_end_us + pipeline->offset_us, true);
+
+    REQUIRE(result.applied);
+    REQUIRE(result.seek_type == SeekType::Keyframe);
+    REQUIRE(result.target_pts_us == track_end_us - 1000);
 }
 
 TEST_CASE("TrackLifecycle backs add-track seek away from EOF",

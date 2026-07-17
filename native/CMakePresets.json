@@ -7,7 +7,6 @@
       "binaryDir": "${sourceDir}/../build/native/standalone/windows-msvc-preset-release",
       "cacheVariables": {
         "BUILD_PYTHON": "ON",
-        "BUILD_FFI": "ON",
         "BUILD_TESTS": "ON",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
@@ -19,25 +18,12 @@
       "binaryDir": "${sourceDir}/../build/native/standalone/windows-msvc-preset-debug"
     },
     {
-      "name": "ffi-only",
-      "displayName": "Windows FFI Only",
-      "inherits": "windows-release",
-      "binaryDir": "${sourceDir}/../build/native/standalone/windows-msvc-preset-ffi",
-      "cacheVariables": {
-        "BUILD_PYTHON": "OFF",
-        "BUILD_FFI": "ON",
-        "BUILD_TESTS": "OFF",
-        "BUILD_ANALYSIS_TESTS": "OFF"
-      }
-    },
-    {
       "name": "no-python-no-tests",
       "displayName": "Windows Minimal App Native",
       "inherits": "windows-release",
       "binaryDir": "${sourceDir}/../build/native/standalone/windows-msvc-preset-minimal",
       "cacheVariables": {
         "BUILD_PYTHON": "OFF",
-        "BUILD_FFI": "OFF",
         "BUILD_TESTS": "OFF",
         "BUILD_ANALYSIS_TESTS": "OFF"
       }
@@ -51,7 +37,6 @@
         "CMAKE_BUILD_TYPE": "Release",
         "BUILD_ANALYSIS": "OFF",
         "BUILD_PYTHON": "OFF",
-        "BUILD_FFI": "OFF",
         "BUILD_TESTS": "ON",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       },
@@ -101,11 +86,6 @@
       "name": "windows-debug",
       "configurePreset": "windows-debug",
       "configuration": "Debug"
-    },
-    {
-      "name": "ffi-only-release",
-      "configurePreset": "ffi-only",
-      "configuration": "Release"
     },
     {
       "name": "minimal-release",

@@ -64,37 +64,35 @@ int main() {
 
   vr::HwDecodeInitParams renderer_owned_params = params;
   renderer_owned_params.device_mode = vr::DecodeDeviceMode::IndependentDevice;
-  renderer_owned_params.backend = vr::RenderBackendType::WgpuMetal;
-  auto renderer_owned_compatible = vr::compatible_hw_decode_provider_names(
-      vr::RenderBackendType::WgpuMetal,
-      vr::DecodeDeviceMode::IndependentDevice);
-  bool renderer_owned_has_videotoolbox = false;
-  for (const char* name : renderer_owned_compatible) {
-    renderer_owned_has_videotoolbox =
-        renderer_owned_has_videotoolbox || std::string(name) == "VideoToolbox";
-  }
-  if (!renderer_owned_has_videotoolbox) {
-    return fail("VideoToolbox provider is not registered for wgpu-metal renderer-owned decode");
-  }
-  auto legacy_metal_renderer_owned_compatible =
+  renderer_owned_params.backend = vr::RenderBackendType::Metal;
+  auto metal_renderer_owned_compatible =
       vr::compatible_hw_decode_provider_names(
           vr::RenderBackendType::Metal,
           vr::DecodeDeviceMode::IndependentDevice);
-  for (const char* name : legacy_metal_renderer_owned_compatible) {
-    if (std::string(name) == "VideoToolbox") {
-      return fail("VideoToolbox provider is still registered for removed Metal renderer-owned decode");
-    }
+  bool metal_renderer_owned_has_videotoolbox = false;
+  for (const char* name : metal_renderer_owned_compatible) {
+    metal_renderer_owned_has_videotoolbox =
+        metal_renderer_owned_has_videotoolbox ||
+        std::string(name) == "VideoToolbox";
+  }
+  if (!metal_renderer_owned_has_videotoolbox) {
+    return fail("VideoToolbox provider is not registered for Metal renderer-owned decode");
   }
   auto renderer_owned_result =
       vr::try_hw_decode_providers(codec, renderer_owned_params);
-  if (!renderer_owned_result.success ||
-      renderer_owned_result.type != vr::HwDecodeType::VideoToolbox ||
-      renderer_owned_result.hw_pix_fmt != AV_PIX_FMT_VIDEOTOOLBOX ||
-      !renderer_owned_result.hw_device_ctx) {
-    return fail("VideoToolbox renderer-owned provider did not initialize");
+  if (!renderer_owned_result.success) {
+    return fail("VideoToolbox Metal renderer-owned provider did not initialize");
+  }
+  if (renderer_owned_result.hw_pix_fmt != AV_PIX_FMT_VIDEOTOOLBOX) {
+    return fail("VideoToolbox Metal renderer-owned provider did not select AV_PIX_FMT_VIDEOTOOLBOX");
+  }
+  if (!renderer_owned_result.hw_device_ctx) {
+    return fail("VideoToolbox Metal renderer-owned device context is null");
   }
   av_buffer_unref(&renderer_owned_result.hw_device_ctx);
-  renderer_owned_result.provider->shutdown();
+  if (renderer_owned_result.provider) {
+    renderer_owned_result.provider->shutdown();
+  }
 
   auto mpeg2_result = vr::try_hw_decode_providers(mpeg2_codec, params);
   if (mpeg2_result.success) {

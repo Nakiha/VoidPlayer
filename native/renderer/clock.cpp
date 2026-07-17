@@ -22,10 +22,12 @@ int64_t Clock::current_pts_us() const {
     std::lock_guard<std::mutex> lock(mutex_);
     if (paused_) {
         return base_pts_us_ +
-            static_cast<int64_t>((pause_time_us_ - base_time_us_) * speed_);
+            static_cast<int64_t>(
+                (pause_time_us_ - base_time_us_) * effective_speed_);
     }
     int64_t now = get_time_us();
-    return base_pts_us_ + static_cast<int64_t>((now - base_time_us_) * speed_);
+    return base_pts_us_ +
+        static_cast<int64_t>((now - base_time_us_) * effective_speed_);
 }
 
 void Clock::play() {
@@ -33,7 +35,8 @@ void Clock::play() {
     int64_t now = get_time_us();
     base_time_us_ = now;
     base_pts_us_ = 0;
-    speed_ = 1.0;
+    requested_speed_ = 1.0;
+    effective_speed_ = 1.0;
     paused_ = false;
 }
 
@@ -64,18 +67,43 @@ void Clock::seek(int64_t target_pts_us) {
 
 void Clock::set_speed(double new_speed) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (new_speed == speed_) return;
     if (new_speed <= 0) return;
+    if (new_speed == requested_speed_ &&
+        new_speed == effective_speed_) {
+        return;
+    }
 
-    // Preserve current PTS: current = base_pts + (now - base_time) * old_speed
-    // new_base_time = now - (current - base_pts) / new_speed
     int64_t now = get_time_us();
     if (paused_) {
         now = pause_time_us_;
     }
-    int64_t current = base_pts_us_ + static_cast<int64_t>((now - base_time_us_) * speed_);
-    base_time_us_ = now - static_cast<int64_t>((current - base_pts_us_) / new_speed);
-    speed_ = new_speed;
+    const int64_t current = base_pts_us_ +
+        static_cast<int64_t>(
+            (now - base_time_us_) * effective_speed_);
+    base_pts_us_ = current;
+    base_time_us_ = now;
+    if (paused_) {
+        pause_time_us_ = now;
+    }
+    requested_speed_ = new_speed;
+    effective_speed_ = new_speed;
+}
+
+void Clock::set_effective_speed(double new_speed) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (new_speed <= 0 || new_speed == effective_speed_) {
+        return;
+    }
+    int64_t now = paused_ ? pause_time_us_ : get_time_us();
+    const int64_t current = base_pts_us_ +
+        static_cast<int64_t>(
+            (now - base_time_us_) * effective_speed_);
+    base_pts_us_ = current;
+    base_time_us_ = now;
+    if (paused_) {
+        pause_time_us_ = now;
+    }
+    effective_speed_ = new_speed;
 }
 
 bool Clock::is_paused() const {
@@ -85,7 +113,12 @@ bool Clock::is_paused() const {
 
 double Clock::speed() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return speed_;
+    return requested_speed_;
+}
+
+double Clock::effective_speed() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return effective_speed_;
 }
 
 } // namespace vr

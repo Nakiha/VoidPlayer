@@ -227,10 +227,10 @@ void apply_present_carry_forward(
     }
 }
 
-EmptyBufferEofClamp compute_empty_buffer_eof_clamp(
+PlaybackEofBoundary compute_playback_eof_boundary(
     const TrackPipelineManager& tracks,
     const PresentDecision& last_decision) {
-    EmptyBufferEofClamp clamp;
+    PlaybackEofBoundary boundary;
 
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks[i]) {
@@ -240,7 +240,7 @@ EmptyBufferEofClamp compute_empty_buffer_eof_clamp(
         const bool queue_eof =
             !tracks[i]->packet_queue || tracks[i]->packet_queue->is_eof();
         if (!queue_eof && !end_us.has_value()) {
-            clamp.all_active_buffers_empty = false;
+            boundary.all_active_tracks_bounded = false;
             break;
         }
         if (!end_us.has_value() &&
@@ -252,11 +252,12 @@ EmptyBufferEofClamp compute_empty_buffer_eof_clamp(
             end_us = buffered_tail_end_us(*tracks[i]);
         }
         if (end_us.has_value()) {
-            clamp.max_end_pts_us = std::max(clamp.max_end_pts_us, *end_us);
+            boundary.max_end_pts_us =
+                std::max(boundary.max_end_pts_us, *end_us);
         }
     }
 
-    return clamp;
+    return boundary;
 }
 
 PlaybackEofSettlementDecision choose_playback_eof_settlement(

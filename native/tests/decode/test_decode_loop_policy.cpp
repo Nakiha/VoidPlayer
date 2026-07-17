@@ -138,15 +138,15 @@ TEST_CASE("DecodeLoopPolicy: exact-seek reorder publishes on preview window or E
     REQUIRE(decision.publish);
 }
 
-TEST_CASE("DecodeLoopPolicy: exact-seek preview publish and pacing gates stay explicit",
+TEST_CASE("DecodeLoopPolicy: exact-seek preview and HEVC pacing gates stay explicit",
           "[decode_thread][decode_loop_policy]") {
     REQUIRE_FALSE(should_publish_exact_seek_preview_after_collect(false, true));
     REQUIRE_FALSE(should_publish_exact_seek_preview_after_collect(true, false));
     REQUIRE(should_publish_exact_seek_preview_after_collect(true, true));
 
-    REQUIRE_FALSE(should_pace_hardware_exact_seek_decode(false, true));
-    REQUIRE_FALSE(should_pace_hardware_exact_seek_decode(true, false));
-    REQUIRE(should_pace_hardware_exact_seek_decode(true, true));
+    REQUIRE_FALSE(should_pace_hevc_hardware_exact_seek_decode(false, true));
+    REQUIRE_FALSE(should_pace_hevc_hardware_exact_seek_decode(true, false));
+    REQUIRE(should_pace_hevc_hardware_exact_seek_decode(true, true));
 }
 
 TEST_CASE("DecodeLoopPolicy: buffering EOF can complete with a held visual frame",

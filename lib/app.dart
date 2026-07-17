@@ -48,7 +48,9 @@ class VoidPlayerApp extends StatefulWidget {
 }
 
 class _VoidPlayerAppState extends State<VoidPlayerApp> {
-  late final ActionRegistry _actionRegistry = ActionRegistry();
+  late final ActionRegistry _actionRegistry = ActionRegistry(
+    useWindowsRunnerShortcuts: defaultTargetPlatform == TargetPlatform.windows,
+  );
   late final AppFeedbackController _feedbackController =
       AppFeedbackController();
   late final AppSettingsRepository _settingsRepository =

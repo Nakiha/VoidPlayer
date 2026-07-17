@@ -1,25 +1,31 @@
 #include "renderer/sync/render_sink.h"
 #include <spdlog/spdlog.h>
-#include <cmath>
 #include <utility>
 
 namespace vr {
 namespace {
 
-std::optional<int64_t> frame_end_pts_us(const TrackBuffer& track,
-                                        const TextureFrame& frame) {
-    const auto next = track.peek(1);
-    if (next.has_value() && next->pts_us > frame.pts_us) {
-        return next->pts_us;
+bool same_decoded_frame(const TextureFrame& left,
+                        const TextureFrame& right) {
+    if (left.source_packet_index != kInvalidSourcePacketIndex &&
+        right.source_packet_index != kInvalidSourcePacketIndex) {
+        return left.source_packet_index == right.source_packet_index;
     }
-    // Without a following presentation timestamp, the current frame is the
-    // best stable visual state for this track. This keeps sparse visual streams
-    // and EOF tail frames visible until a newer frame or an explicit clear
-    // arrives, instead of briefly replacing them with black.
-    return std::nullopt;
+    if (left.texture_handle || right.texture_handle) {
+        return left.texture_handle == right.texture_handle &&
+               left.pts_us == right.pts_us &&
+               left.dts_us == right.dts_us;
+    }
+    if (left.cpu_data || right.cpu_data) {
+        return left.cpu_data == right.cpu_data &&
+               left.pts_us == right.pts_us &&
+               left.dts_us == right.dts_us;
+    }
+    return left.pts_us == right.pts_us &&
+           left.dts_us == right.dts_us;
 }
 
-}  // namespace
+} // namespace
 
 RenderSink::RenderSink(Clock& clock)
     : clock_(clock)
@@ -70,7 +76,10 @@ PresentDecision RenderSink::evaluate() {
     decision.current_pts_us = current_pts_us;
 
     bool any_active = false;
-    bool any_ready = false;
+    std::array<std::optional<TextureFrame>, kMaxTracks> queue_heads;
+    std::array<int64_t, kMaxTracks> global_head_pts{};
+    std::optional<int64_t> next_global_event_pts;
+
     for (size_t t = 0; t < kMaxTracks; ++t) {
         if (!tracks[t]) {
             decision.frames[t] = std::nullopt;
@@ -83,63 +92,68 @@ PresentDecision RenderSink::evaluate() {
         decision.track_generations[t] = track_generations[t];
 
         auto& track = tracks[t];
-        int64_t effective_pts = current_pts_us - track_offsets[t];
-
-        // 1. Discard expired frames: advance past frames whose display window has passed
-        while (true) {
-            auto frame = track->peek(0);
-            if (!frame.has_value()) {
-                break;
-            }
-            // Prefer the next decoded presentation timestamp over AVFrame
-            // duration. Some phone Dolby/HLG HEVC files carry alternating
-            // 0.1ms/66ms duration metadata even though their PTS cadence is
-            // stable, and trusting that duration makes playback visibly skip.
-            const auto end_pts_us = frame_end_pts_us(*track, *frame);
-            if (end_pts_us.has_value() && *end_pts_us <= effective_pts) {
-                if (!track->advance()) {
-                    break; // Cannot advance further
-                }
-                continue;
-            }
-            break;
-        }
-
-        // 2. Get the current frame after discarding expired ones
-        auto frame = track->peek(0);
-
-        if (!frame.has_value()) {
-            // No frame available
-            decision.frames[t] = std::nullopt;
+        queue_heads[t] = track->peek(0);
+        if (!queue_heads[t].has_value()) {
             continue;
         }
+        global_head_pts[t] =
+            queue_heads[t]->pts_us + track_offsets[t];
+        if (global_head_pts[t] <=
+            current_pts_us + kRenderSinkPtsToleranceUs) {
+            next_global_event_pts = std::min(
+                next_global_event_pts.value_or(global_head_pts[t]),
+                global_head_pts[t]);
+        }
+    }
 
-        // 3. Check if frame is in the display window
-        const auto end_pts_us = frame_end_pts_us(*track, *frame);
-        if (frame->pts_us <= effective_pts &&
-            (!end_pts_us.has_value() || effective_pts < *end_pts_us)) {
-            // Frame is in its display window - select it
-            decision.frames[t] = frame;
+    bool any_ready = false;
+    if (next_global_event_pts.has_value()) {
+        const int64_t coalesce_limit_us =
+            *next_global_event_pts + kRenderSinkPtsToleranceUs;
+        for (size_t t = 0; t < kMaxTracks; ++t) {
+            if (!queue_heads[t].has_value() ||
+                global_head_pts[t] > coalesce_limit_us) {
+                continue;
+            }
+            decision.frames[t] = queue_heads[t];
             any_ready = true;
-        }
-        // 4. Check if frame is within tolerance of current time
-        else if (std::abs(frame->pts_us - effective_pts) <= kRenderSinkPtsToleranceUs) {
-            // Within tolerance - select it
-            decision.frames[t] = frame;
-            any_ready = true;
-        }
-        // 5. Frame is in the future (past tolerance)
-        else if (frame->pts_us > effective_pts + kRenderSinkPtsToleranceUs) {
-            decision.frames[t] = std::nullopt;
-        }
-        // 6. Frame is in the past, far beyond tolerance — no valid frame
-        else {
-            decision.frames[t] = std::nullopt;
         }
     }
 
     decision.should_present = any_active && any_ready;
     return decision;
+}
+
+size_t RenderSink::commit_presented(const PresentDecision& decision) {
+    std::array<std::shared_ptr<TrackBuffer>, kMaxTracks> tracks;
+    std::array<int, kMaxTracks> file_ids;
+    std::array<uint64_t, kMaxTracks> track_generations;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        tracks = tracks_;
+        file_ids = file_ids_;
+        track_generations = track_generations_;
+    }
+
+    size_t committed = 0;
+    for (size_t slot = 0; slot < kMaxTracks; ++slot) {
+        if (!tracks[slot] ||
+            !decision.frames[slot].has_value() ||
+            decision.file_ids[slot] != file_ids[slot] ||
+            decision.track_generations[slot] !=
+                track_generations[slot]) {
+            continue;
+        }
+        const auto front = tracks[slot]->peek(0);
+        if (!front.has_value() ||
+            !same_decoded_frame(*front, *decision.frames[slot])) {
+            continue;
+        }
+        if (tracks[slot]->advance()) {
+            ++committed;
+        }
+    }
+    return committed;
 }
 
 } // namespace vr

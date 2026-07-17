@@ -79,6 +79,24 @@ void fill_frame_storage_snapshot(const TextureFrame& frame,
             out.nv12_uv_scale_y =
                 static_cast<float>(frame.height) / static_cast<float>(out.coded_height);
         }
+    } else if (const auto* d3d11_storage = frame.windows_d3d11_storage()) {
+        out.is_nv12 = true;
+        out.is_p010 = d3d11_storage->is_p010;
+        out.yuv_format = d3d11_storage->is_p010
+            ? PRESENTATION_YUV_FORMAT_P010
+            : PRESENTATION_YUV_FORMAT_NV12;
+        out.coded_width = d3d11_storage->coded_width;
+        out.coded_height = d3d11_storage->coded_height;
+        if (d3d11_storage->coded_width > 0) {
+            out.nv12_uv_scale_x =
+                static_cast<float>(frame.width) /
+                static_cast<float>(d3d11_storage->coded_width);
+        }
+        if (d3d11_storage->coded_height > 0) {
+            out.nv12_uv_scale_y =
+                static_cast<float>(frame.height) /
+                static_cast<float>(d3d11_storage->coded_height);
+        }
     } else if (const auto* cv_storage = frame.cv_pixel_buffer_storage()) {
         out.is_nv12 = true;
         out.is_p010 = cv_storage->is_p010;

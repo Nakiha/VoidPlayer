@@ -1,134 +1,90 @@
 #pragma once
 
-#include "playback/playback_controller.h"
 #include "renderer/renderer.h"
+
 #include <functional>
+#include <memory>
 #include <shared_mutex>
-#include <string>
-#include <utility>
-#include <vector>
 
 namespace vr {
 
-struct SharedFp16TextureSnapshot;
-struct SourceCacheTrackDescriptor;
-struct SharedSourceCacheBundleSnapshot;
-struct WindowsSourceProjection;
+// Windows platform facade over the shared renderer. It owns no HWND, Flutter
+// object, or final-compositor policy; those stay in the runner.
+class WindowsNativePlayer final {
+ public:
+  WindowsNativePlayer();
+  ~WindowsNativePlayer();
 
-/// Native player facade that owns playback control and the video renderer as
-/// peers. FFI can adopt this type without changing the renderer/video internals.
-class NativePlayer {
-public:
-    NativePlayer();
-    ~NativePlayer();
+  WindowsNativePlayer(const WindowsNativePlayer&) = delete;
+  WindowsNativePlayer& operator=(const WindowsNativePlayer&) = delete;
 
-    NativePlayer(const NativePlayer&) = delete;
-    NativePlayer& operator=(const NativePlayer&) = delete;
+  bool initialize(const RendererConfig& config);
+  void shutdown();
+  bool initialized() const;
 
-    bool initialize(const RendererConfig& config);
-    void shutdown();
+  void play();
+  void pause();
+  void seek(int64_t pts_us, int64_t request_id = -1);
+  void step_forward();
+  void step_backward();
+  void set_speed(double speed);
+  void set_loop_range(bool enabled, int64_t start_us, int64_t end_us);
+  void set_audible_track(int file_id);
+  void set_track_offset(int file_id, int64_t offset_us);
+  int64_t track_offset_us(int file_id) const;
+  void set_background_color(float red, float green, float blue, float alpha);
+  void apply_layout(const LayoutState& layout);
+  void apply_interaction_layout(const LayoutState& layout);
+  void resize(int width, int height);
 
-    void play();
-    void pause();
-    void seek(int64_t target_pts_us,
-              SeekType type = SeekType::Keyframe,
-              int64_t request_id = -1);
-    void set_speed(double speed);
-    void set_loop_range(bool enabled, int64_t start_us, int64_t end_us);
-    void set_audible_track(int file_id);
-    int audible_track() const;
+  int add_track(const std::string& path, bool use_hardware_decode);
+  void remove_track(int file_id);
+  bool is_playing() const;
+  int64_t current_pts_us() const;
+  int64_t duration_us() const;
+  LayoutState layout() const;
+  std::vector<TrackInfo> tracks() const;
+  std::vector<TrackPerfStats> track_perf_stats() const;
+  PlaybackPacingDiagnostics playback_pacing_diagnostics() const;
+  RendererGpuMemoryStats gpu_memory_stats() const;
+  PresentationBackendMetrics presentation_metrics() const;
+  PresentationBackendStats presentation_stats() const;
+  PresentationBackendDiagnostics presentation_diagnostics() const;
+  std::string presentation_error() const;
+  bool copy_last_frame_info(PresentationBackendFrameInfo* out) const;
 
-    void step_forward();
-    void step_backward();
+  void set_frame_callback(RendererFrameCallback callback);
+  void set_frame_failure_callback(std::function<void(const char*)> callback);
+  void set_event_callback(RendererEventCallback callback);
+  void mark_target_displayed(void* texture);
+  void protect_target(void* texture);
+  void release_target(void* texture);
+  bool install_target_ring(const void* const* textures,
+                           size_t texture_count,
+                           void* displayed_texture,
+                           void* protected_texture,
+                           int width,
+                           int height,
+                           int max_track_slots);
+  bool update_presentation_sdr_white_level(double nits);
+  bool request_frame_refresh(const char* reason);
+  RendererFrameRefreshResult request_interaction_frame();
+  bool capture_front_buffer(std::vector<uint8_t>& bgra,
+                            int& width,
+                            int& height);
+  bool capture_front_buffer_region(int x,
+                                   int y,
+                                   int width,
+                                   int height,
+                                   std::vector<uint8_t>& bgra,
+                                   int& region_width,
+                                   int& region_height);
 
-    bool is_playing() const;
-    bool is_initialized() const;
-    int64_t current_pts_us() const;
-    double current_speed() const;
-    size_t track_count() const;
-    int64_t duration_us() const;
+ private:
+  bool ready_locked() const;
 
-    int add_track(const std::string& video_path, bool use_hardware_decode = true);
-    void remove_track(int file_id);
-    bool has_track(int slot) const;
-    std::pair<int, int> track_dimensions(int slot) const;
-    std::vector<TrackInfo> track_infos() const;
-    std::vector<TrackPerfStats> track_perf_stats() const;
-    RendererPresentedAnchorDiagnostics presented_anchor_diagnostics() const;
-    RendererGpuMemoryStats gpu_memory_stats() const;
-    PresentationBackendDiagnostics presentation_backend_diagnostics() const;
-    AudioOutputStats audio_output_stats() const;
-    bool d3d_device_lost() const;
-    long d3d_device_removed_reason() const;
-    bool recover_presentation_device_loss(const char* reason, long removed_reason);
-    void set_track_offset(int file_id, int64_t offset_us);
-
-    void apply_layout(const LayoutState& state);
-    void set_background_color(float r, float g, float b, float a);
-    LayoutState layout() const;
-
-    void set_frame_callback(std::function<void()> cb);
-    void set_event_callback(RendererEventCallback cb);
-    int texture_width() const;
-    int texture_height() const;
-    bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const;
-    void release_shared_texture(int buffer_index, uint64_t buffer_generation) const;
-    void* native_render_device() const;
-    void* native_render_command_queue() const;
-    bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
-    void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation) const;
-    void set_shared_fp16_frame_callback(std::function<void()> cb);
-    bool update_external_flutter_surface(
-        const PresentationExternalD3D12Surface& surface);
-    void clear_external_flutter_surface();
-    bool draw_current_frame_to_external_d3d12_target(
-        const PresentationExternalD3D12RenderTarget& target,
-        const char* reason);
-    std::string presentation_backend_last_error() const;
-    bool configure_source_cache(
-        const std::vector<SourceCacheTrackDescriptor>& descriptors);
-    void clear_source_cache(const char* reason);
-    bool update_source_projection(const WindowsSourceProjection& projection);
-    void clear_source_projection();
-    bool acquire_source_cache_bundle(
-        SharedSourceCacheBundleSnapshot& snapshot) const;
-    void release_source_cache_bundle(
-        int buffer_index, uint64_t ring_generation) const;
-    void set_source_cache_frame_callback(std::function<void()> cb);
-    bool request_frame_refresh(const char* reason);
-    bool update_presentation_sdr_white_level(double nits);
-    std::shared_ptr<const AnalysisOverlayPrimitivePackage>
-    current_overlay_primitives(std::string* error);
-    bool prewarm_presentation_target(int width, int height);
-    void resize(int width, int height);
-    bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
-    bool capture_front_buffer_region(int x,
-                                     int y,
-                                     int width,
-                                     int height,
-                                     std::vector<uint8_t>& bgra,
-                                     int& region_width,
-                                     int& region_height);
-
-    PlaybackController& playback() { return playback_; }
-    const PlaybackController& playback() const { return playback_; }
-    Renderer& renderer() { return renderer_; }
-    const Renderer& renderer() const { return renderer_; }
-
-private:
-    enum class State {
-        Created,
-        Initializing,
-        Initialized,
-        ShuttingDown,
-    };
-
-    bool renderer_ready_locked() const;
-
-    mutable std::shared_mutex lifecycle_mutex_;
-    State state_ = State::Created;
-    PlaybackController playback_;
-    Renderer renderer_;
+  mutable std::shared_mutex mutex_;
+  std::unique_ptr<Renderer> renderer_;
 };
 
-} // namespace vr
+}  // namespace vr

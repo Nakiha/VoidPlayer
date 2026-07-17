@@ -133,7 +133,7 @@ void main() {
         height: 1080,
       );
       fixture.api.calls.clear();
-      fixture.store.setTextureId(1);
+      fixture.store.setPlayerIdentity(playerId: 1, textureId: 1);
       fixture.store.setQuickMarks(const [
         QuickMark(
           id: 1,
@@ -229,7 +229,7 @@ void main() {
         width: 1920,
         height: 1080,
       );
-      fixture.store.setTextureId(1);
+      fixture.store.setPlayerIdentity(playerId: 1, textureId: 1);
       fixture.store.setQuickMarks(const [
         QuickMark(
           id: 1,
@@ -291,7 +291,7 @@ void main() {
           width: 1920,
           height: 1080,
         );
-        fixture.store.setTextureId(1);
+        fixture.store.setPlayerIdentity(playerId: 1, textureId: 1);
         fixture.store.setQuickMarks(const [
           QuickMark(
             id: 1,
@@ -347,7 +347,7 @@ void main() {
         width: 1920,
         height: 1080,
       );
-      fixture.store.setTextureId(1);
+      fixture.store.setPlayerIdentity(playerId: 1, textureId: 1);
       fixture.store.setQuickMarks(const [
         QuickMark(
           id: 1,
@@ -395,7 +395,7 @@ void main() {
         width: 1920,
         height: 1080,
       );
-      fixture.store.setTextureId(1);
+      fixture.store.setPlayerIdentity(playerId: 1, textureId: 1);
       fixture.store.setQuickMarks(const [
         QuickMark(
           id: 1,
@@ -447,7 +447,7 @@ void main() {
         width: 1920,
         height: 1080,
       );
-      fixture.store.setTextureId(1);
+      fixture.store.setPlayerIdentity(playerId: 1, textureId: 1);
       fixture.store.setPolledPlaybackState(
         1000000,
         fixture.metrics.effectiveDurationUs,
@@ -502,7 +502,7 @@ void main() {
           durationUs: 2000000,
         ),
       ]);
-      fixture.store.setTextureId(1);
+      fixture.store.setPlayerIdentity(playerId: 1, textureId: 1);
       fixture.store.setSyncOffsets(const {2: 500000});
       fixture.store.setQuickMarks(const [
         QuickMark(
@@ -560,7 +560,7 @@ void main() {
   ) async {
     final fixture = _PlaybackFixture();
     try {
-      fixture.store.setTextureId(1);
+      fixture.store.setPlayerIdentity(playerId: 1, textureId: 1);
       fixture.store.setQuickMarks(const [
         QuickMark(
           id: 1,
@@ -919,6 +919,7 @@ class _PlaybackApi implements NativePlayerApi {
   }) async {
     calls.add('createPlayer');
     return const CreatePlayerResult(
+      playerId: 1,
       textureId: 1,
       tracks: [
         TrackInfo(
@@ -1020,14 +1021,6 @@ class _PlaybackApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> debugSimulateWindowsDeviceLoss({
-    required String target,
-    required String reason,
-  }) async {
-    calls.add('debugSimulateWindowsDeviceLoss:$target:$reason');
-  }
-
-  @override
   Future<void> resetNativePerfCounters() async {
     calls.add('resetNativePerfCounters');
   }
@@ -1043,39 +1036,7 @@ class _PlaybackApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  }) async {}
-
-  @override
-  Future<void> prepareNativeCompositorSourceCache({
-    required List<int> sourceSlots,
-    required List<int> sourceOrder,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-    required List<double> displayOffsetX,
-    required List<double> displayOffsetY,
-    required List<double> invDisplaySizeX,
-    required List<double> invDisplaySizeY,
-    required List<double> viewOffsetUvX,
-    required List<double> viewOffsetUvY,
-  }) async {}
-
-  @override
   Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) async {}
-
-  @override
-  Future<void> clearNativeCompositorSourceCache({
-    required String reason,
-  }) async {}
 
   @override
   Future<void> setViewportBackgroundColor(int colorValue) async {}

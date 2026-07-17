@@ -37,6 +37,15 @@
   "exitFullScreen": "Exit Full Screen",
   "@exitFullScreen": { "description": "Exit fullscreen tooltip" },
 
+  "playbackControls": "Playback controls",
+  "@playbackControls": { "description": "Accessibility region label for playback controls" },
+
+  "zoom": "Zoom",
+  "@zoom": { "description": "Accessibility label for the viewport zoom selector" },
+
+  "timelineSeek": "Timeline seek",
+  "@timelineSeek": { "description": "Accessibility label for the playback seek slider" },
+
   "sideBySide": "Side by Side",
   "@sideBySide": { "description": "View mode: side by side" },
 
@@ -153,12 +162,6 @@
   "performanceMetricCompositor": "Compositor",
   "@performanceMetricCompositor": { "description": "Performance monitor metric label: native compositor frame rate" },
 
-  "performanceMetricSource": "Source",
-  "@performanceMetricSource": { "description": "Performance monitor metric label: native source cache refresh rate" },
-
-  "performanceMetricProjection": "Projection",
-  "@performanceMetricProjection": { "description": "Performance monitor metric label: native source projection refresh rate" },
-
   "performanceMetricDisplayLink": "Display",
   "@performanceMetricDisplayLink": { "description": "Performance monitor metric label: display-link tick rate" },
 
@@ -240,8 +243,8 @@
   "memoryRss": "RSS",
   "@memoryRss": { "description": "Performance monitor memory metric: resident set size" },
 
-  "memoryPrivate": "Private",
-  "@memoryPrivate": { "description": "Performance monitor memory metric: private process memory" },
+  "memoryPrivate": "Private commit",
+  "@memoryPrivate": { "description": "Performance monitor memory metric: Windows private committed memory" },
 
   "memoryGpuFrames": "GPU frames",
   "@memoryGpuFrames": { "description": "Performance monitor memory metric: estimated GPU frame resources" },
@@ -680,6 +683,9 @@
 
   "analysisOverlayOpacity": "Overlay opacity",
   "@analysisOverlayOpacity": { "description": "Tooltip for the bitstream overlay opacity slider" },
+
+  "analysisOverlayControls": "Bitstream overlay controls",
+  "@analysisOverlayControls": { "description": "Accessibility region label for bitstream overlay controls" },
 
   "quickMarkSync": "Sync to tracks",
   "@quickMarkSync": { "description": "Tooltip for syncing a quick mark to other tracks" },

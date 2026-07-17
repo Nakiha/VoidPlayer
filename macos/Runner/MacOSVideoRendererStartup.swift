@@ -1,9 +1,11 @@
 import AppKit
 import Foundation
+import FlutterMacOS
 
 struct MacOSVideoRendererStartup {
-  let texture: MacOSVideoTexture
-  let nativeTexture: MacOSFlutterTextureBridge?
+  let texture: MacOSVideoSurface
+  let flutterTexture: FlutterTexture?
+  let nativeTargetRing: MacOSNativeTargetRing?
   let backendName: String
   let nativePlayer: MacOSNativePlayerSession?
   let tracks: [[String: Any]]
@@ -68,7 +70,8 @@ enum MacOSVideoRendererStartupFactory {
     }
     return MacOSVideoRendererStartup(
       texture: texture,
-      nativeTexture: nil,
+      flutterTexture: texture,
+      nativeTargetRing: nil,
       backendName: "synthetic-texture",
       nativePlayer: nil,
       tracks: tracks,
@@ -120,20 +123,25 @@ enum MacOSVideoRendererStartupFactory {
       session.setBackgroundColor(viewportBackgroundColor)
     }
     try session.open(path: firstPath)
-    let texture = MacOSFlutterTextureBridge(
+    let texture = MacOSNativeTargetRing(
       nativeWidth: requestedWidth,
       nativeHeight: requestedHeight
     )
-    let firstFrame = try texture.updateFromNativePlayer(
+    guard texture.installNativePresentationTarget(
       session,
-      maxTrackSlots: 1,
-      waitTimeoutMs: 3_000
-    )
-    let trackWidth = session.width() > 0 ? session.width() : firstFrame.width
-    let trackHeight = session.height() > 0 ? session.height() : firstFrame.height
+      maxTrackSlots: max(1, paths.count),
+      refresh: false
+    ) else {
+      throw MacOSNativePlayerError.failed(
+        "failed to install native Metal presentation target ring"
+      )
+    }
     let sessionDurationUs = session.durationUs()
     let trackDurationUs = max(0, sessionDurationUs)
     let firstMetadata = try session.trackMetadata(fileId: 0)
+    let firstFrame = session.lastNativeTargetFrameInfo()
+    let trackWidth = firstMetadata.width > 0 ? firstMetadata.width : (firstFrame?.width ?? requestedWidth)
+    let trackHeight = firstMetadata.height > 0 ? firstMetadata.height : (firstFrame?.height ?? requestedHeight)
     var tracks = [
       MacOSVideoTrackPayload.nativeTrack(
         path: firstPath,
@@ -172,14 +180,17 @@ enum MacOSVideoRendererStartupFactory {
     }
     return MacOSVideoRendererStartup(
       texture: texture,
-      nativeTexture: texture,
+      flutterTexture: nil,
+      nativeTargetRing: texture,
       backendName: MacOSVideoTrackPayload.nativeFormatName,
       nativePlayer: session,
       tracks: tracks,
       trackDurationUs: trackDurationUs,
-      initialPresentedPtsUs: firstFrame.ptsUs,
-      initialPresentedDtsUs: MacOSFramePresentationState.normalizedDtsUs(firstFrame),
-      presentationTargetInstalled: session.rendererOwnedPresentationActive()
+      initialPresentedPtsUs: firstFrame?.ptsUs ?? 0,
+      initialPresentedDtsUs: firstFrame.map {
+        MacOSFramePresentationState.normalizedDtsUs($0)
+      } ?? 0,
+      presentationTargetInstalled: session.nativeTargetPresentationActive()
     )
   }
 }

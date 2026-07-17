@@ -1,5 +1,7 @@
 #include "renderer/decode/decode_thread.h"
 
+#include "renderer/decode/decode_perf_timing.h"
+
 #include "renderer/decode/av_frame_lifetime.h"
 #include "renderer/decode/codec_loop.h"
 #include "renderer/decode/decode_drain_policy.h"
@@ -47,7 +49,7 @@ bool DecodeThread::handle_buffering_eof(
     const std::function<void(AVFrame*)>& rescale_ts) {
     if (eof_action == EofDrainAction::BufferingExactSeekDrain) {
         drain_codec(frame, rescale_ts, exact_seek_target_us_);
-        spdlog::info("[DecodeThread] Exact seek EOF drain: reorder buffer has {} frames",
+        spdlog::info("[DecodeThread] Exact seek EOF drain: candidate window has {} frames",
                      exact_seek_candidates_.reorder_count());
         publish_best_exact_seek_frame();
     } else {
@@ -146,7 +148,22 @@ void DecodeThread::run() {
     }
     AVFrame* frame = frame_owner.get();
     auto rescale_ts = [&](AVFrame* frame_to_rescale) {
-        rescale_frame_timestamps_to_us(frame_to_rescale, time_base_);
+        const auto result = timestamp_normalizer_.normalize(frame_to_rescale);
+        if (result.adjusted_for_monotonicity &&
+            (result.adjustment_count <= 8 ||
+             result.adjustment_count % 120 == 0)) {
+            spdlog::warn(
+                "[DecodeTimestamp] normalized non-monotonic timestamp "
+                "raw_pts_us={} best_effort_pts_us={} output_pts_us={} "
+                "used_best_effort={} correction={} order_preserved=true dropped=0",
+                result.raw_pts_available ? result.raw_pts_us : AV_NOPTS_VALUE,
+                result.best_effort_available
+                    ? result.best_effort_pts_us
+                    : AV_NOPTS_VALUE,
+                result.output_pts_us,
+                result.used_best_effort,
+                result.adjustment_count);
+        }
     };
     auto publisher = make_frame_publisher();
     DecodeLoopScratch scratch{
@@ -281,6 +298,8 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
     auto& rescale_ts = scratch.rescale_timestamps;
 
     auto batch_t0 = std::chrono::steady_clock::now();
+    const uint64_t publish_wait_before_us =
+        stage_perf_.publish_wait_total_us.load(std::memory_order_relaxed);
     const auto packet_send_t0 = std::chrono::steady_clock::now();
     const auto packet_send_result = send_decode_packet(
         packet,
@@ -415,7 +434,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
                 },
                 [](size_t reorder_count) {
                     spdlog::info("[DecodeThread] Exact seek EOF: codec drain, "
-                                 "reorder buffer now has {} frames",
+                                 "candidate window now has {} frames",
                                  reorder_count);
                 },
                 [this]() {
@@ -429,7 +448,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
                     return first->pts_us;
                 },
                 [](std::optional<int64_t> first_pts_us) {
-                    spdlog::info("[DecodeThread] Exact seek reorder: frames pushed, "
+                    spdlog::info("[DecodeThread] Exact seek candidate window: frames pushed, "
                                  "first_pts={:.3f}s",
                                  first_pts_us.has_value()
                                      ? static_cast<double>(*first_pts_us) / 1e6
@@ -443,15 +462,22 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
     // Hardware HEVC exact seek is sensitive to burst-feeding packets while
     // paused. Playback naturally paces this path through render/clock
     // consumption; mirror a tiny amount of that pacing during drain mode.
-    if (should_pace_hardware_exact_seek_decode(
-            exact_seek_target_us_ >= 0, hw_enabled_)) {
+    const bool hevc_hardware_decode =
+        hw_enabled_ && codec_params_ &&
+        codec_params_->codec_id == AV_CODEC_ID_HEVC;
+    if (should_pace_hevc_hardware_exact_seek_decode(
+            exact_seek_target_us_ >= 0, hevc_hardware_decode)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     if (frames_produced > 0) {
-        uint64_t batch_us = static_cast<uint64_t>(
+        const uint64_t elapsed_batch_us = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - batch_t0).count());
+        const uint64_t batch_us = decode_active_batch_time_us(
+            elapsed_batch_us,
+            publish_wait_before_us,
+            stage_perf_.publish_wait_total_us.load(std::memory_order_relaxed));
         perf_.frames_decoded.fetch_add(frames_produced, std::memory_order_relaxed);
         perf_.total_decode_us.fetch_add(batch_us, std::memory_order_relaxed);
         // Update peak (CAS loop)
@@ -459,9 +485,12 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
         while (batch_us > cur_max &&
                !perf_.max_decode_us.compare_exchange_weak(cur_max, batch_us,
                                                           std::memory_order_relaxed)) {}
-        spdlog::debug("[DecodeThread] Decoded {} frames in {}us, buf_state={}, buf_count={}",
-                      frames_produced, batch_us, static_cast<int>(output_buffer_.state()),
-                      output_buffer_.total_count());
+        spdlog::debug(
+            "[DecodeThread] Decoded {} frames active={}us elapsed={}us, "
+            "buf_state={}, buf_count={}",
+            frames_produced, batch_us, elapsed_batch_us,
+            static_cast<int>(output_buffer_.state()),
+            output_buffer_.total_count());
     }
 
     return DecodeLoopStepResult::Continue;

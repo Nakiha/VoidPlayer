@@ -3,6 +3,7 @@
 #include "audio/audio_output_stats.h"
 #include "media/seek_controller.h"
 #include "renderer/layout/layout_state.h"
+#include "renderer/playback/playback_pacing_controller.h"
 #include "renderer/render/presentation_backend_types.h"
 #include "renderer/render/renderer_present_history.h"
 #include "renderer/render/renderer_device_state.h"
@@ -22,11 +23,6 @@ namespace vr {
 
 class PlaybackController;
 class PresentationBackend;
-struct AnalysisOverlayPrimitivePackage;
-struct SharedFp16TextureSnapshot;
-struct SourceCacheTrackDescriptor;
-struct SharedSourceCacheBundleSnapshot;
-struct WindowsSourceProjection;
 
 class Renderer {
 public:
@@ -78,26 +74,22 @@ public:
     std::vector<TrackInfo> track_infos() const;
     std::vector<TrackPerfStats> track_perf_stats() const;
     RendererPresentedAnchorDiagnostics presented_anchor_diagnostics() const;
+    PlaybackPacingDiagnostics playback_pacing_diagnostics() const;
 
     PresentationBackendMetrics presentation_backend_metrics() const;
-    PresentationBackendMetrics d3d_backend_metrics() const;
     PresentationBackendStats presentation_backend_stats() const;
     PresentationBackendDiagnostics presentation_backend_diagnostics() const;
     std::string presentation_backend_last_error() const;
     bool copy_last_presentation_frame_info(PresentationBackendFrameInfo* out) const;
     RendererGpuMemoryStats gpu_memory_stats() const;
 
-    bool d3d_device_lost() const;
-    long d3d_device_removed_reason() const;
-    bool recover_presentation_device_loss(const char* reason, long removed_reason);
     RendererDeviceState device_state() const;
 
     void set_track_offset(int file_id, int64_t offset_us);
     int64_t track_offset_us(int file_id) const;
 
     void apply_layout(const LayoutState& state);
-    void note_viewport_compositor_activity();
-    void set_viewport_compositor_active(bool active);
+    void apply_interaction_layout(const LayoutState& state);
     void set_background_color(float r, float g, float b, float a);
     LayoutState layout() const;
 
@@ -105,70 +97,34 @@ public:
     void set_frame_failure_callback(std::function<void(const char*)> cb);
     void set_event_callback(RendererEventCallback cb);
 
-    int texture_width() const;
-    int texture_height() const;
-
-    bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const;
-    void release_shared_texture(int buffer_index, uint64_t buffer_generation) const;
-    void* native_render_device() const;
-    void* native_render_command_queue() const;
-    bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
-    void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation) const;
-    void set_shared_fp16_frame_callback(std::function<void()> cb);
-    bool update_external_flutter_surface(
-        const PresentationExternalD3D12Surface& surface);
-    void clear_external_flutter_surface();
-    bool draw_current_frame_to_external_d3d12_target(
-        const PresentationExternalD3D12RenderTarget& target,
-        const char* reason);
-    bool configure_source_cache(
-        const std::vector<SourceCacheTrackDescriptor>& descriptors);
-    void clear_source_cache(const char* reason);
-    bool update_source_projection(const WindowsSourceProjection& projection);
-    void clear_source_projection();
-    bool acquire_source_cache_bundle(
-        SharedSourceCacheBundleSnapshot& snapshot) const;
-    void release_source_cache_bundle(
-        int buffer_index, uint64_t ring_generation) const;
-    void set_source_cache_frame_callback(std::function<void()> cb);
     bool prewarm_presentation_target(int width, int height);
     void resize(int width, int height);
-    bool update_headless_output(void* output,
+    bool update_offscreen_target(void* output,
                                 int width,
                                 int height,
                                 int max_track_slots);
-    bool install_headless_output(void* output,
+    bool install_offscreen_target(void* output,
                                  int width,
                                  int height,
                                  int max_track_slots);
-    bool install_headless_output_ring(const void* const* pixel_buffers,
+    bool install_offscreen_target_ring(const void* const* pixel_buffers,
                                       size_t pixel_buffer_count,
                                       void* displayed_pixel_buffer,
                                       void* protected_pixel_buffer,
                                       int width,
                                       int height,
                                       int max_track_slots);
-    void mark_headless_output_displayed(void* pixel_buffer);
-    void protect_headless_output(void* pixel_buffer);
-    void release_headless_output(void* pixel_buffer);
-    void clear_headless_output();
+    void mark_offscreen_target_displayed(void* pixel_buffer);
+    void protect_offscreen_target(void* pixel_buffer);
+    void release_offscreen_target(void* pixel_buffer);
+    void clear_offscreen_target();
 
     bool request_frame_refresh(const char* reason);
+    RendererFrameRefreshResult request_interaction_frame();
     bool update_presentation_sdr_white_level(double nits);
     bool commit_paused_preview_frame(int timeout_ms,
                                      PresentationBackendFrameInfo* out,
                                      std::string* error);
-    bool commit_source_provider_preview_frame(int timeout_ms,
-                                              const int* expected_file_ids,
-                                              size_t expected_file_id_count,
-                                              PresentationBackendFrameInfo* out,
-                                              std::string* error);
-    bool draw_current_frame_sources(PresentationBackend& backend,
-                                    PresentationSourceFrameTarget* targets,
-                                    size_t target_count,
-                                    std::string* error);
-    std::shared_ptr<const AnalysisOverlayPrimitivePackage> current_overlay_primitives(
-        std::string* error);
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
     bool capture_front_buffer_region(int x,
                                      int y,

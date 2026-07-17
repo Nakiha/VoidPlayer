@@ -42,7 +42,7 @@ Analysis 窗口：
   label。
 - 不要为了降低噪声在窗口根、整页、整块功能区使用 `ExcludeSemantics`。只能屏蔽纯视觉子树。
 
-## 典型问题：Tooltip 目标子树被摘出 AXTree
+## 典型问题：Tooltip / OverlayPortal 瞬时孤儿节点
 
 media header 码流遮罩面板曾经触发过一类很隐蔽的 Windows Flutter engine 错误：
 
@@ -50,18 +50,24 @@ media header 码流遮罩面板曾经触发过一类很隐蔽的 Windows Flutter
 Failed to update ui::AXTree, error: <id> will not be in the tree and is not the new root
 ```
 
-当时的现象是：悬浮面板已经弹出，鼠标移到面板按钮或遮罩按钮上显示 Flutter `Tooltip`
-时，日志反复出现 AXTree 更新失败。表面看像是 Tooltip 自己的问题，但根因不是
-`Tooltip`，而是 Tooltip 的 target subtree 被 `ExcludeSemantics` 或
-`GestureDetector(excludeFromSemantics: true)` 从语义树里摘掉了。Flutter 仍会为
-hover/tooltip/焦点状态发出 accessibility 更新，Windows accessibility bridge 却找不到
-对应的稳定节点，于是报出 orphan node。
+当时的现象是：真实 Windows accessibility client 接入后，鼠标移到按钮上显示 Flutter
+`Tooltip` 就会反复出现 AXTree 更新失败；展开遮罩控制条后，外部 AXTree 还可能继续停在
+展开前的结构。
+
+这里有两层风险，必须分别处理：
+
+- app 层不能把 Tooltip target、整排按钮或整个控制条用 `ExcludeSemantics` 摘掉，否则真实
+  控件从一开始就不可访问。
+- 锁定 Flutter 3.44 的 `RawTooltip` 使用 `OverlayPortal`。hover overlay 会产生生命周期很短的
+  traversal-only semantics 节点；它可能在 embedder batch 提交前已经离开父树。旧 desktop
+  accessibility bridge 会把这个孤儿节点和有效业务节点一起送进 Chromium `AXTree`，导致
+  整批更新被拒绝。
 
 这类问题的排查顺序：
 
 - 先对照一个正常浮层，例如媒体信息面板的“打开”按钮：它使用系统 `Tooltip`，target
   是普通按钮，并且留在正常 widget/semantics 树里。
-- 再检查异常浮层是否使用了 `OverlayEntry`、`CompositedTransformFollower`、整块
+- 再检查异常浮层是否使用了 `OverlayEntry`、`OverlayPortal`、`CompositedTransformFollower`、整块
   `ExcludeSemantics`、或给 Tooltip target 自己设置了 `excludeFromSemantics: true`。
 - 如果把系统 `Tooltip` 换成自绘 tooltip 后错误消失，不要立刻当成修复；这通常只是绕开了
   accessibility 更新路径，真实控件语义仍然不稳定。
@@ -72,6 +78,9 @@ hover/tooltip/焦点状态发出 accessibility 更新，Windows accessibility br
   `MediaHeaderOverlayPanelHost`）加 `Positioned`，避免临时 `OverlayEntry` 频繁增删节点。
 - 系统 `Tooltip` 可以继续使用，并保持 `excludeFromSemantics: true`，让 tooltip 文案不进
   AXTree；但 Tooltip 包住的按钮、slider、toggle 等真实控件必须保留在语义树里。
+- Flutter fork 的 `RawTooltip` 必须在 `semanticsTooltip == null` 时排除视觉 overlay 的语义；
+  desktop accessibility bridge 提交增量更新前必须丢弃“仅存在于当前 batch、且从既有树和
+  有效 pending parent 都不可达”的瞬时节点。不能通过忽略错误日志来掩盖整批更新失败。
 - 只对纯视觉绘制层使用 `ExcludeSemantics`。不要把整块 hover panel、整排控件、或
   Tooltip target 包进 `ExcludeSemantics`。
 - 自写按钮如果没有外层手写 `Semantics(onTap: ...)`，不要给内部 `GestureDetector` 设置
@@ -95,6 +104,22 @@ hover/tooltip/焦点状态发出 accessibility 更新，Windows accessibility br
 
 ## 验证
 
+验证分两层，二者不能互相替代：
+
+- widget semantics 测试检查 Dart 层的 label、role、selected/toggled、tap、increase/decrease 等
+  节点与 action，适合锁定单个组件的语义契约。
+- rebuilt Windows UI 用例用 `ASSERT_WINDOWS_AXTREE` 启动独立进程，通过
+  `AccessibleObjectFromWindow(OBJID_CLIENT)` 连接锁定引擎默认的 MSAA `IAccessible` provider，
+  遍历 runner HWND 和 Flutter child HWND。这个真实客户端会激活 engine semantics，并验证
+  外部系统实际可见的节点；脚本同时读取 UIA raw tree用于诊断。
+
+锁定 Windows engine 的 direct UIA provider 仍受编译开关控制。测试不应为了“让 UIA 工具看见”
+而改变产品 provider 模式；当前验收以引擎默认 MSAA 树为准。`ASSERT_WINDOWS_AXTREE` 使用稳定
+语义 key，并在 probe 层映射中英文 label，避免本机 locale 影响用例。
+`INVOKE_WINDOWS_AX_ACTION` 使用同一外部 provider 按稳定语义名调用 `InvokePattern` 或
+`IAccessible.accDoDefaultAction`；名称通过 UTF-8 Base64 传给 Windows PowerShell，避免旧
+代码页破坏中文。需要验证控件动作时优先使用它，不要通过屏幕坐标移动或点击鼠标。
+
 AXTree 改动属于 Flutter UI / analysis UI 改动。至少运行：
 
 ```bash
@@ -117,9 +142,11 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h
 python dev.py ui-test --build ui_tests/analysis/overlay_axtree_controls_hover.csv ui_tests/analysis/overlay_header_hover_cached.csv
 ```
 
-其中 `overlay_header_hover_cached.csv` 要覆盖“已有缓存时 hover 遮罩按钮打开面板”和
-“hover 面板控件触发系统 Tooltip”两个路径；这条用例能防止把 Tooltip target 再次从
-AXTree 摘掉。
+其中 `overlay_header_hover_cached.csv` 要在 hover 前先连接真实 accessibility client，并覆盖
+“已有缓存时 hover 遮罩按钮打开面板”和“hover 面板控件触发系统 Tooltip”两个路径；展开前后
+都要用 `ASSERT_WINDOWS_AXTREE` 验证按钮、CU/QP/bit-cost 和 opacity slider 仍在外部树中。
+`overlay_axtree_controls_hover.csv` 则锁定播放控制、zoom、seek slider 在连续 hover 前后可见。
+两条用例还会扫描 engine stderr，防止把 orphan 更新退化成只有日志、但测试仍绿的状态。
 
 如果某类 AXTree 风险还没有对应 UI 自动化动作，需要在最终说明里写明缺少的 Action /
 Assert，并用截图/OCR/识图工具人工抽检窗口分割效果。

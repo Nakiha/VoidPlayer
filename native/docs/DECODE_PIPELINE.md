@@ -43,7 +43,7 @@ File
 
 | 平台 | Provider | 常规用途 |
 | --- | --- | --- |
-| Windows | D3D11VA | H.264/H.265 renderer-owned surface；AV1/VP9 可走 hwdownload fallback |
+| Windows | D3D11VA | H.264/H.265/AV1/VP9 使用独立 decode device，并复制为稳定 shared snapshot |
 | macOS | VideoToolbox | H.264/H.265 CVPixelBuffer preservation；unsupported codec/format 显式 fallback |
 
 Provider 只决定 decoder device 与 hardware frame output。它不决定播放时间、seek、loop、layout 或 track lifecycle。
@@ -55,7 +55,7 @@ Provider 只决定 decoder device 与 hardware frame output。它不决定播放
 | Mode | 用途 |
 | --- | --- |
 | `IndependentDevice` | 默认稳定路径；Windows 创建独立 D3D11 decode device，macOS 创建 VideoToolbox context |
-| `FfmpegOwnedHwDownloadDevice` | Windows AV1/VP9 等 hwdownload 路径，让 FFmpeg 自行管理 hardware context |
+| `FfmpegOwnedHwDownloadDevice` | provider-specific 诊断路径；当前仅由 macOS VideoToolbox hwdownload smoke 使用 |
 | `SharedRenderDevice` | 诊断/实验路径，不作为常规播放默认值 |
 
 `avcodec_open2()` 延迟到 `start()`，确保 `hw_device_ctx`、`get_format` 和 frame pool 配置已完成。
@@ -70,10 +70,9 @@ Provider 只决定 decoder device 与 hardware frame output。它不决定播放
 | 路径 | 数据流 | 说明 |
 | --- | --- | --- |
 | Software fallback | `AVFrame(YUV/NV12/P010) -> CPU planar/NV12/P010 TextureFrame` | 显式 fallback；不依赖 libswscale/libyuv 做通用转换 |
-| Windows D3D11VA renderer-owned | `AVFrame(D3D11VA) -> D3D11 TextureFrame` | D3D11 backend 复制/采样 renderer-owned surface |
-| Windows hwdownload | `AVFrame(D3D11VA) -> av_hwframe_transfer_data -> CPU NV12/P010` | 用于需要稳定 CPU upload fallback 的 codec/driver 路径 |
-| macOS VideoToolbox zero-copy | `AVFrame(VideoToolbox) -> CVPixelBuffer TextureFrame` | wgpu-metal backend 通过 IOSurface/CVMetalTextureCache 上屏 |
-| macOS fallback package | `AVFrame -> CPU YUV/BGRA package` | VVC/software 或 unsupported format 的 renderer-owned wgpu-metal package path |
+| Windows D3D11VA snapshot | `AVFrame(D3D11VA array slice) -> stable single-slice shared texture -> presentation-device plane SRVs` | 默认路径；一次 GPU copy 隔离 decoder pool，producer `Flush` 后由 D3D11 backend 直接采样 shared allocation，不做 CPU wait 或第二次 presenter copy |
+| macOS VideoToolbox zero-copy | `AVFrame(VideoToolbox) -> CVPixelBuffer TextureFrame` | native Metal backend 通过 IOSurface/CVMetalTextureCache 上屏 |
+| macOS fallback package | `AVFrame -> CPU YUV/BGRA package` | VVC/software 或 unsupported format 的 explicit native Metal package path |
 
 当前 runtime 不引入 `libswscale` / `libyuv` 作为 broad fallback。新增像素格式必须做确定性 pack/shader 支持，并补颜色一致性测试。
 
@@ -81,17 +80,17 @@ Provider 只决定 decoder device 与 hardware frame output。它不决定播放
 
 - AV1 优先使用 FFmpeg 原生 `av1` decoder 进行硬解协商；硬解不可用时软件回退优先 `libdav1d`。
 - VP9 不跳过硬解探测；支持硬解的机器先试 hardware provider，失败再回退软件。
-- H.264/H.265 在 Windows 走 D3D11VA，在 macOS 走 VideoToolbox；支持时保留 platform hardware frame 进入 renderer-owned backend。
-- VVC/H.266 当前在 macOS VideoToolbox path 明确 decline，走 software decode + renderer-owned package fallback，并在 diagnostics 中报告 `software-decode`。
+- H.264/H.265 在 Windows 走 D3D11VA，在 macOS 走 VideoToolbox；支持时保留 platform hardware frame 进入平台 presentation backend。
+- VVC/H.266 当前在 macOS VideoToolbox path 明确 decline，走 software decode + explicit package fallback，并在 diagnostics 中报告 `software-decode`。
 
 ## Zero-Copy 与 Fallback 边界
 
 Zero-copy 是 presentation backend 能直接消费 decoder-owned frame 时的优化，不改变 decode/track/playback policy。
 
-- Windows：D3D11VA surface 由 D3D11 backend 消费；必要时复制到 renderer-owned texture，避免 decoder pool lifetime 问题。
-- macOS：VideoToolbox `CVPixelBuffer` / IOSurface 由 wgpu-metal backend 消费；fallback reason 必须可见。
-- hwdownload fallback：仍可使用 hardware decoder，但 presentation 前下载到 CPU。
-- software fallback：decoder 本身是 software，presentation 仍走 renderer-owned backend。
+- Windows：D3D11VA surface GPU-copy 到 renderer-owned single-slice shared snapshot，producer 按 `OpenSharedResource` 约束调用 `Flush` 提交；presentation device 直接为 opened snapshot 建 Y/UV SRV。被替换 snapshot 的 owner 延迟到 presentation GPU completion 后释放，避免 projection draw 尚未完成时 decode snapshot pool 跨 device 复用。只有显式传入多 slice texture array 的兼容入口才使用 presenter 侧 slice adapter copy。
+- macOS：VideoToolbox `CVPixelBuffer` / IOSurface 由 native Metal backend 消费；fallback reason 必须可见。
+- VideoToolbox hwdownload smoke 仍可使用 hardware decoder 后下载到 CPU，但不属于 Windows 产品上屏路径。
+- software fallback：decoder 本身是 software，presentation 仍走平台 native backend。
 
 ## Seek 内的解码行为
 

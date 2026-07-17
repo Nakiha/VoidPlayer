@@ -1,5 +1,5 @@
-# Media-header overlay click shows the cached overlay panel, but must not
-# activate the native overlay until the user chooses an overlay segment.
+# With a Windows accessibility client connected, the media-header tooltip target and every overlay control
+# must remain named/actionable across hover and panel insertion.
 @WINDOW, 1280, 720
 0.5, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
 3.0, ASSERT_TRACK_COUNT, 1
@@ -7,9 +7,14 @@
 4.4, ASSERT_ANALYSIS_OVERLAY, true, cu, 0.55, 0.02, 1
 4.6, TOGGLE_ANALYSIS_OVERLAY, 0
 5.0, ASSERT_ANALYSIS_OVERLAY, false
-5.2, CLICK_MEDIA_HEADER_OVERLAY_BUTTON
-5.6, ASSERT_MEDIA_HEADER_OVERLAY_PANEL_VISIBLE, true
-6.0, ASSERT_ANALYSIS_OVERLAY, false
-6.2, TOGGLE_ANALYSIS_OVERLAY, 0
-7.0, ASSERT_ANALYSIS_OVERLAY, true, cu, 0.55, 0.02, 1
-7.2, QUIT, 0
+5.2, ASSERT_WINDOWS_AXTREE, showOverlayControls
+5.4, HOVER_MEDIA_HEADER_OVERLAY_BUTTON
+5.8, CLICK_MEDIA_HEADER_OVERLAY_BUTTON
+6.2, ASSERT_MEDIA_HEADER_OVERLAY_PANEL_VISIBLE, true
+6.4, ASSERT_ANALYSIS_OVERLAY, false
+6.6, ASSERT_WINDOWS_AXTREE, hideOverlayControls, overlayControls, cuPartitions, qpHeatmap, bitCostHeatmap, overlayOpacity
+7.0, HOVER_MEDIA_HEADER_OVERLAY_PANEL_CONTROLS
+7.8, ASSERT_WINDOWS_AXTREE, hideOverlayControls, overlayControls, cuPartitions, qpHeatmap, bitCostHeatmap, overlayOpacity
+8.0, TOGGLE_ANALYSIS_OVERLAY, 0
+8.8, ASSERT_ANALYSIS_OVERLAY, true, cu, 0.55, 0.02, 1
+9.0, QUIT, 0

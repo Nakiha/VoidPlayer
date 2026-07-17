@@ -125,7 +125,7 @@ class MainWindowQuickMarkCoordinator {
   }
 
   void startDrag(Offset physicalPosition) {
-    if (_textureId == null || trackManager.isEmpty) return;
+    if (_playerId == null || trackManager.isEmpty) return;
     final hit = _projection()?.hitTestPhysical(physicalPosition);
     if (hit == null) return;
     if (_isPlaying) {
@@ -387,7 +387,7 @@ class MainWindowQuickMarkCoordinator {
 
   MainWindowStateModel get _state => stateStore.value;
 
-  int? get _textureId => _state.textureId;
+  int? get _playerId => _state.playerId;
   bool get _isPlaying => _state.isPlaying;
   int get _currentPtsUs => _state.currentPtsUs;
   LayoutState get _layout => _state.layout;

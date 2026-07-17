@@ -12,18 +12,75 @@ import 'player_action.dart';
 /// parameterized actions (e.g. [SeekTo], [SetSpeed]) can read their data.
 typedef ActionCallback = FutureOr<void> Function(PlayerAction action);
 
+enum ShortcutTraceDecision {
+  released,
+  passedToEditable,
+  modifierMismatch,
+  swallowedRepeat,
+  platformOwned,
+  callbackMissing,
+  dispatched,
+}
+
+class ShortcutTraceRecord {
+  final int sequence;
+  final int registryId;
+  final String actionName;
+  final String eventType;
+  final String logicalKey;
+  final String physicalKey;
+  final bool synthesized;
+  final bool controlPressed;
+  final bool editable;
+  final String focus;
+  final ShortcutTraceDecision decision;
+
+  const ShortcutTraceRecord({
+    required this.sequence,
+    required this.registryId,
+    required this.actionName,
+    required this.eventType,
+    required this.logicalKey,
+    required this.physicalKey,
+    required this.synthesized,
+    required this.controlPressed,
+    required this.editable,
+    required this.focus,
+    required this.decision,
+  });
+
+  String toLogLine() =>
+      '[ShortcutTrace][Flutter] seq=$sequence registry=$registryId '
+      'action=$actionName event=$eventType logical=$logicalKey '
+      'physical=$physicalKey synthesized=$synthesized ctrl=$controlPressed '
+      'editable=$editable focus=$focus decision=${decision.name}';
+}
+
+typedef ShortcutTraceSink = void Function(ShortcutTraceRecord record);
+
+void _logShortcutTrace(ShortcutTraceRecord record) {
+  log.info(record.toLogLine());
+}
+
 /// Central registry for player actions with keyboard interception.
 ///
 /// [bind] registers an action definition + callback and starts intercepting
 /// its shortcut key. [unbind] removes the callback and stops interception.
 class ActionRegistry {
   final KeyboardInputService keyboardInput;
+  final ShortcutTraceSink shortcutTraceSink;
+  final bool useWindowsRunnerShortcuts;
   final Map<String, PlayerAction> _actions = {};
   final Map<String, ActionCallback> _callbacks = {};
   final Map<LogicalKeyboardKey, String> _keyMap = {};
   final Set<LogicalKeyboardKey> _requireControl = {};
+  int _shortcutTraceSequence = 0;
 
-  ActionRegistry({this.keyboardInput = const FlutterKeyboardInputService()});
+  ActionRegistry({
+    this.keyboardInput = const FlutterKeyboardInputService(),
+    ShortcutTraceSink? shortcutTraceSink,
+    this.useWindowsRunnerShortcuts = false,
+  }) : shortcutTraceSink = shortcutTraceSink ?? _logShortcutTrace;
 
   /// Bind an action with its callback.
   ///
@@ -117,30 +174,149 @@ class ActionRegistry {
 
   /// Handle a key event from Flutter's global keyboard dispatcher.
   bool handleKeyEvent(KeyEvent event) {
+    final actionName = _keyMap[event.logicalKey];
+    if (actionName == null) return false;
+
+    final controlPressed = keyboardInput.isControlPressed;
+    final editable = _focusIsEditableText();
+    final focus = _primaryFocusDescription();
+    void trace(ShortcutTraceDecision decision) {
+      shortcutTraceSink(
+        ShortcutTraceRecord(
+          sequence: ++_shortcutTraceSequence,
+          registryId: identityHashCode(this),
+          actionName: actionName,
+          eventType: switch (event) {
+            KeyDownEvent() => 'down',
+            KeyRepeatEvent() => 'repeat',
+            KeyUpEvent() => 'up',
+            _ => event.runtimeType.toString(),
+          },
+          logicalKey: event.logicalKey.debugName ?? '${event.logicalKey.keyId}',
+          physicalKey:
+              event.physicalKey.debugName ?? '${event.physicalKey.usbHidUsage}',
+          synthesized: event.synthesized,
+          controlPressed: controlPressed,
+          editable: editable,
+          focus: focus,
+          decision: decision,
+        ),
+      );
+    }
+
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      trace(ShortcutTraceDecision.released);
       return false;
     }
 
     // Pass through all keys when an EditableText has focus.
-    if (_focusIsEditableText()) return false;
-
-    final actionName = _keyMap[event.logicalKey];
-    if (actionName == null) return false;
+    if (editable) {
+      trace(ShortcutTraceDecision.passedToEditable);
+      return false;
+    }
     final action = _actions[actionName];
 
     // Check if this action requires Ctrl to be held
     final needsCtrl = _requireControl.contains(event.logicalKey);
-    final ctrlHeld = keyboardInput.isControlPressed;
-    if (needsCtrl != ctrlHeld) return false;
+    if (needsCtrl != controlPressed) {
+      trace(ShortcutTraceDecision.modifierMismatch);
+      return false;
+    }
+    if (useWindowsRunnerShortcuts) {
+      trace(ShortcutTraceDecision.platformOwned);
+      return true;
+    }
     if (event is KeyRepeatEvent && action?.repeatable != true) {
+      trace(ShortcutTraceDecision.swallowedRepeat);
       return true;
     }
 
     final callback = _callbacks[actionName];
-    if (callback == null) return false;
+    if (callback == null) {
+      trace(ShortcutTraceDecision.callbackMissing);
+      return false;
+    }
 
+    trace(ShortcutTraceDecision.dispatched);
     execute(actionName);
     return true;
+  }
+
+  /// Handles the independent Windows runner shortcut channel.
+  ///
+  /// This path remains live if Flutter's Windows keyboard response queue is
+  /// stuck. The original Win32 message is still dispatched to Flutter, so
+  /// editable text and non-shortcut keys keep their normal engine behavior.
+  bool handleWindowsRunnerShortcut({
+    required int virtualKey,
+    required int scanCode,
+    required bool repeat,
+    required bool controlPressed,
+  }) {
+    final logicalKey = switch (virtualKey) {
+      0x20 => LogicalKeyboardKey.space,
+      0x25 => LogicalKeyboardKey.arrowLeft,
+      0x27 => LogicalKeyboardKey.arrowRight,
+      0x4d => LogicalKeyboardKey.keyM,
+      0x4f => LogicalKeyboardKey.keyO,
+      0x7a => LogicalKeyboardKey.f11,
+      0x1b => LogicalKeyboardKey.escape,
+      _ => null,
+    };
+    if (logicalKey == null) return false;
+    final actionName = _keyMap[logicalKey];
+    if (actionName == null) return false;
+
+    final editable = _focusIsEditableText();
+    final focus = _primaryFocusDescription();
+    void trace(ShortcutTraceDecision decision) {
+      shortcutTraceSink(
+        ShortcutTraceRecord(
+          sequence: ++_shortcutTraceSequence,
+          registryId: identityHashCode(this),
+          actionName: actionName,
+          eventType: repeat ? 'windows-repeat' : 'windows-down',
+          logicalKey: logicalKey.debugName ?? '${logicalKey.keyId}',
+          physicalKey: 'win32-scan-$scanCode',
+          synthesized: false,
+          controlPressed: controlPressed,
+          editable: editable,
+          focus: focus,
+          decision: decision,
+        ),
+      );
+    }
+
+    if (editable) {
+      trace(ShortcutTraceDecision.passedToEditable);
+      return false;
+    }
+    final needsCtrl = _requireControl.contains(logicalKey);
+    if (needsCtrl != controlPressed) {
+      trace(ShortcutTraceDecision.modifierMismatch);
+      return false;
+    }
+    final action = _actions[actionName];
+    if (repeat && action?.repeatable != true) {
+      trace(ShortcutTraceDecision.swallowedRepeat);
+      return true;
+    }
+    if (_callbacks[actionName] == null) {
+      trace(ShortcutTraceDecision.callbackMissing);
+      return false;
+    }
+
+    trace(ShortcutTraceDecision.dispatched);
+    execute(actionName);
+    return true;
+  }
+
+  String _primaryFocusDescription() {
+    final primary = WidgetsBinding.instance.focusManager.primaryFocus;
+    if (primary == null) return 'none';
+    final label = primary.debugLabel ?? 'unlabelled';
+    final widget = primary.context?.widget.runtimeType.toString() ?? 'detached';
+    return '$label/$widget';
   }
 
   bool _focusIsEditableText() {
@@ -193,12 +369,19 @@ class ActionFocus extends StatefulWidget {
 }
 
 class _ActionFocusState extends State<ActionFocus> {
+  static const _windowsShortcutChannel = MethodChannel(
+    'void_player/windows_runner_shortcuts',
+  );
   late final FocusNode _focusNode = FocusNode(debugLabel: 'ActionFocus');
+  late KeyboardInputService _registeredKeyboardInput;
 
   @override
   void initState() {
     super.initState();
-    widget.actionRegistry.keyboardInput.addHandler(_handleGlobalKeyEvent);
+    _registeredKeyboardInput = widget.actionRegistry.keyboardInput;
+    _registeredKeyboardInput.addHandler(_handleGlobalKeyEvent);
+    _syncWindowsShortcutHandler();
+    _logHandlerLifecycle('registered');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _focusNode.hasFocus) return;
       _focusNode.requestFocus();
@@ -206,14 +389,54 @@ class _ActionFocusState extends State<ActionFocus> {
   }
 
   @override
+  void didUpdateWidget(covariant ActionFocus oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncWindowsShortcutHandler();
+    final nextKeyboardInput = widget.actionRegistry.keyboardInput;
+    if (identical(_registeredKeyboardInput, nextKeyboardInput)) return;
+    _registeredKeyboardInput.removeHandler(_handleGlobalKeyEvent);
+    _logHandlerLifecycle('moved-from');
+    _registeredKeyboardInput = nextKeyboardInput;
+    _registeredKeyboardInput.addHandler(_handleGlobalKeyEvent);
+    _logHandlerLifecycle('moved-to');
+  }
+
+  @override
   void dispose() {
-    widget.actionRegistry.keyboardInput.removeHandler(_handleGlobalKeyEvent);
+    _windowsShortcutChannel.setMethodCallHandler(null);
+    _registeredKeyboardInput.removeHandler(_handleGlobalKeyEvent);
+    _logHandlerLifecycle('removed');
     _focusNode.dispose();
     super.dispose();
   }
 
   bool _handleGlobalKeyEvent(KeyEvent event) {
     return widget.actionRegistry.handleKeyEvent(event);
+  }
+
+  void _syncWindowsShortcutHandler() {
+    if (!widget.actionRegistry.useWindowsRunnerShortcuts) {
+      _windowsShortcutChannel.setMethodCallHandler(null);
+      return;
+    }
+    _windowsShortcutChannel.setMethodCallHandler((call) async {
+      if (call.method != 'keyDown' || call.arguments is! Map) return false;
+      final arguments = call.arguments as Map;
+      return widget.actionRegistry.handleWindowsRunnerShortcut(
+        virtualKey: (arguments['virtualKey'] as num?)?.toInt() ?? 0,
+        scanCode: (arguments['scanCode'] as num?)?.toInt() ?? 0,
+        repeat: arguments['repeat'] == true,
+        controlPressed: arguments['controlPressed'] == true,
+      );
+    });
+  }
+
+  void _logHandlerLifecycle(String state) {
+    log.info(
+      '[ShortcutTrace][Flutter] handler=$state '
+      'registry=${identityHashCode(widget.actionRegistry)} '
+      'input=${identityHashCode(_registeredKeyboardInput)}',
+    );
   }
 
   @override

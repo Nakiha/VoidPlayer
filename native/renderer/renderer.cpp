@@ -144,12 +144,12 @@ RendererPresentedAnchorDiagnostics Renderer::presented_anchor_diagnostics() cons
     return impl_->presented_anchor_diagnostics();
 }
 
-PresentationBackendMetrics Renderer::presentation_backend_metrics() const {
-    return impl_->presentation_backend_metrics();
+PlaybackPacingDiagnostics Renderer::playback_pacing_diagnostics() const {
+    return impl_->playback_pacing_diagnostics();
 }
 
-PresentationBackendMetrics Renderer::d3d_backend_metrics() const {
-    return impl_->d3d_backend_metrics();
+PresentationBackendMetrics Renderer::presentation_backend_metrics() const {
+    return impl_->presentation_backend_metrics();
 }
 
 PresentationBackendStats Renderer::presentation_backend_stats() const {
@@ -172,20 +172,6 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
     return impl_->gpu_memory_stats();
 }
 
-bool Renderer::d3d_device_lost() const {
-    return impl_->d3d_device_lost();
-}
-
-long Renderer::d3d_device_removed_reason() const {
-    return impl_->d3d_device_removed_reason();
-}
-
-bool Renderer::recover_presentation_device_loss(
-    const char* reason,
-    long removed_reason) {
-    return impl_->recover_presentation_device_loss(reason, removed_reason);
-}
-
 RendererDeviceState Renderer::device_state() const {
     return impl_->device_state();
 }
@@ -202,12 +188,8 @@ void Renderer::apply_layout(const LayoutState& state) {
     impl_->apply_layout(state);
 }
 
-void Renderer::note_viewport_compositor_activity() {
-    impl_->note_viewport_compositor_activity();
-}
-
-void Renderer::set_viewport_compositor_active(bool active) {
-    impl_->set_viewport_compositor_active(active);
+void Renderer::apply_interaction_layout(const LayoutState& state) {
+    impl_->apply_interaction_layout(state);
 }
 
 void Renderer::set_background_color(float r, float g, float b, float a) {
@@ -230,91 +212,6 @@ void Renderer::set_event_callback(RendererEventCallback cb) {
     impl_->set_event_callback(std::move(cb));
 }
 
-int Renderer::texture_width() const {
-    return impl_->texture_width();
-}
-
-int Renderer::texture_height() const {
-    return impl_->texture_height();
-}
-
-bool Renderer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
-    return impl_->acquire_shared_texture(snapshot);
-}
-
-void Renderer::release_shared_texture(int buffer_index, uint64_t buffer_generation) const {
-    impl_->release_shared_texture(buffer_index, buffer_generation);
-}
-
-void* Renderer::native_render_device() const {
-    return impl_->native_render_device();
-}
-
-void* Renderer::native_render_command_queue() const {
-    return impl_->native_render_command_queue();
-}
-
-bool Renderer::acquire_shared_fp16_texture(
-    SharedFp16TextureSnapshot& snapshot) const {
-    return impl_->acquire_shared_fp16_texture(snapshot);
-}
-
-void Renderer::release_shared_fp16_texture(
-    int buffer_index, uint64_t ring_generation) const {
-    impl_->release_shared_fp16_texture(buffer_index, ring_generation);
-}
-
-void Renderer::set_shared_fp16_frame_callback(std::function<void()> cb) {
-    impl_->set_shared_fp16_frame_callback(std::move(cb));
-}
-
-bool Renderer::update_external_flutter_surface(
-    const PresentationExternalD3D12Surface& surface) {
-    return impl_->update_external_flutter_surface(surface);
-}
-
-void Renderer::clear_external_flutter_surface() {
-    impl_->clear_external_flutter_surface();
-}
-
-bool Renderer::draw_current_frame_to_external_d3d12_target(
-    const PresentationExternalD3D12RenderTarget& target,
-    const char* reason) {
-    return impl_->draw_current_frame_to_external_d3d12_target(target, reason);
-}
-
-bool Renderer::configure_source_cache(
-    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
-    return impl_->configure_source_cache(descriptors);
-}
-
-void Renderer::clear_source_cache(const char* reason) {
-    impl_->clear_source_cache(reason);
-}
-
-bool Renderer::update_source_projection(
-    const WindowsSourceProjection& projection) {
-    return impl_->update_source_projection(projection);
-}
-
-void Renderer::clear_source_projection() {
-    impl_->clear_source_projection();
-}
-
-bool Renderer::acquire_source_cache_bundle(
-    SharedSourceCacheBundleSnapshot& snapshot) const {
-    return impl_->acquire_source_cache_bundle(snapshot);
-}
-
-void Renderer::release_source_cache_bundle(
-    int buffer_index, uint64_t ring_generation) const {
-    impl_->release_source_cache_bundle(buffer_index, ring_generation);
-}
-
-void Renderer::set_source_cache_frame_callback(std::function<void()> cb) {
-    impl_->set_source_cache_frame_callback(std::move(cb));
-}
-
 bool Renderer::prewarm_presentation_target(int width, int height) {
     return impl_->prewarm_presentation_target(width, height);
 }
@@ -323,28 +220,28 @@ void Renderer::resize(int width, int height) {
     impl_->resize(width, height);
 }
 
-bool Renderer::update_headless_output(void* output,
+bool Renderer::update_offscreen_target(void* output,
                                       int width,
                                       int height,
                                       int max_track_slots) {
-    return impl_->update_headless_output(output, width, height, max_track_slots);
+    return impl_->update_offscreen_target(output, width, height, max_track_slots);
 }
 
-bool Renderer::install_headless_output(void* output,
+bool Renderer::install_offscreen_target(void* output,
                                        int width,
                                        int height,
                                        int max_track_slots) {
-    return impl_->install_headless_output(output, width, height, max_track_slots);
+    return impl_->install_offscreen_target(output, width, height, max_track_slots);
 }
 
-bool Renderer::install_headless_output_ring(const void* const* pixel_buffers,
+bool Renderer::install_offscreen_target_ring(const void* const* pixel_buffers,
                                             size_t pixel_buffer_count,
                                             void* displayed_pixel_buffer,
                                             void* protected_pixel_buffer,
                                             int width,
                                             int height,
                                             int max_track_slots) {
-    return impl_->install_headless_output_ring(pixel_buffers,
+    return impl_->install_offscreen_target_ring(pixel_buffers,
                                                pixel_buffer_count,
                                                displayed_pixel_buffer,
                                                protected_pixel_buffer,
@@ -353,24 +250,28 @@ bool Renderer::install_headless_output_ring(const void* const* pixel_buffers,
                                                max_track_slots);
 }
 
-void Renderer::mark_headless_output_displayed(void* pixel_buffer) {
-    impl_->mark_headless_output_displayed(pixel_buffer);
+void Renderer::mark_offscreen_target_displayed(void* pixel_buffer) {
+    impl_->mark_offscreen_target_displayed(pixel_buffer);
 }
 
-void Renderer::protect_headless_output(void* pixel_buffer) {
-    impl_->protect_headless_output(pixel_buffer);
+void Renderer::protect_offscreen_target(void* pixel_buffer) {
+    impl_->protect_offscreen_target(pixel_buffer);
 }
 
-void Renderer::release_headless_output(void* pixel_buffer) {
-    impl_->release_headless_output(pixel_buffer);
+void Renderer::release_offscreen_target(void* pixel_buffer) {
+    impl_->release_offscreen_target(pixel_buffer);
 }
 
-void Renderer::clear_headless_output() {
-    impl_->clear_headless_output();
+void Renderer::clear_offscreen_target() {
+    impl_->clear_offscreen_target();
 }
 
 bool Renderer::request_frame_refresh(const char* reason) {
     return impl_->request_frame_refresh(reason);
+}
+
+RendererFrameRefreshResult Renderer::request_interaction_frame() {
+    return impl_->request_interaction_frame();
 }
 
 bool Renderer::update_presentation_sdr_white_level(double nits) {
@@ -381,28 +282,6 @@ bool Renderer::commit_paused_preview_frame(int timeout_ms,
                                            PresentationBackendFrameInfo* out,
                                            std::string* error) {
     return impl_->commit_paused_preview_frame(timeout_ms, out, error);
-}
-
-bool Renderer::commit_source_provider_preview_frame(
-    int timeout_ms,
-    const int* expected_file_ids,
-    size_t expected_file_id_count,
-    PresentationBackendFrameInfo* out,
-    std::string* error) {
-    return impl_->commit_source_provider_preview_frame(
-        timeout_ms, expected_file_ids, expected_file_id_count, out, error);
-}
-
-bool Renderer::draw_current_frame_sources(PresentationBackend& backend,
-                                          PresentationSourceFrameTarget* targets,
-                                          size_t target_count,
-                                          std::string* error) {
-    return impl_->draw_current_frame_sources(backend, targets, target_count, error);
-}
-
-std::shared_ptr<const AnalysisOverlayPrimitivePackage> Renderer::current_overlay_primitives(
-    std::string* error) {
-    return impl_->current_overlay_primitives(error);
 }
 
 bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
@@ -426,16 +305,6 @@ bool Renderer::has_event_callback_for_test() const {
 
 void Renderer::enter_terminal_render_loop_error_for_test(const char* reason) {
     impl_->enter_terminal_render_loop_error_for_test(reason);
-}
-
-int Renderer::Impl::texture_width() const {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    return surface_state_.width();
-}
-
-int Renderer::Impl::texture_height() const {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    return surface_state_.height();
 }
 
 } // namespace vr

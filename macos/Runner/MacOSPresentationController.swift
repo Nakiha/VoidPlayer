@@ -6,11 +6,9 @@ typealias LayoutRefreshCompletion = (String) -> Void
 
 struct MacOSPresentationContext {
   let nativeBackendActive: Bool
-  let nativeCompositorSourceProjectionActive: Bool
-  let nativeCompositorSourceProviderActive: Bool
   let player: MacOSNativePlayerSession?
-  let texture: MacOSVideoTexture?
-  let nativeTexture: MacOSFlutterTextureBridge?
+  let texture: MacOSVideoSurface?
+  let nativeTargetRing: MacOSNativeTargetRing?
   let maxTrackSlots: Int
   let playback: MacOSPlaybackController
   let presentationState: MacOSFramePresentationState
@@ -30,6 +28,8 @@ final class MacOSPresentationController {
   }
   private let layoutRevisionLock = NSLock()
   private var layoutRefreshRunning = false
+  private var interactionFramesInFlight = 0
+  private let maxInteractionFramesInFlight = 2
   private var layoutRefreshMainTickScheduled = false
   private var latestLayoutRefreshRequest: LayoutRefreshRequest?
   private var latestLayoutRevision: UInt64 = 0
@@ -40,14 +40,14 @@ final class MacOSPresentationController {
   private var layoutStaleDropCount = 0
   private var layoutStaleAfterDrawDropCount = 0
   private var layoutPublishedCount = 0
+  private var interactionLayoutSubmitCount = 0
   private var layoutRefreshSupersededCount = 0
-  private var layoutCallbackPublicationSuppressedCount = 0
-  private var layoutDeferredToPlaybackCount = 0
   private var displayLinkIdleUntilNs: UInt64 = 0
   private let displayLinkIdleGraceNs: UInt64 = 250_000_000
   private let layoutIntentRate = MacOSRateWindow()
   private let layoutSubmitRate = MacOSRateWindow()
   private let layoutDrawRate = MacOSRateWindow()
+  private let interactionLayoutSubmitRate = MacOSRateWindow()
   private let layoutSkipRate = MacOSRateWindow()
   private let layoutQueueDuration = MacOSDurationWindow()
   private let layoutApplyDuration = MacOSDurationWindow()
@@ -114,12 +114,7 @@ final class MacOSPresentationController {
   func refreshCurrentFrame(context: MacOSPresentationContext) -> Bool {
     guard context.nativeBackendActive,
           let player = context.player,
-          let texture = context.nativeTexture else {
-      context.markFrameAvailable()
-      return true
-    }
-    if context.nativeCompositorSourceProviderActive {
-      player.noteViewportCompositorActivity()
+          let texture = context.nativeTargetRing else {
       context.markFrameAvailable()
       return true
     }
@@ -153,10 +148,12 @@ final class MacOSPresentationController {
     diagnostics["layoutStaleDropCount"] = layoutStaleDropCount
     diagnostics["layoutStaleAfterDrawDropCount"] = layoutStaleAfterDrawDropCount
     diagnostics["layoutPublishedCount"] = layoutPublishedCount
+    diagnostics["interactionLayoutSubmitCount"] = interactionLayoutSubmitCount
+    diagnostics["interactionLayoutSubmitHz"] = interactionLayoutSubmitRate.rateHz()
+    diagnostics["interactionLayoutSubmitHzX1000"] = Int(
+      interactionLayoutSubmitRate.rateHz() * 1000.0
+    )
     diagnostics["layoutRefreshSupersededCount"] = layoutRefreshSupersededCount
-    diagnostics["layoutCallbackPublicationSuppressedCount"] =
-      layoutCallbackPublicationSuppressedCount
-    diagnostics["viewportLayoutDeferredToPlaybackCount"] = layoutDeferredToPlaybackCount
     diagnostics["viewportClockWarm"] = displayLink.isRunning
     diagnostics["displayIdleGraceMs"] = Int(displayLinkIdleGraceNs / 1_000_000)
     let intentHz = layoutIntentRate.rateHz()
@@ -176,20 +173,10 @@ final class MacOSPresentationController {
     diagnostics["layoutRefreshTotalP95Ms"] = layoutTotalDuration.p95Ms()
     diagnostics["layoutRefreshTotalLastMs"] = layoutTotalDuration.lastMs()
     diagnostics["layoutRefreshRunning"] = layoutRefreshRunning
+    diagnostics["interactionFramesInFlight"] = interactionFramesInFlight
+    diagnostics["maxInteractionFramesInFlight"] = maxInteractionFramesInFlight
     diagnostics["layoutIntentPending"] = latestLayoutRefreshRequest != nil
     return diagnostics
-  }
-
-  func shouldSuppressNativeCallbackPublicationDuringLayout() -> Bool {
-    // Layout-owned refreshes are published through the revision gate. Native
-    // callbacks that arrive while a layout refresh is active are only
-    // diagnostic signals; publishing them here would bypass stale-revision
-    // checks and can double-drive Flutter texture notifications during pan/zoom.
-    layoutRefreshRunning || latestLayoutRefreshRequest != nil
-  }
-
-  func recordLayoutCallbackPublicationSuppressed() {
-    layoutCallbackPublicationSuppressedCount += 1
   }
 
   func cancelPendingLayoutRefreshes() {
@@ -203,6 +190,7 @@ final class MacOSPresentationController {
       waitForLayoutRefreshQueueDrain()
     }
     layoutRefreshRunning = false
+    interactionFramesInFlight = 0
   }
 
   private func waitForLayoutRefreshQueueDrain() {
@@ -220,7 +208,7 @@ final class MacOSPresentationController {
   ) {
     guard context.nativeBackendActive,
           context.player != nil,
-          context.nativeTexture != nil else {
+          context.nativeTargetRing != nil else {
       context.markFrameAvailable()
       completion?("flutter-texture")
       return
@@ -261,6 +249,11 @@ final class MacOSPresentationController {
       layoutSkipRate.record()
       return
     }
+    guard interactionFramesInFlight < maxInteractionFramesInFlight else {
+      layoutSkipCount += 1
+      layoutSkipRate.record()
+      return
+    }
     latestLayoutRefreshRequest = nil
     layoutRefreshRunning = true
     layoutSubmitCount += 1
@@ -287,16 +280,17 @@ final class MacOSPresentationController {
           return
         }
         var finalOutcomeName = outcome.profilerName
+        var retryAfterBackpressure = false
         switch outcome {
         case .ready(let pending):
           guard self.isCurrentLayoutRequest(request) else {
-            request.context.nativeTexture?.discardPendingNativeFrame(pending)
+            request.context.nativeTargetRing?.discardPendingNativeFrame(pending)
             self.layoutStaleAfterDrawDropCount += 1
             finalOutcomeName = LayoutRefreshOutcome.staleAfterDraw.profilerName
             break
           }
           guard let player = request.context.player,
-                let texture = request.context.nativeTexture else {
+                let texture = request.context.nativeTargetRing else {
             request.context.presentationState.recordMiss()
             finalOutcomeName = LayoutRefreshOutcome.transientMiss.profilerName
             break
@@ -318,22 +312,26 @@ final class MacOSPresentationController {
             request.context.presentationState.recordMiss()
             finalOutcomeName = LayoutRefreshOutcome.transientMiss.profilerName
           }
-        case .deferredToPlayback:
-          self.layoutDeferredToPlaybackCount += 1
-        case .appliedWithoutDraw:
-          request.context.markFrameAvailable()
-          self.layoutPublishedCount += 1
-          finalOutcomeName = "applied"
         case .stale:
           self.layoutStaleDropCount += 1
         case .staleAfterDraw:
           self.layoutStaleAfterDrawDropCount += 1
+        case .interactionSubmitted:
+          self.interactionLayoutSubmitCount += 1
+          self.interactionLayoutSubmitRate.record()
+          self.interactionFramesInFlight += 1
         case .transientMiss:
           request.context.presentationState.recordMiss()
         case .coalesced:
           self.layoutSkipCount += 1
           self.layoutSkipRate.record()
           request.context.presentationState.recordMiss()
+          if self.isCurrentLayoutRequest(request), self.latestLayoutRefreshRequest == nil {
+            self.latestLayoutRefreshRequest = request
+            self.extendDisplayLinkIdleGrace()
+            retryAfterBackpressure = true
+            finalOutcomeName = "retry-backpressure"
+          }
         }
         self.logLayoutTrace(
           event: "complete",
@@ -348,7 +346,9 @@ final class MacOSPresentationController {
           finalOutcomeName,
           finalOutcomeName == "applied" ? 1 : 0
         ))
-        request.complete(finalOutcomeName)
+        if !retryAfterBackpressure {
+          request.complete(finalOutcomeName)
+        }
         let queueDelayNs = startNs >= request.requestNs ? startNs - request.requestNs : 0
         let applyNs = finishNs >= startNs ? finishNs - startNs : 0
         let totalNs = DispatchTime.now().uptimeNanoseconds - request.requestNs
@@ -380,6 +380,16 @@ final class MacOSPresentationController {
     }
   }
 
+  func nativeFramePresented() {
+    guard interactionFramesInFlight > 0 else { return }
+    interactionFramesInFlight -= 1
+    if latestLayoutRefreshRequest != nil {
+      extendDisplayLinkIdleGrace()
+      displayLink.start()
+      scheduleMainLayoutRefreshTick()
+    }
+  }
+
   private func performLayoutRefresh(
     request: LayoutRefreshRequest
   ) -> LayoutRefreshOutcome {
@@ -390,14 +400,12 @@ final class MacOSPresentationController {
     guard let player = context.player else {
       return .transientMiss
     }
-    let sourceProviderLayout = context.nativeCompositorSourceProviderActive
     let pumpReady = context.playback.ensurePresentationPump(
       player: player,
-      texture: context.nativeTexture,
+      texture: context.nativeTargetRing,
       maxTrackSlots: context.maxTrackSlots,
       userData: context.userData,
-      presentationState: context.presentationState,
-      requiresPresentationTarget: !sourceProviderLayout
+      presentationState: context.presentationState
     )
     guard pumpReady else {
       return .transientMiss
@@ -405,12 +413,21 @@ final class MacOSPresentationController {
     guard isCurrentLayoutRequest(request) else {
       return .stale
     }
-    MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
-    if sourceProviderLayout {
-      player.noteViewportCompositorActivity()
-      return .appliedWithoutDraw
+    if request.markNativeLayoutAppliedIfNeeded() {
+      MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
     }
-    guard let texture = context.nativeTexture else {
+    if context.playback.currentIsPlaying(player: player) {
+      do {
+        try player.requestInteractionLayoutFrame()
+        return .interactionSubmitted
+      } catch {
+        if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true {
+          return .coalesced
+        }
+        return .transientMiss
+      }
+    }
+    guard let texture = context.nativeTargetRing else {
       return .transientMiss
     }
     let drawResult = MacOSNativeFrameRefresh.drawCurrentFrameForLayoutRefresh(
@@ -474,7 +491,7 @@ final class MacOSPresentationController {
     let offsetY = MacOSFlutterArguments.doubleValue(layout["viewOffsetY"]) ?? 0.0
     let mode = MacOSFlutterArguments.intValue(layout["mode"]) ?? 0
     MacOSProfilerLog.trace(String(
-      format: "VoidPlayer viewport trace swift event=%@ outcome=%@ revision=%llu intent=%d submit=%d draw=%d skip=%d stale=%d running=%d pending=%d source=%@ hz=%.2f mode=%d zoom=%.4f offset=(%.1f,%.1f)",
+      format: "VoidPlayer viewport trace swift event=%@ outcome=%@ revision=%llu intent=%d submit=%d draw=%d skip=%d stale=%d running=%d pending=%d clock=%@ hz=%.2f mode=%d zoom=%.4f offset=(%.1f,%.1f)",
       event,
       outcome,
       revision,
@@ -506,7 +523,7 @@ final class MacOSPresentationController {
     let periodic = layoutIntentCount > 0 && layoutIntentCount % 120 == 0
     guard slow || periodic else { return }
     MacOSProfilerLog.log(String(
-      format: "VoidPlayer macOS layout profiler route=%@ outcome=%@ intents=%d submits=%d draws=%d skips=%d stale=%d totalMs=%.2f queueMs=%.2f applyMs=%.2f source=%@ hz=%.1f",
+      format: "VoidPlayer macOS layout profiler route=%@ outcome=%@ intents=%d submits=%d draws=%d skips=%d stale=%d totalMs=%.2f queueMs=%.2f applyMs=%.2f clock=%@ hz=%.1f",
       route,
       outcome,
       layoutIntentCount,
@@ -535,6 +552,7 @@ private final class LayoutRefreshRequest {
   private let completion: LayoutRefreshCompletion?
   private let completionLock = NSLock()
   private var completed = false
+  private var nativeLayoutApplied = false
 
   init(
     context: MacOSPresentationContext,
@@ -558,14 +576,21 @@ private final class LayoutRefreshRequest {
     completionLock.unlock()
     completion?(outcome)
   }
+
+  func markNativeLayoutAppliedIfNeeded() -> Bool {
+    completionLock.lock()
+    defer { completionLock.unlock() }
+    guard !nativeLayoutApplied else { return false }
+    nativeLayoutApplied = true
+    return true
+  }
 }
 
 private enum LayoutRefreshOutcome {
   case ready(MacOSPendingNativeFrame)
-  case deferredToPlayback
-  case appliedWithoutDraw
   case stale
   case staleAfterDraw
+  case interactionSubmitted
   case transientMiss
   case coalesced
 
@@ -573,14 +598,12 @@ private enum LayoutRefreshOutcome {
     switch self {
     case .ready:
       return "ready"
-    case .deferredToPlayback:
-      return "deferred-to-playback"
-    case .appliedWithoutDraw:
-      return "applied-without-draw"
     case .stale:
       return "stale"
     case .staleAfterDraw:
       return "stale-after-draw"
+    case .interactionSubmitted:
+      return "interaction-submitted"
     case .transientMiss:
       return "transient-miss"
     case .coalesced:

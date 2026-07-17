@@ -4,6 +4,7 @@
 #include "renderer/renderer_api_types.h"
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -15,10 +16,6 @@
 namespace vr {
 
 class PresentationMetricsStore;
-struct SharedFp16TextureSnapshot;
-struct SourceCacheTrackDescriptor;
-struct SharedSourceCacheBundleSnapshot;
-struct WindowsSourceProjection;
 struct AnalysisOverlayPrimitivePackage;
 
 struct RendererPresentationOverlayHooks {
@@ -37,14 +34,14 @@ struct RendererPresentationDrawRequest {
 
     const RendererDrawSnapshot& snapshot;
     const char* source = nullptr;
-    bool headless = false;
+    bool offscreen = false;
     bool publish_swap_chain_after_sync_draw = false;
     const char* wait_idle_after_sync_draw_label = nullptr;
     const char* poll_device_removed_label = nullptr;
     bool check_device_lost_after_draw = false;
     PresentationMetricsStore& metrics;
     RendererPresentationOverlayHooks overlay_hooks;
-    std::function<bool()> should_abort_headless_publish;
+    std::function<bool()> should_abort_offscreen_publish;
     PresentationBackendAsyncDrawCompleted async_completion;
 };
 
@@ -53,10 +50,8 @@ struct RendererPresentationDrawResult {
     bool async_draw_submitted = false;
     bool device_lost = false;
     bool frame_info_available = false;
-    bool source_cache_published = false;
-    uint64_t source_cache_ring_generation = 0;
-    uint64_t source_cache_frame_generation = 0;
     uint64_t backend_us = 0;
+    uint64_t backend_blocking_wait_us = 0;
     PresentationBackendFrameInfo frame_info{};
     RendererFrameCallback frame_callback;
     std::string failure_error;
@@ -83,14 +78,14 @@ struct RendererPresentationSubmitRequest {
 
     const RendererDrawSnapshot& snapshot;
     const char* source = nullptr;
-    bool headless = false;
+    bool offscreen = false;
     bool publish_swap_chain_after_sync_draw = false;
     const char* wait_idle_after_sync_draw_label = nullptr;
     const char* poll_device_removed_label = nullptr;
     bool check_device_lost_after_draw = false;
     PresentationMetricsStore& metrics;
     RendererPresentationOverlayHooks overlay_hooks;
-    std::function<bool()> should_abort_headless_publish;
+    std::function<bool()> should_abort_offscreen_publish;
     // Async completions may capture renderer-owned state through the caller's
     // context. The active backend must satisfy the PresentationBackend async
     // shutdown contract before renderer resource teardown can release it.
@@ -113,7 +108,7 @@ struct RendererPresentationSubmitDispatchHooks {
     std::function<void(const RendererPresentationSyncCompletion&)> sync_completed;
 };
 
-struct RendererPresentationD3DMemorySnapshot {
+struct RendererPresentationMemorySnapshot {
     RendererGpuMemoryStats stats;
     std::array<uint64_t, kMaxTracks> presenter_copy_texture_bytes_by_slot{};
 };
@@ -138,7 +133,6 @@ public:
     const PresentationBackend* backend() const;
     bool has_backend() const;
     PresentationBackendKind backend_kind() const;
-    bool uses_macos_native_compositor_scheduling() const;
     void set_backend(std::unique_ptr<PresentationBackend> backend);
     std::unique_ptr<PresentationBackend> release_backend();
     void shutdown_backend();
@@ -163,21 +157,21 @@ public:
     long device_removed_reason() const;
     void reset_track(size_t slot);
     void move_track(size_t from, size_t to);
-    bool update_headless_output(void* output,
+    bool update_offscreen_target(void* output,
                                 int width,
                                 int height,
                                 int max_track_slots);
-    bool update_headless_output_ring(const void* const* pixel_buffers,
+    bool update_offscreen_target_ring(const void* const* pixel_buffers,
                                      size_t pixel_buffer_count,
                                      void* displayed_pixel_buffer,
                                      void* protected_pixel_buffer,
                                      int width,
                                      int height,
                                      int max_track_slots);
-    void mark_headless_output_displayed(void* pixel_buffer);
-    void protect_headless_output(void* pixel_buffer);
-    void release_headless_output(void* pixel_buffer);
-    void clear_headless_output();
+    void mark_offscreen_target_displayed(void* pixel_buffer);
+    void protect_offscreen_target(void* pixel_buffer);
+    void release_offscreen_target(void* pixel_buffer);
+    void clear_offscreen_target();
     bool update_sdr_white_level(double nits);
 
     // Caller must hold device_mutex() when coordinating with surrounding
@@ -185,7 +179,7 @@ public:
     void wait_gpu_idle(const char* label, PresentationMetricsStore& metrics);
     // Caller must hold device_mutex() when coordinating with surrounding
     // presentation work.
-    bool draw_renderer_managed_headless_and_publish(
+    bool draw_renderer_managed_offscreen_and_publish(
         const RendererDrawSnapshot& snapshot,
         const char* source,
         PresentationMetricsStore& metrics,
@@ -213,49 +207,21 @@ public:
                                              std::vector<uint8_t>& bgra,
                                              int& region_width,
                                              int& region_height);
-    RendererPresentationD3DMemorySnapshot d3d_memory_snapshot() const;
-    bool resize_renderer_managed_headless_output(int width,
+    RendererPresentationMemorySnapshot memory_snapshot() const;
+    bool resize_renderer_managed_offscreen_target(int width,
                                                  int height,
                                                  PresentationMetricsStore& metrics);
-    bool prewarm_renderer_managed_headless_output(int width, int height);
-    void cleanup_renderer_managed_headless_pending_buffers();
-    bool set_renderer_managed_headless_frame_callback(
+    bool prewarm_renderer_managed_offscreen_target(int width, int height);
+    void cleanup_renderer_managed_offscreen_pending_buffers();
+    bool set_renderer_managed_offscreen_frame_callback(
         RendererFrameCallback callback);
 
-#ifdef _WIN32
-    bool acquire_d3d_shared_texture(SharedTextureSnapshot& snapshot,
-                                    PresentationMetricsStore& metrics) const;
-    void release_d3d_shared_texture(int buffer_index,
-                                    uint64_t buffer_generation) const;
-    bool acquire_d3d_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
-    void release_d3d_shared_fp16_texture(int buffer_index,
-                                         uint64_t ring_generation) const;
-    void set_d3d_shared_fp16_frame_callback(std::function<void()> callback);
-    bool update_external_flutter_surface(
-        const PresentationExternalD3D12Surface& surface);
-    void clear_external_flutter_surface();
-    bool draw_frame_to_external_d3d12_target(
-        const RendererDrawSnapshot& snapshot,
-        const char* source,
-        PresentationMetricsStore& metrics,
-        const PresentationExternalD3D12RenderTarget& target,
-        RendererPresentationOverlayHooks overlay_hooks = {});
-    bool configure_source_cache(
-        const std::vector<SourceCacheTrackDescriptor>& descriptors);
-    void clear_source_cache(const char* reason);
-    bool update_source_projection(const WindowsSourceProjection& projection);
-    void clear_source_projection();
-    bool acquire_source_cache_bundle(
-        SharedSourceCacheBundleSnapshot& snapshot) const;
-    void release_source_cache_bundle(
-        int buffer_index, uint64_t ring_generation) const;
-    void set_source_cache_frame_callback(std::function<void()> callback);
-    bool recover_d3d_device_loss(const char* reason, long removed_reason);
-#endif
+    bool recover_device_loss(const char* reason, long removed_reason);
 
 private:
     std::unique_ptr<PresentationBackend> backend_;
     mutable std::recursive_mutex device_mutex_;
+    std::atomic<uint32_t> pending_offscreen_target_releases_{0};
     mutable std::mutex callback_mutex_;
     RendererFrameCallback frame_callback_;
     std::function<void(const char*)> frame_failure_callback_;

@@ -8,6 +8,9 @@ class MainFlutterWindow: NSWindow {
   }
 
   override func awakeFromNib() {
+    DispatchQueue.global(qos: .userInitiated).async {
+      VPMacOSNativePrewarmMetalPipelines()
+    }
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
     self.contentViewController = flutterViewController

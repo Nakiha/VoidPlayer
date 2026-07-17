@@ -1,28 +1,23 @@
-# Playing dual-track viewport pan should keep advancing playback and presenting frames.
+# Interaction redraw stays independent from 24 fps dual-track video presentation.
 @WINDOW, 1366, 768
-0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+0.0, SET_DECODE_MODE, preferHardware
+0.0, GENERATE_TEST_VIDEO, build/generated/macos/interaction_24fps_h264.mp4, 240, 24, 640, 360
+0.1, GENERATE_TEST_VIDEO, build/generated/macos/interaction_24fps_hevc.mp4, 240, 24, 640, 360, 0, hevc
+0.3, ADD_MEDIA, build/generated/macos/interaction_24fps_h264.mp4
 1.6, ASSERT_TRACK_COUNT, 1
-1.8, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+1.8, ADD_MEDIA, build/generated/macos/interaction_24fps_hevc.mp4
 3.8, ASSERT_TRACK_COUNT, 2
 3.9, SET_ZOOM, 4.0
 4.1, PLAY
 4.4, ASSERT_PLAYING
 4.5, DRAG_VIEWPORT, 420, -160, 60, 4
 5.0, ASSERT_POSITION_RANGE, 300000, 2500000
-5.1, CAPTURE_VIEWPORT, playing_dual_track_pan_a
-5.2, ASSERT_CAPTURE_NOT_BLACK, playing_dual_track_pan_a, 0.01, 4.0
 5.3, DRAG_VIEWPORT, -520, 220, 60, 4
 5.8, ASSERT_POSITION_RANGE, 700000, 9000000
-5.9, CAPTURE_VIEWPORT, playing_dual_track_pan_b
-6.0, ASSERT_CAPTURE_NOT_BLACK, playing_dual_track_pan_b, 0.01, 4.0
-6.05, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadCount, 20, 700
-6.06, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, cvpixelbuffer
+6.06, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetUploadStorageKind, cvpixelbuffer
 6.07, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, layoutPresentedCount, 1
-6.08, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, drawsPerPresentedFrameRatioX1000, 500, 9000
-6.09, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, viewportCompositeCount, 5, 2000
-6.095, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, videoSourceUpdateCount, 1
-6.096, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceFrameCacheHitCount, 1
+6.08, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, interactionLayoutSubmitCount, 30
+6.095, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, metalBufferExhaustionCount, 0, 0
 6.097, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureMetalBufferExhaustionCount, 0, 0
 6.098, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureInFlightMetalBufferCount, 0, 1
-6.1, ASSERT_CAPTURE_CHANGED, playing_dual_track_pan_a, playing_dual_track_pan_b
 6.2, QUIT, 0

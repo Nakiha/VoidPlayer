@@ -10,7 +10,7 @@ import '../actions/player_action.dart';
 import '../analysis/analysis_cache.dart';
 import '../app_log.dart';
 import '../video_renderer_controller.dart';
-import '../viewport/viewport_projection_diagnostics.dart';
+import '../viewport/viewport_interaction_diagnostics.dart';
 import 'automation_assert_executor.dart';
 import 'automation_probe.dart';
 import 'automation_run_state.dart';
@@ -18,6 +18,7 @@ import 'automation_script.dart';
 import 'main_window_harness.dart';
 import 'ui_automation_bridge.dart';
 import 'ui_automation_runtime.dart';
+import 'windows_axtree_probe.dart';
 
 /// Parses a test script file and runs instructions on a timeline.
 class TestRunner {
@@ -295,7 +296,7 @@ class TestRunner {
           'textureSize=${info['textureWidth']}x${info['textureHeight']} '
           'ioSurfaceId=${info['ioSurfaceId']} '
           'wideGamut=${info['wideGamut']} '
-          'nativeTextureObjectAvailable=${info['nativeTextureObjectAvailable']} '
+          'nativeTargetRingObjectAvailable=${info['nativeTargetRingObjectAvailable']} '
           'nativeIOSurfaceObjectAvailable=${info['nativeIOSurfaceObjectAvailable']}',
         );
       case DebugNativeCompositorAction():
@@ -315,7 +316,7 @@ class TestRunner {
           'skippedInFlight=${info['nativeCompositorSkippedInFlightFrames']} '
           'skippedStatic=${info['nativeCompositorSkippedStaticFrames']} '
           'video=${info['nativeCompositorVideoTextureAvailable']} '
-          'flutter=${info['nativeCompositorFlutterTextureAvailable']} '
+          'flutter=${info['nativeCompositorFlutterSurfaceAvailable']} '
           'flutterAlphaX1000=${info['nativeCompositorFlutterAlphaAverageX1000']} '
           'flutterTransparentX1000=${info['nativeCompositorFlutterTransparentRatioX1000']} '
           'hole=${info['nativeCompositorHoleLeftX1000']},${info['nativeCompositorHoleTopX1000']}-'
@@ -326,22 +327,13 @@ class TestRunner {
       case DebugFailNativeCompositorAction(:final reason):
         log.info('TestRunner: DEBUG_FAIL_NATIVE_COMPOSITOR reason=$reason');
         await controller.debugFailNativeCompositor(reason: reason);
-      case DebugSimulateWindowsDeviceLossAction(:final target, :final reason):
-        log.info(
-          'TestRunner: DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS '
-          'target=$target reason=$reason',
-        );
-        await controller.debugSimulateWindowsDeviceLoss(
-          target: target,
-          reason: reason,
-        );
       case ResetNativePerfCountersAction():
         log.info('TestRunner: RESET_NATIVE_PERF_COUNTERS');
-        ViewportProjectionDiagnostics.instance.reset();
+        ViewportInteractionDiagnostics.instance.reset();
         await controller.resetNativePerfCounters();
       case ResetDartViewportDiagnosticsAction():
         log.info('TestRunner: RESET_DART_VIEWPORT_DIAGNOSTICS');
-        ViewportProjectionDiagnostics.instance.reset();
+        ViewportInteractionDiagnostics.instance.reset();
       case BeginNativeInteractionSampleAction(:final label):
         log.info('TestRunner: BEGIN_NATIVE_INTERACTION_SAMPLE $label');
         await controller.beginNativeInteractionSample(label: label);
@@ -400,12 +392,12 @@ class TestRunner {
           'targetGenChanges=${value('macosFrameCallbackTargetGenerationChangeCount')} '
           'targetWarmupSamples=${value('macosFrameCallbackTargetWarmupSampleCount')} '
           'targetWarmupP95Ms=${value('macosFrameCallbackTargetWarmupP95Ms')} '
-          'nativeUploadP95Ms=${value('rendererOwnedUploadIntervalP95Ms')} '
-          'nativeTargetWarmupSamples=${value('rendererOwnedTargetWarmupSampleCount')} '
-          'nativeTargetWarmupP95Ms=${value('rendererOwnedTargetWarmupP95Ms')} '
+          'nativeUploadP95Ms=${value('nativeTargetUploadIntervalP95Ms')} '
+          'nativeTargetWarmupSamples=${value('nativeTargetWarmupSampleCount')} '
+          'nativeTargetWarmupP95Ms=${value('nativeTargetWarmupP95Ms')} '
           'presentation=${value('nativeFramePresentationCount')}@${value('nativeFramePresentationFps')}Hz '
-          'rendererOwned=${value('nativeFrameRendererOwnedPresentCount')} '
-          'rendererOwnedRatioX1000=${value('nativeFrameRendererOwnedRatioX1000')} '
+          'nativeTarget=${value('nativeFrameTargetPresentCount')} '
+          'nativeTargetRatioX1000=${value('nativeFrameTargetRatioX1000')} '
           'ptsSamples=${value('presentedFramePtsSampleCount')} '
           'ptsDistinct=${value('presentedFramePtsDistinctCount')} '
           'ptsDuplicate=${value('presentedFramePtsDuplicateCount')} '
@@ -418,8 +410,6 @@ class TestRunner {
           'errors=${value('presentedFrameErrorCount')} '
           'compositorFrames=${value('nativeCompositorFrames')} '
           'compositorHz=${value('nativeCompositorCompositeHz')} '
-          'sourceCacheHz=${value('nativeCompositorSourceCacheHz')} '
-          'sourceProjectionHz=${value('nativeCompositorSourceProjectionHz')} '
           'dartRawPanZoom=${dartValue('dartViewportPointerPanZoomUpdateCount')}@${dartValue('dartViewportPointerPanZoomUpdateHz')}Hz '
           'dartPanZoomPan=${dartValue('dartViewportPointerPanZoomPanDispatchCount')}@${dartValue('dartViewportPointerPanZoomPanDispatchHz')}Hz '
           'dartPanZoomScale=${dartValue('dartViewportPointerPanZoomScaleDispatchCount')}@${dartValue('dartViewportPointerPanZoomScaleDispatchHz')}Hz '
@@ -428,12 +418,6 @@ class TestRunner {
           'dartActionZoom=${dartValue('dartViewportViewportActionZoomCount')}@${dartValue('dartViewportViewportActionZoomHz')}Hz '
           'dartLayoutPan=${dartValue('dartViewportLayoutPanCount')}@${dartValue('dartViewportLayoutPanHz')}Hz '
           'dartLayoutZoom=${dartValue('dartViewportLayoutZoomCount')}@${dartValue('dartViewportLayoutZoomHz')}Hz '
-          'dartProjectionPublish=${dartValue('dartViewportProjectionPublishAttemptCount')}@${dartValue('dartViewportProjectionPublishAttemptHz')}Hz '
-          'dartProjectionPrepare=${dartValue('dartViewportProjectionPrepareCount')}@${dartValue('dartViewportProjectionPrepareHz')}Hz '
-          'dartProjectionSend=${dartValue('dartViewportProjectionChannelSendCount')}@${dartValue('dartViewportProjectionChannelSendHz')}Hz '
-          'dartProjectionSkippedIneligible=${dartValue('dartViewportProjectionPrepareSkippedIneligibleCount')} '
-          'swiftProjectionReceive=${value('nativeCompositorSourceProjectionMethodReceiveCount')}@${value('nativeCompositorSourceProjectionMethodReceiveHz')}Hz '
-          'swiftProjectionApply=${value('nativeCompositorSourceProjectionApplyCount')}@${value('nativeCompositorSourceProjectionHz')}Hz '
           'windowsPhase=${value('windowsNativeCompositorPhase')} '
           'windowsMode=${value('windowsHotPathMode')} '
           'windowsHotPath=${value('windowsHotPathActive')} '
@@ -486,40 +470,8 @@ class TestRunner {
           'windowsExportStale=${value('windowsFlutterExportStaleTimeoutCount')} '
           'windowsExportUnrequestedSignal=${value('windowsFlutterExportUnrequestedSignalCount')} '
           'windowsExportUnrequestedThrottle=${value('windowsFlutterExportUnrequestedThrottleCount')} '
-          'sourceRingBake=${value('sourceRingBakeCount')}@${value('sourceRingBakeHz')}Hz '
-          'sourceRingBakeP95Ms=${value('sourceRingBakeP95Ms')} '
-          'sourceRingBakeLastMs=${value('sourceRingBakeLastMs')} '
-          'sourceRingReq=${value('sourceRingRefreshRequestCount')}@${value('sourceRingRefreshRequestHz')}Hz '
-          'sourceRingQueueP95Ms=${value('sourceRingRefreshQueueWaitP95Ms')} '
-          'sourceRingPublish=${value('sourceRingPublishCount')}@${value('sourceRingPublishHz')}Hz '
-          'sourceRingTopology=${value('sourceRingTopologyRevision')} '
-          'sourceRingRequiredMask=${value('sourceRingRequiredMask')} '
-          'sourceRingDrawnMask=${value('sourceRingDrawnMask')} '
-          'sourceRingMissingMask=${value('sourceRingMissingMask')} '
-          'sourceRingIncompleteSuppressed=${value('sourceRingIncompletePublishSuppressedCount')} '
-          'sourceRingIncompleteReason=${value('sourceRingLastIncompleteReason')} '
-          'sourceRingSlotSig=${value('sourceRingPublishedSlotSignature')} '
-          'sourceRingFileIds=${value('sourceRingPublishedFileIdSignature')} '
-          'sourceRingActualFileIds=${value('sourceRingPublishedActualFileIdSignature')} '
-          'sourceRingDupSlots=${value('sourceRingPublishedDuplicateSlotCount')} '
-          'sourceRingDupFileIds=${value('sourceRingPublishedDuplicateFileIdCount')} '
-          'sourceRingDupActualFileIds=${value('sourceRingPublishedDuplicateActualFileIdCount')} '
-          'sourceRingDupBuffers=${value('sourceRingPublishedDuplicateBufferCount')} '
-          'sourceReadySlotSig=${value('nativeCompositorSourceSlotSignature')} '
-          'sourceReadyDupSlots=${value('nativeCompositorSourceDuplicateSlotCount')} '
-          'sourceReadyDupFileIds=${value('nativeCompositorSourceDuplicateFileIdCount')} '
-          'sourceReadyDupTextures=${value('nativeCompositorSourceDuplicateTextureCount')} '
-          'sourceRingReqToPubP95Ms=${value('sourceRingRequestToPublishP95Ms')} '
-          'sourceRingPtsUs=${value('sourceRingLastPublishedPtsUs')} '
-          'sourceRingDurationUs=${value('sourceRingLastPublishedDurationUs')} '
-          'sourceRingPtsStepP95Ms=${value('sourceRingPublishedPtsStepP95Ms')} '
-          'sourceRingPtsDuplicate=${value('sourceRingPublishedPtsDuplicateCount')} '
-          'sourceRingPtsLargeStep=${value('sourceRingPublishedPtsLargeStepCount')} '
-          'sourceRingPtsRegression=${value('sourceRingPublishedPtsRegressionCount')} '
           'softwareStorage=${value('softwareFrameStorageKind')} '
           'softwarePackFallback=${value('softwareFramePackFallbackCount')} '
-          'sourceRingCoalesced=${value('sourceRingRefreshCoalescedCount')} '
-          'sourceRingMiss=${value('sourceRingPublishMissCount')} '
           'traceHz=${value('nativeCompositorTraceHz')} '
           'traceReceived=${value('nativeCompositorTraceReceivedCount')} '
           'traceApplied=${value('nativeCompositorTraceAppliedCount')} '
@@ -529,7 +481,7 @@ class TestRunner {
           'dartToSwiftP95Ms=${value('nativeCompositorDartToSwiftP95Ms')} '
           'swiftQueueP95Ms=${value('nativeCompositorSwiftQueueP95Ms')} '
           'receiveToCompositeP95Ms=${value('nativeCompositorReceiveToCompositeP95Ms')} '
-          'producerSubmit=${value('rendererOwnedCompositeProducerSubmitCount')} '
+          'producerSubmit=${value('nativeTargetCompositeProducerSubmitCount')} '
           'readyVideoP95Ms=${value('readyVideoAcquireP95Ms')} '
           'readySourceP95Ms=${value('readySourceAcquireP95Ms')} '
           'producerVideoHz=${value('producerVideoPublishHz')} '
@@ -546,7 +498,7 @@ class TestRunner {
           'displayTicks=${value('displayDeliveredTickCount')} '
           'viewportComposite=${value('viewportCompositeCount')} '
           'sourceHits=${value('sourceFrameCacheHitCount')} '
-          'flutterTextureFrameSkippedPlaying=${value('flutterTextureFrameAvailableSkippedWhilePlayingCount')} '
+          'nativeTargetFrameSkippedPlaying=${value('nativeTargetFrameNotificationSkippedWhilePlayingCount')} '
           'compositorVideoRefresh=${value('compositorVideoTextureRefreshCount')} '
           'compositorVideoRefreshSkippedPlaying=${value('compositorVideoTextureRefreshSkippedWhilePlayingCount')} '
           'targetRebuild=${value('pixelBufferRebuildCount')} '
@@ -679,6 +631,21 @@ class TestRunner {
           steps: steps,
           stepDelay: Duration(milliseconds: stepMs),
           button: button,
+        );
+      case DragViewportWin32Message(
+        :final dx,
+        :final dy,
+        :final steps,
+        :final stepMs,
+      ):
+        log.info(
+          'TestRunner: DRAG_VIEWPORT_WIN32_MESSAGE dx=$dx dy=$dy '
+          'steps=$steps stepMs=$stepMs',
+        );
+        await testHarness.dragViewportWin32Message(
+          Offset(dx, dy),
+          steps: steps,
+          stepDelay: Duration(milliseconds: stepMs),
         );
       case DragSplitHandleNative(
         :final targetFraction,
@@ -832,12 +799,24 @@ class TestRunner {
       case HoverTimeline(:final steps, :final stepMs):
         log.info('TestRunner: HOVER_TIMELINE steps=$steps stepMs=$stepMs');
         await testHarness.hoverTimeline(steps: steps, stepMs: stepMs);
+      case AssertWindowsAxTree(:final requiredNames):
+        log.info('TestRunner: ASSERT_WINDOWS_AXTREE names=$requiredNames');
+        await assertWindowsAxTreeNames(requiredNames);
       case ClickMediaHeaderOverlayButtonNative():
         log.info('TestRunner: CLICK_MEDIA_HEADER_OVERLAY_BUTTON_NATIVE');
         await testHarness.clickAnalysisOverlayButtonNative();
       case ClickMediaHeaderOverlayButton():
         log.info('TestRunner: CLICK_MEDIA_HEADER_OVERLAY_BUTTON');
         testHarness.clickAnalysisOverlayButton();
+      case InvokeWindowsAxAction(:final actionName):
+        log.info('TestRunner: INVOKE_WINDOWS_AX_ACTION $actionName');
+        await testHarness.invokeWindowsAxAction(actionName);
+      case PressKeyNative(:final key):
+        log.info('TestRunner: PRESS_KEY_NATIVE $key');
+        await testHarness.pressKeyNative(key);
+      case PressKeyWin32Message(:final key):
+        log.info('TestRunner: PRESS_KEY_WIN32_MESSAGE $key');
+        await testHarness.pressKeyWin32Message(key);
       case ClickMediaHeaderRemoveButton(:final fileId):
         log.info('TestRunner: CLICK_MEDIA_HEADER_REMOVE_BUTTON fileId=$fileId');
         testHarness.clickMediaHeaderRemoveButton(fileId);

@@ -42,7 +42,9 @@ class MainWindowPlaybackCoordinator {
   final bool Function() mounted;
   final MainWindowTimelineMetrics timelineMetrics;
   final Future<void> Function(int ptsUs)? onSeekSettled;
+  final void Function({required int requestId})? onSeekStarted;
   final Future<void> Function({
+    required int requestId,
     required int trackFileId,
     required int ptsUs,
     required int dtsUs,
@@ -81,6 +83,7 @@ class MainWindowPlaybackCoordinator {
     required this.mounted,
     required this.timelineMetrics,
     this.onSeekSettled,
+    this.onSeekStarted,
     this.onSeekPreviewPresented,
     this.onPlaybackTransition,
     this.onNativeCompositorAvailabilityChanged,
@@ -95,6 +98,7 @@ class MainWindowPlaybackCoordinator {
 
   MainWindowStateModel get _state => stateStore.value;
 
+  int? playerId() => _state.playerId;
   int? textureId() => _state.textureId;
   double timelineControlsWidth() => _state.timelineControlsWidth;
   bool isPlaying() => _state.isPlaying;
@@ -331,6 +335,7 @@ class MainWindowPlaybackCoordinator {
     if (_disposed) return;
     final targetPtsUs = _clampSeekTargetUs(ptsUs);
     final seekSerial = ++_seekSerial;
+    onSeekStarted?.call(requestId: seekSerial);
     _seekPreviewEventSerial++;
     _pollSerial++;
     final wasPlaying = isPlaying();
@@ -465,7 +470,8 @@ class MainWindowPlaybackCoordinator {
           active: event.nativeCompositorActive,
         );
       }
-      if (event.nativeCompositorSerial > 0 &&
+      if (Platform.isWindows &&
+          event.nativeCompositorSerial > 0 &&
           event.nativeCompositorPhase == 'preparing') {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_disposed || !mounted()) return;
@@ -499,7 +505,7 @@ class MainWindowPlaybackCoordinator {
         );
         stateStore.setViewportState(
           ViewportDisplayState.error(
-            'Windows native compositor failed: '
+            'Native compositor failed: '
             '${event.nativeCompositorFailure}',
           ),
         );
@@ -585,6 +591,7 @@ class MainWindowPlaybackCoordinator {
     if (callback == null) return;
     unawaited(
       callback(
+        requestId: requestId,
         trackFileId: event.trackFileId!,
         ptsUs: eventPtsUs,
         dtsUs: eventDtsUs,
@@ -822,7 +829,7 @@ class MainWindowPlaybackCoordinator {
   }
 
   Future<void> _pollState() async {
-    if (_disposed || textureId() == null) return;
+    if (_disposed || playerId() == null) return;
     final serial = ++_pollSerial;
     try {
       final snapshot = await _pollPlaybackSnapshot();

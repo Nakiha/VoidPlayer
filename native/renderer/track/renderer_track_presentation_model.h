@@ -4,6 +4,7 @@
 #include "renderer/track/track_perf_baseline.h"
 #include "renderer/track/track_present_policy.h"
 #include "renderer/track/track_preview_policy.h"
+#include "renderer/track/track_playback_pacing.h"
 #include "renderer/track/track_snapshot.h"
 
 #include <array>
@@ -36,7 +37,9 @@ public:
     void populate_draw_tracks(RendererDrawTrackSnapshotList& out) const;
     std::vector<RendererLayoutTrackReference> layout_track_references() const;
     std::vector<RenderLoopTrackDiagnosticSnapshot>
-    render_loop_diagnostics() const;
+        render_loop_diagnostics() const;
+    PlaybackPacingSnapshot playback_pacing_snapshot(
+        int64_t current_pts_us) const;
 
     StepDecisionBuildResult build_step_forward_decision(
         int64_t current_pts_us,
@@ -44,11 +47,15 @@ public:
         PresentDecision& decision) const;
     StepForwardExactSeekTarget choose_step_forward_exact_seek_target(
         int64_t clock_pts_us,
-        const PresentDecision& last_decision) const;
+        const PresentDecision& last_decision,
+        std::optional<int64_t> logical_step_anchor_us = std::nullopt) const;
     bool build_step_backward_decision(int64_t current_pts_us,
                                       const PresentDecision& last_decision,
                                       PresentDecision& decision) const;
     StepBackwardExactSeekTarget choose_step_backward_exact_seek_target(
+        int64_t clock_pts_us,
+        const PresentDecision& last_decision) const;
+    StepBackwardReconstructionPlan build_step_backward_reconstruction_plan(
         int64_t clock_pts_us,
         const PresentDecision& last_decision) const;
     void apply_carry_forward(const PresentDecision& last_decision,
@@ -60,7 +67,7 @@ public:
         int64_t target_pts_us) const;
     std::vector<LayoutTrackGeometryUpdate> update_layout_track_geometry_from_decision(
         const PresentDecision& decision);
-    EmptyBufferEofClamp empty_buffer_eof_clamp(
+    PlaybackEofBoundary playback_eof_boundary(
         const PresentDecision& last_decision) const;
     std::optional<int64_t> next_frame_event_pts_us(int64_t current_pts_us) const;
     RendererPausedCachedDecision paused_cached_decision(

@@ -35,16 +35,27 @@ void PresentationMetricsStore::reset() {
     draw_backend_total_us_.store(0, std::memory_order_relaxed);
     draw_backend_max_us_.store(0, std::memory_order_relaxed);
     draw_p95_us_.store(0, std::memory_order_relaxed);
+    draw_work_total_us_.store(0, std::memory_order_relaxed);
+    draw_work_max_us_.store(0, std::memory_order_relaxed);
+    draw_work_p95_us_.store(0, std::memory_order_relaxed);
+    draw_callback_total_us_.store(0, std::memory_order_relaxed);
+    draw_callback_max_us_.store(0, std::memory_order_relaxed);
+    draw_callback_p95_us_.store(0, std::memory_order_relaxed);
+    draw_blocking_wait_total_us_.store(0, std::memory_order_relaxed);
+    draw_blocking_wait_max_us_.store(0, std::memory_order_relaxed);
+    draw_blocking_wait_p95_us_.store(0, std::memory_order_relaxed);
     draw_backend_p95_us_.store(0, std::memory_order_relaxed);
+    draw_backend_work_total_us_.store(0, std::memory_order_relaxed);
+    draw_backend_work_max_us_.store(0, std::memory_order_relaxed);
+    draw_backend_work_p95_us_.store(0, std::memory_order_relaxed);
     render_wait_us.store(0, std::memory_order_relaxed);
     render_wait_count.store(0, std::memory_order_relaxed);
     frame_copy_us.store(0, std::memory_order_relaxed);
     frame_copy_count.store(0, std::memory_order_relaxed);
     present_publish_us.store(0, std::memory_order_relaxed);
     present_publish_count.store(0, std::memory_order_relaxed);
-    shared_texture_resize_count.store(0, std::memory_order_relaxed);
+    presentation_target_resize_count.store(0, std::memory_order_relaxed);
     device_lost_count.store(0, std::memory_order_relaxed);
-    texture_sharing_failure_count.store(0, std::memory_order_relaxed);
     layout_intent_count.store(0, std::memory_order_relaxed);
     layout_presented_count.store(0, std::memory_order_relaxed);
     layout_deferred_to_playback_count.store(0, std::memory_order_relaxed);
@@ -55,46 +66,87 @@ void PresentationMetricsStore::reset() {
     {
         std::lock_guard<std::mutex> lock(draw_samples_mutex_);
         draw_total_samples_us_.clear();
+        draw_work_samples_us_.clear();
+        draw_callback_samples_us_.clear();
+        draw_blocking_wait_samples_us_.clear();
         draw_backend_samples_us_.clear();
+        draw_backend_work_samples_us_.clear();
     }
 }
 
-void PresentationMetricsStore::record_draw_timing(uint64_t total_us, uint64_t backend_us) {
+void PresentationMetricsStore::record_draw_timing(uint64_t total_us,
+                                                  uint64_t backend_us,
+                                                  uint64_t callback_us,
+                                                  uint64_t backend_blocking_wait_us) {
+    callback_us = std::min(callback_us, total_us);
+    backend_blocking_wait_us =
+        std::min(backend_blocking_wait_us, total_us - callback_us);
+    const uint64_t work_us =
+        total_us - callback_us - backend_blocking_wait_us;
+    const uint64_t backend_work_us =
+        backend_us - std::min(backend_us, backend_blocking_wait_us);
     const auto draw_count = draw_count_.fetch_add(1, std::memory_order_relaxed) + 1;
     draw_total_us_.fetch_add(total_us, std::memory_order_relaxed);
+    draw_work_total_us_.fetch_add(work_us, std::memory_order_relaxed);
+    draw_callback_total_us_.fetch_add(callback_us, std::memory_order_relaxed);
+    draw_blocking_wait_total_us_.fetch_add(
+        backend_blocking_wait_us, std::memory_order_relaxed);
     draw_backend_total_us_.fetch_add(backend_us, std::memory_order_relaxed);
+    draw_backend_work_total_us_.fetch_add(
+        backend_work_us, std::memory_order_relaxed);
     atomic_fetch_max(draw_max_us_, total_us);
+    atomic_fetch_max(draw_work_max_us_, work_us);
+    atomic_fetch_max(draw_callback_max_us_, callback_us);
+    atomic_fetch_max(draw_blocking_wait_max_us_, backend_blocking_wait_us);
     atomic_fetch_max(draw_backend_max_us_, backend_us);
+    atomic_fetch_max(draw_backend_work_max_us_, backend_work_us);
     {
         std::lock_guard<std::mutex> lock(draw_samples_mutex_);
         draw_total_samples_us_.push_back(total_us);
+        draw_work_samples_us_.push_back(work_us);
+        draw_callback_samples_us_.push_back(callback_us);
+        draw_blocking_wait_samples_us_.push_back(backend_blocking_wait_us);
         draw_backend_samples_us_.push_back(backend_us);
+        draw_backend_work_samples_us_.push_back(backend_work_us);
         static constexpr size_t kMaxDrawTimingSamples = 240;
-        if (draw_total_samples_us_.size() > kMaxDrawTimingSamples) {
-            const auto remove_count = draw_total_samples_us_.size() - kMaxDrawTimingSamples;
-            draw_total_samples_us_.erase(
-                draw_total_samples_us_.begin(),
-                draw_total_samples_us_.begin() +
+        const auto trim_samples = [](std::vector<uint64_t>& samples) {
+            if (samples.size() <= kMaxDrawTimingSamples) {
+                return;
+            }
+            const auto remove_count = samples.size() - kMaxDrawTimingSamples;
+            samples.erase(
+                samples.begin(),
+                samples.begin() +
                     static_cast<std::vector<uint64_t>::difference_type>(remove_count));
-        }
-        if (draw_backend_samples_us_.size() > kMaxDrawTimingSamples) {
-            const auto remove_count = draw_backend_samples_us_.size() - kMaxDrawTimingSamples;
-            draw_backend_samples_us_.erase(
-                draw_backend_samples_us_.begin(),
-                draw_backend_samples_us_.begin() +
-                    static_cast<std::vector<uint64_t>::difference_type>(remove_count));
-        }
+        };
+        trim_samples(draw_total_samples_us_);
+        trim_samples(draw_work_samples_us_);
+        trim_samples(draw_callback_samples_us_);
+        trim_samples(draw_blocking_wait_samples_us_);
+        trim_samples(draw_backend_samples_us_);
+        trim_samples(draw_backend_work_samples_us_);
         if (draw_count <= 16 || (draw_count % 16) == 0) {
             draw_p95_us_.store(percentile_95_us(draw_total_samples_us_),
                                std::memory_order_relaxed);
+            draw_work_p95_us_.store(percentile_95_us(draw_work_samples_us_),
+                                    std::memory_order_relaxed);
+            draw_callback_p95_us_.store(
+                percentile_95_us(draw_callback_samples_us_),
+                std::memory_order_relaxed);
+            draw_blocking_wait_p95_us_.store(
+                percentile_95_us(draw_blocking_wait_samples_us_),
+                std::memory_order_relaxed);
             draw_backend_p95_us_.store(percentile_95_us(draw_backend_samples_us_),
                                        std::memory_order_relaxed);
+            draw_backend_work_p95_us_.store(
+                percentile_95_us(draw_backend_work_samples_us_),
+                std::memory_order_relaxed);
         }
     }
 }
 
-void PresentationMetricsStore::note_shared_texture_resize() {
-    shared_texture_resize_count.fetch_add(1, std::memory_order_relaxed);
+void PresentationMetricsStore::note_presentation_target_resize() {
+    presentation_target_resize_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 void PresentationMetricsStore::note_layout_presented() {
@@ -115,10 +167,6 @@ void PresentationMetricsStore::note_layout_stale_completion_drop() {
 
 void PresentationMetricsStore::note_device_lost() {
     device_lost_count.fetch_add(1, std::memory_order_relaxed);
-}
-
-void PresentationMetricsStore::note_texture_sharing_failure() {
-    texture_sharing_failure_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 uint64_t PresentationMetricsStore::note_playing_layout_redraw_suppressed() {
@@ -163,19 +211,36 @@ PresentationBackendMetrics PresentationMetricsStore::snapshot(
     result.draw_count = draw_count_.load(std::memory_order_relaxed);
     result.draw_total_us = draw_total_us_.load(std::memory_order_relaxed);
     result.draw_max_us = draw_max_us_.load(std::memory_order_relaxed);
+    result.draw_work_total_us = draw_work_total_us_.load(std::memory_order_relaxed);
+    result.draw_work_max_us = draw_work_max_us_.load(std::memory_order_relaxed);
+    result.draw_work_p95_us = draw_work_p95_us_.load(std::memory_order_relaxed);
+    result.draw_callback_total_us =
+        draw_callback_total_us_.load(std::memory_order_relaxed);
+    result.draw_callback_max_us =
+        draw_callback_max_us_.load(std::memory_order_relaxed);
+    result.draw_callback_p95_us =
+        draw_callback_p95_us_.load(std::memory_order_relaxed);
+    result.draw_blocking_wait_total_us =
+        draw_blocking_wait_total_us_.load(std::memory_order_relaxed);
+    result.draw_blocking_wait_max_us =
+        draw_blocking_wait_max_us_.load(std::memory_order_relaxed);
+    result.draw_blocking_wait_p95_us =
+        draw_blocking_wait_p95_us_.load(std::memory_order_relaxed);
     result.draw_backend_total_us = draw_backend_total_us_.load(std::memory_order_relaxed);
     result.draw_backend_max_us = draw_backend_max_us_.load(std::memory_order_relaxed);
+    result.draw_backend_work_total_us =
+        draw_backend_work_total_us_.load(std::memory_order_relaxed);
+    result.draw_backend_work_max_us =
+        draw_backend_work_max_us_.load(std::memory_order_relaxed);
     result.render_wait_us = render_wait_us.load(std::memory_order_relaxed);
     result.render_wait_count = render_wait_count.load(std::memory_order_relaxed);
     result.frame_copy_us = frame_copy_us.load(std::memory_order_relaxed);
     result.frame_copy_count = frame_copy_count.load(std::memory_order_relaxed);
     result.present_publish_us = present_publish_us.load(std::memory_order_relaxed);
     result.present_publish_count = present_publish_count.load(std::memory_order_relaxed);
-    result.shared_texture_resize_count =
-        shared_texture_resize_count.load(std::memory_order_relaxed);
+    result.presentation_target_resize_count =
+        presentation_target_resize_count.load(std::memory_order_relaxed);
     result.device_lost_count = device_lost_count.load(std::memory_order_relaxed);
-    result.texture_sharing_failure_count =
-        texture_sharing_failure_count.load(std::memory_order_relaxed);
     result.layout_intent_count = layout_intent_count.load(std::memory_order_relaxed);
     result.layout_presented_count = layout_presented_count.load(std::memory_order_relaxed);
     result.layout_deferred_to_playback_count =
@@ -188,6 +253,8 @@ PresentationBackendMetrics PresentationMetricsStore::snapshot(
     result.last_presented_layout_revision = last_presented_layout_revision;
     result.draw_p95_us = draw_p95_us_.load(std::memory_order_relaxed);
     result.draw_backend_p95_us = draw_backend_p95_us_.load(std::memory_order_relaxed);
+    result.draw_backend_work_p95_us =
+        draw_backend_work_p95_us_.load(std::memory_order_relaxed);
     return result;
 }
 

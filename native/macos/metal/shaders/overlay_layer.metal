@@ -176,7 +176,6 @@ kernel void build_overlay_line_mask_layer(
       clamp(int(floor(snapped_rect_px.y - line_width_px)), 0, int(params.height));
   const int max_y =
       clamp(int(ceil(snapped_rect_px.w + line_width_px)), 0, int(params.height));
-  const float2 rect_min = overlay_unpack_uv16(rect.rect_uv0);
   const float2 rect_max = overlay_unpack_uv16(rect.rect_uv1);
   for (int y = min_y; y < max_y; ++y) {
     const uint row = uint(y) * params.width;
@@ -236,4 +235,3 @@ kernel void composite_overlay_line_layer(
   const float marker = float(center_bits) / 15.0;
   layer.write(float4(marker, 0.0, 0.0, 1.0), gid);
 }
-

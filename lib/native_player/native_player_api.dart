@@ -1,7 +1,6 @@
 import 'package:flutter/services.dart';
 
 import '../app_log.dart';
-import '../viewport/viewport_projection_diagnostics.dart';
 import 'native_player_events.dart';
 import 'native_player_protocol.dart';
 
@@ -49,38 +48,10 @@ abstract interface class NativePlayerApi {
     required bool transparentViewport,
   });
   Future<void> debugFailNativeCompositor({required String reason});
-  Future<void> debugSimulateWindowsDeviceLoss({
-    required String target,
-    required String reason,
-  });
   Future<void> resetNativePerfCounters();
   Future<void> beginNativeInteractionSample({required String label});
   Future<void> endNativeInteractionSample({required String label});
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  });
-  Future<void> prepareNativeCompositorSourceCache({
-    required List<int> sourceSlots,
-    required List<int> sourceOrder,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-    required List<double> displayOffsetX,
-    required List<double> displayOffsetY,
-    required List<double> invDisplaySizeX,
-    required List<double> invDisplaySizeY,
-    required List<double> viewOffsetUvX,
-    required List<double> viewOffsetUvY,
-  });
   Future<void> setNativeAnalysisOverlay(Map<String, Object?> state);
-  Future<void> clearNativeCompositorSourceCache({required String reason});
   Future<void> setViewportBackgroundColor(int colorValue);
   Future<ViewportCapture> captureViewport({String? outputPath});
   Future<ViewportCapture> captureViewportRegion({
@@ -312,17 +283,6 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> debugSimulateWindowsDeviceLoss({
-    required String target,
-    required String reason,
-  }) {
-    return _channel.invokeMethod<void>(
-      NativePlayerMethods.debugSimulateWindowsDeviceLoss,
-      {NativePlayerKeys.target: target, NativePlayerKeys.reason: reason},
-    );
-  }
-
-  @override
   Future<void> resetNativePerfCounters() {
     return _channel.invokeMethod<void>(
       NativePlayerMethods.resetNativePerfCounters,
@@ -342,73 +302,6 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     return _channel.invokeMethod<void>(
       NativePlayerMethods.endNativeInteractionSample,
       {NativePlayerKeys.label: label},
-    );
-  }
-
-  @override
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  }) {
-    return _invokeTimedVoid(
-      NativePlayerMethods.setNativeCompositorViewportTransform,
-      _withCompositorTrace({
-        NativePlayerKeys.enabled: enabled,
-        NativePlayerKeys.scaleX: scaleX,
-        NativePlayerKeys.scaleY: scaleY,
-        NativePlayerKeys.translateX: translateX,
-        NativePlayerKeys.translateY: translateY,
-        NativePlayerKeys.mode: mode,
-        NativePlayerKeys.splitPos: splitPos,
-        NativePlayerKeys.activeTrackCount: activeTrackCount,
-      }),
-    );
-  }
-
-  @override
-  Future<void> prepareNativeCompositorSourceCache({
-    required List<int> sourceSlots,
-    required List<int> sourceOrder,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-    required List<double> displayOffsetX,
-    required List<double> displayOffsetY,
-    required List<double> invDisplaySizeX,
-    required List<double> invDisplaySizeY,
-    required List<double> viewOffsetUvX,
-    required List<double> viewOffsetUvY,
-  }) {
-    ViewportProjectionDiagnostics.instance.record('projectionChannelSend');
-    return _invokeTimedVoid(
-      NativePlayerMethods.prepareNativeCompositorSourceCache,
-      _withCompositorTrace({
-        NativePlayerKeys.sourceSlots: sourceSlots,
-        NativePlayerKeys.sourceOrder: sourceOrder,
-        NativePlayerKeys.mode: mode,
-        NativePlayerKeys.splitPos: splitPos,
-        NativePlayerKeys.activeTrackCount: activeTrackCount,
-        NativePlayerKeys.displayOffsetX: displayOffsetX,
-        NativePlayerKeys.displayOffsetY: displayOffsetY,
-        NativePlayerKeys.invDisplaySizeX: invDisplaySizeX,
-        NativePlayerKeys.invDisplaySizeY: invDisplaySizeY,
-        NativePlayerKeys.viewOffsetUvX: viewOffsetUvX,
-        NativePlayerKeys.viewOffsetUvY: viewOffsetUvY,
-      }),
-    );
-  }
-
-  @override
-  Future<void> clearNativeCompositorSourceCache({required String reason}) {
-    return _invokeTimedVoid(
-      NativePlayerMethods.clearNativeCompositorSourceCache,
-      _withCompositorTrace({NativePlayerKeys.reason: reason}),
     );
   }
 

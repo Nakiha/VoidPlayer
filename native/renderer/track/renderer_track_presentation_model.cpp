@@ -106,6 +106,13 @@ RendererTrackPresentationModel::render_loop_diagnostics() const {
     return snapshot_render_loop_track_diagnostics(registry_.tracks_for_snapshot());
 }
 
+PlaybackPacingSnapshot
+RendererTrackPresentationModel::playback_pacing_snapshot(
+    int64_t current_pts_us) const {
+    return snapshot_track_playback_pacing(
+        registry_.tracks_for_snapshot(), current_pts_us);
+}
+
 StepDecisionBuildResult
 RendererTrackPresentationModel::build_step_forward_decision(
     int64_t current_pts_us,
@@ -122,12 +129,14 @@ RendererTrackPresentationModel::build_step_forward_decision(
 StepForwardExactSeekTarget
 RendererTrackPresentationModel::choose_step_forward_exact_seek_target(
     int64_t clock_pts_us,
-    const PresentDecision& last_decision) const {
+    const PresentDecision& last_decision,
+    std::optional<int64_t> logical_step_anchor_us) const {
     return vr::choose_step_forward_exact_seek_target(
         registry_.tracks_for_snapshot(),
         clock_pts_us,
         registry_.cached_duration(),
-        last_decision);
+        last_decision,
+        logical_step_anchor_us);
 }
 
 bool RendererTrackPresentationModel::build_step_backward_decision(
@@ -143,6 +152,14 @@ RendererTrackPresentationModel::choose_step_backward_exact_seek_target(
     int64_t clock_pts_us,
     const PresentDecision& last_decision) const {
     return vr::choose_step_backward_exact_seek_target(
+        registry_.tracks_for_snapshot(), clock_pts_us, last_decision);
+}
+
+StepBackwardReconstructionPlan
+RendererTrackPresentationModel::build_step_backward_reconstruction_plan(
+    int64_t clock_pts_us,
+    const PresentDecision& last_decision) const {
+    return vr::build_step_backward_reconstruction_plan(
         registry_.tracks_for_snapshot(), clock_pts_us, last_decision);
 }
 
@@ -174,9 +191,10 @@ RendererTrackPresentationModel::update_layout_track_geometry_from_decision(
     return registry_.update_layout_track_geometry_from_decision(decision);
 }
 
-EmptyBufferEofClamp RendererTrackPresentationModel::empty_buffer_eof_clamp(
+PlaybackEofBoundary
+RendererTrackPresentationModel::playback_eof_boundary(
     const PresentDecision& last_decision) const {
-    return compute_empty_buffer_eof_clamp(
+    return compute_playback_eof_boundary(
         registry_.tracks_for_snapshot(), last_decision);
 }
 

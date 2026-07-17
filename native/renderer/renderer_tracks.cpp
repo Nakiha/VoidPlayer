@@ -29,7 +29,6 @@ bool Renderer::Impl::recreate_pipeline_for_seek(std::unique_lock<std::mutex>& st
     spdlog::info("[Renderer] Recreating pipeline for {}", detached.file_path);
 
     present_history_.clear_slot(slot);
-    clear_present_decision_slot(external_d3d12_visible_decision_, slot);
     loop_driver_.force_preview_redraw();
 
     state_lock.unlock();
@@ -111,6 +110,7 @@ int Renderer::Impl::add_track_with_file_id(const std::string& video_path,
 int Renderer::Impl::add_track_internal(const std::string& video_path,
                                  bool use_hardware_decode,
                                  int requested_file_id) {
+    const auto add_started_at = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     RendererTrackAddReservation reservation;
     int64_t current_pts = 0;
@@ -144,18 +144,22 @@ int Renderer::Impl::add_track_internal(const std::string& video_path,
         current_pts = timeline_.playback().clock().current_pts_us();
     }
 
+    const auto pipeline_open_started_at = std::chrono::steady_clock::now();
     auto pipeline = track_controller_.create_pipeline(
         video_path,
         use_hardware_decode,
         surface_state_.backend_kind(),
         presentation_.native_render_device(),
         &presentation_.device_mutex());
+    const auto pipeline_open_finished_at = std::chrono::steady_clock::now();
     if (!pipeline) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         rollback_track_mutation_playback(playback_state, playback_hooks);
         return -1;
     }
     pipeline->generation = reservation.generation;
+    const auto initial_seek_result = prepare_add_track_initial_seek(
+        *pipeline, current_pts, playback_state.was_playing);
     const TrackPipelineStartConfig start_config{
         reservation.file_id,
         0,
@@ -168,12 +172,14 @@ int Renderer::Impl::add_track_internal(const std::string& video_path,
         [this](TrackPipeline& track) { register_track_audio(track); },
         [this](int id) { unregister_track_audio(id); },
     };
+    const auto pipeline_start_started_at = std::chrono::steady_clock::now();
     if (!track_controller_.configure_and_start_pipeline(
             *pipeline, start_config, hooks, "Renderer::add_track")) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         rollback_track_mutation_playback(playback_state, playback_hooks);
         return -1;
     }
+    const auto pipeline_start_finished_at = std::chrono::steady_clock::now();
 
     TrackAddSeekResult seek_result;
     int64_t track_offset_us = 0;
@@ -218,17 +224,21 @@ int Renderer::Impl::add_track_internal(const std::string& video_path,
                 }
             },
         };
-        seek_result = track_controller_.prepare_add_track_seek_to_clock(
-            *track, current_pts, playback_state.was_playing, add_seek_hooks);
+        seek_result = initial_seek_result;
+        if (seek_result.applied) {
+            if (add_seek_hooks.set_audio_decode_paused) {
+                add_seek_hooks.set_audio_decode_paused(track->file_id, true);
+            }
+        } else {
+            seek_result = track_controller_.prepare_add_track_seek_to_clock(
+                *track, current_pts, playback_state.was_playing, add_seek_hooks);
+        }
         track_offset_us = track->offset_us;
 
         // Force redraw, but keep already-presented frames from existing tracks so
         // they remain visible while the new track is still buffering/soft-decoding.
         loop_driver_.force_preview_redraw();
         present_history_.clear_reserved_slot(static_cast<size_t>(reservation.slot));
-        clear_present_decision_slot(
-            external_d3d12_visible_decision_,
-            static_cast<size_t>(reservation.slot));
         loop_driver_.reset_presentation_scheduler();
     }
 
@@ -244,6 +254,18 @@ int Renderer::Impl::add_track_internal(const std::string& video_path,
                  reservation.slot,
                  use_hardware_decode,
                  video_path);
+    const auto add_finished_at = std::chrono::steady_clock::now();
+    spdlog::info(
+        "[TrackAddLatency] slot={} pipeline_open_ms={} pipeline_start_ms={} sync_total_ms={} initial_seek={} target_ms={}",
+        reservation.slot,
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            pipeline_open_finished_at - pipeline_open_started_at).count(),
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            pipeline_start_finished_at - pipeline_start_started_at).count(),
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            add_finished_at - add_started_at).count(),
+        initial_seek_result.applied,
+        initial_seek_result.target_pts_us / 1000);
     return reservation.slot;
 }
 
@@ -292,9 +314,6 @@ void Renderer::Impl::remove_track(int file_id) {
         slot = detach_result.slot;
         remaining = detach_result.remaining;
         present_history_.compact_from(static_cast<size_t>(slot));
-        compact_present_decision_frames(
-            external_d3d12_visible_decision_,
-            static_cast<size_t>(slot));
 
         layout_state_.remove_track(
             file_id, [this](int id) {

@@ -19,8 +19,8 @@ The macOS runner owns:
 - Cocoa app lifecycle and Flutter macOS engine/plugin registration.
 - Sandbox file picking through `NSOpenPanel`.
 - `video_renderer` MethodChannel/EventChannel bridging.
-- FlutterTexture registration and frame notification.
-- `CVPixelBuffer` lifecycle for renderer-owned texture targets.
+- Exported Flutter surface acquisition for final runner composition.
+- `CVPixelBuffer` lifecycle and publication through `MacOSNativeTargetRing`.
 - App data/log path setup and macOS crash diagnostics.
 - macOS package/sign/notarization staging inputs.
 - Security-scoped bookmarks are captured from `NSOpenPanel` selections and
@@ -39,31 +39,33 @@ macOS-specific native code owns the Metal presentation backend:
 
 ```text
 RendererDrawSnapshot
-  -> WgpuMetalPresentationBackend::draw_frame()
-  -> renderer-owned BGRA CVPixelBuffer / IOSurface target
-  -> Flutter Texture
+  -> MetalPresentationBackend::draw_frame()
+  -> offscreen BGRA8/RGBA16F CVPixelBuffer / IOSurface target
+  -> runner-managed native video layer
+  -> runner composition under Flutter's transparent ARGB UI surface
 ```
 
-Swift creates/registers the texture target, installs it into native, and
-releases the texture lock before any native refresh wait. Viewport pan/zoom only
-submits the latest layout intent; `CVDisplayLink` coalesces input, while native
-keeps video source updates tied to media PTS and lets display ticks re-composite
-the retained source cache for pan/zoom/split/overlay changes. Swift must not add
-a second frame pump, playback clock, seek policy, loop policy, or layout
-compositor.
+Native allocates and publishes one complete viewport target; Swift retains the
+latest target and composes it separately from Flutter's UI surface. Viewport
+pan/zoom submits the latest layout intent to the shared renderer, which redraws
+the native target with layout and overlay already applied. Interaction redraws
+are display-link driven and independent of media frame rate; shared native code
+arbitrates them against playback presents so the same full target is not drawn
+twice. The runner display link samples the retained native target and current
+Flutter surface each tick. Swift must not add a playback clock, seek policy,
+loop policy, or layout compositor.
 
 The detailed presentation contract is documented in
-`../native/docs/MACOS_PRESENTATION_BACKEND.md`. The gated HDR/EDR native
-compositor exploration, Flutter fork pin, and local validation commands are
-tracked in `../native/docs/MACOS_HDR_EXPLORATION.md`.
+`../native/docs/MACOS_PRESENTATION_BACKEND.md`; stabilization and local
+validation are tracked in `../native/docs/MACOS_READINESS.md`.
 
 ## Capabilities
 
 | Capability | Current state |
 | --- | --- |
 | Native playback | Feature-complete enough for stabilization/release-readiness. |
-| Presentation | Renderer-owned Metal/CVPixelBuffer/IOSurface normal route. |
-| Hardware decode | VideoToolbox supported for diagnosed codecs, with visible fallback. |
+| Presentation | Runner-composed native Metal video layer behind Flutter ARGB UI. |
+| Hardware decode | VideoToolbox preserves decoder-owned CVPixelBuffer/IOSurface frames for the native Metal path; forced hwdownload remains diagnostic fallback only. |
 | Software fallback | Supported through explicit YUV/BGRA present packages and fallback diagnostics. |
 | Audio | Shared native audio engine and miniaudio output path. |
 | Analysis FFI/cache | Native analysis symbols and cache tooling are linked. |
@@ -86,16 +88,16 @@ python dev.py mac-ui-test --build ui_tests/macos/native_facade_smoke.csv
 Useful macOS smoke areas:
 
 - `native_facade_smoke.csv`: native bridge, metadata, diagnostics.
-- `native_4k60_playback_smoke.csv`: renderer-owned Metal/VideoToolbox cadence.
 - `native_vvc_software_playback_smoke.csv`: software decode fallback visibility.
 - `native_seek_frame_smoke.csv`: seek refresh through native renderer completion.
 - `native_layout_split_smoke.csv`: shared layout through Metal presentation.
-- `native_playing_dual_track_pan_smoke.csv`: playing viewport composite follows
-  display-link cadence while video source updates remain media-clock driven.
-- `native_paused_dual_track_pan_zoom_smoke.csv`: paused source-cache composite
-  follows display-link cadence.
+- `native_playing_dual_track_pan_smoke.csv`: playing complete-target layout and
+  runner composition follow pan updates.
+- `native_paused_dual_track_pan_zoom_smoke.csv`: paused complete-target redraw
+  follows pan/zoom updates.
 - `native_add_track_smoke.csv`: multi-track add/remove/offset diagnostics.
-- `native_callback_stress_smoke.csv`: play/pause, seek storm, destroy/recreate.
+- `native_compositor_lifecycle_stress_smoke.csv`: SDR/HDR target-ring rebuild,
+  seek/resize, track compaction, destroy/recreate, and window-close lifecycle.
 - `analysis_gated_smoke.csv`: analysis FFI and media-header overlay activation present, external
   analysis UI/IPC still gated.
 

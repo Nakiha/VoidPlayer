@@ -187,6 +187,11 @@ struct TrackAddSeekResult {
     SeekType seek_type = SeekType::Keyframe;
 };
 
+TrackAddSeekResult prepare_add_track_initial_seek(
+    TrackPipeline& track,
+    int64_t current_pts_us,
+    bool was_playing);
+
 TrackAddSeekResult prepare_add_track_seek_to_clock(
     TrackPipeline& track,
     int64_t current_pts_us,

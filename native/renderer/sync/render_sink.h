@@ -37,7 +37,10 @@ public:
     /// Set per-track sync offset in microseconds.
     void set_track_offset(size_t slot, int64_t offset_us);
 
+    // Selection is non-mutating. Queue cursors advance only after the native
+    // presentation lane has accepted the corresponding composite.
     PresentDecision evaluate();
+    size_t commit_presented(const PresentDecision& decision);
 
 private:
     Clock& clock_;

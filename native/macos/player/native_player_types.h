@@ -12,7 +12,7 @@ extern "C" {
 typedef struct VPMacOSNativePlayer VPMacOSNativePlayer;
 typedef void (*VPMacOSFrameAvailableCallback)(void* user_data);
 
-#define VP_MACOS_NATIVE_API_VERSION 7u
+#define VP_MACOS_NATIVE_API_VERSION 8u
 
 typedef enum VPMacOSNativeStatus {
   VPMacOSNativeStatusOk = 0,
@@ -52,45 +52,6 @@ static inline void VPMacOSNativeFrameInfoInit(VPMacOSNativeFrameInfo* out) {
   memset(out, 0, sizeof(*out));
   out->struct_size = (uint32_t)sizeof(VPMacOSNativeFrameInfo);
   out->api_version = VP_MACOS_NATIVE_API_VERSION;
-}
-
-typedef struct VPMacOSNativeSourceFrameBakeTarget {
-  void* pixel_buffer;
-  int32_t source_slot;
-  int32_t source_file_id;
-  int32_t width;
-  int32_t height;
-  int32_t drawn;
-  VPMacOSNativeFrameInfo frame_info;
-} VPMacOSNativeSourceFrameBakeTarget;
-
-typedef struct VPMacOSNativeOverlayPrimitiveSnapshot {
-  uint32_t struct_size;
-  uint32_t api_version;
-  uint64_t generation;
-  size_t fill_rect_count;
-  size_t line_rect_count;
-  size_t motion_line_count;
-  int32_t source_baked_overlay_disabled;
-  uint64_t overlay_track_count;
-  uint64_t matched_track_count;
-  uint64_t missing_track_slot_count;
-  uint64_t missing_presented_frame_count;
-  uint64_t missing_frame_index_count;
-  uint64_t invalid_video_size_count;
-  uint64_t overlay_frame_missing_count;
-  uint64_t heatmap_missing_feature_track_count;
-} VPMacOSNativeOverlayPrimitiveSnapshot;
-
-static inline void VPMacOSNativeOverlayPrimitiveSnapshotInit(
-    VPMacOSNativeOverlayPrimitiveSnapshot* out) {
-  if (!out) {
-    return;
-  }
-  memset(out, 0, sizeof(*out));
-  out->struct_size = (uint32_t)sizeof(VPMacOSNativeOverlayPrimitiveSnapshot);
-  out->api_version = VP_MACOS_NATIVE_API_VERSION;
-  out->source_baked_overlay_disabled = 1;
 }
 
 typedef struct VPMacOSNativeTrackInfo {
@@ -149,7 +110,7 @@ typedef struct VPMacOSNativePresentationSchedulerStats {
   int64_t last_deadline_sleep_us;
 } VPMacOSNativePresentationSchedulerStats;
 
-typedef struct VPMacOSNativeRendererOwnedPresentationState {
+typedef struct VPMacOSNativeTargetPresentationState {
   int32_t renderer_initialized;
   int32_t target_installed;
   int32_t backend_available;
@@ -181,7 +142,7 @@ typedef struct VPMacOSNativeRendererOwnedPresentationState {
   uint64_t overlay_cpu_fallback_count;
   char backend_name[64];
   char last_draw_error[256];
-} VPMacOSNativeRendererOwnedPresentationState;
+} VPMacOSNativeTargetPresentationState;
 
 typedef struct VPMacOSNativeTrackDiagnosticInfo {
   int32_t file_id;
@@ -336,25 +297,25 @@ typedef struct VPMacOSNativePlayerPerfStats {
   int32_t software_frame_yuv_plane_layout;
   int32_t software_frame_yuv_sample_alignment;
   uint64_t software_frame_pack_fallback_count;
-  uint64_t renderer_owned_upload_count;
-  uint64_t renderer_owned_upload_failure_count;
-  int64_t renderer_owned_upload_elapsed_ms;
-  double renderer_owned_upload_fps;
-  int64_t renderer_owned_direct_yuv_upload_count;
-  int64_t renderer_owned_cvpixelbuffer_upload_count;
-  int64_t renderer_owned_present_package_upload_count;
-  int64_t renderer_owned_present_package_copy_us;
-  int64_t renderer_owned_present_package_gpu_wait_us;
-  int64_t renderer_owned_present_package_total_us;
-  int32_t renderer_owned_present_package_storage;
+  uint64_t native_target_upload_count;
+  uint64_t native_target_upload_failure_count;
+  int64_t native_target_upload_elapsed_ms;
+  double native_target_upload_fps;
+  int64_t native_target_direct_yuv_upload_count;
+  int64_t native_target_cvpixelbuffer_upload_count;
+  int64_t native_target_present_package_upload_count;
+  int64_t native_target_present_package_copy_us;
+  int64_t native_target_present_package_gpu_wait_us;
+  int64_t native_target_present_package_total_us;
+  int32_t native_target_present_package_storage;
   uint64_t active_track_count;
   uint64_t aggregate_decode_frame_count;
   double aggregate_decode_fps;
   uint64_t cpu_frame_memory_bytes;
   uint64_t packet_queue_memory_bytes;
-  uint64_t renderer_owned_staging_allocation_count;
-  uint64_t renderer_owned_staging_reuse_count;
-  uint64_t renderer_owned_staging_max_bytes;
+  uint64_t native_target_staging_allocation_count;
+  uint64_t native_target_staging_reuse_count;
+  uint64_t native_target_staging_max_bytes;
   uint64_t renderer_draw_count;
   int64_t renderer_draw_avg_us;
   int64_t renderer_draw_max_us;

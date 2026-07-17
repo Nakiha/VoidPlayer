@@ -1,6 +1,7 @@
 #include "native_player_bridge.h"
 
 #include "common/logging.h"
+#include "macos/metal/metal_uploader_bridge.h"
 #include "macos/player/native_player_state.h"
 #include "renderer/decode/frame_color_metadata.h"
 
@@ -123,6 +124,10 @@ void VPMacOSLogProfilerSummary(const char* message) {
     return;
   }
   spdlog::info("[MacOSProfilerSummary] {}", message);
+}
+
+void VPMacOSNativePrewarmMetalPipelines(void) {
+  VPMacOSMetalUploaderPrewarmPipelines();
 }
 
 void VPMacOSNativeAnalysisOverlayClearTracks(void) {
@@ -308,7 +313,7 @@ int VPMacOSNativePlayerAddTrack(VPMacOSNativePlayer* player,
   const int64_t current_pts_us = player->renderer->current_pts_us();
   {
     std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
-    player->renderer_owned_refresh_min_pts_us =
+    player->native_target_refresh_min_pts_us =
         std::max<int64_t>(0, current_pts_us - 500'000);
   }
   write_error(error, error_size, "");

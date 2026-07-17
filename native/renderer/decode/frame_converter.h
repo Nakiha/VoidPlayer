@@ -20,7 +20,7 @@ public:
     ~FrameConverter();
 
     bool init_software(int src_width, int src_height, AVPixelFormat src_format);
-    bool init_hardware(void* d3d_device, void* d3d_context,
+    bool init_hardware(void* native_device, void* native_context,
                        int src_width, int src_height,
                        HwDecodeType hw_type = HwDecodeType::None,
                        bool download_to_cpu = false,
@@ -33,6 +33,10 @@ public:
     bool is_hardware() const { return hardware_converter_ != nullptr; }
     bool downloads_hardware_to_cpu() const {
         return hardware_converter_ && hardware_converter_->downloads_to_cpu();
+    }
+    bool hardware_snapshot_submits_shared_visibility() const {
+        return hardware_converter_ &&
+               hardware_converter_->snapshot_submits_shared_visibility();
     }
     HardwareSnapshotPoolStats snapshot_pool_stats() const;
 

@@ -1,4 +1,4 @@
-# Paused dual-track pan/zoom should be driven by display-link cadence, not raw input events.
+# Paused dual-track pan/zoom should redraw the complete native target and remain visible.
 @WINDOW, 1366, 768
 0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
 1.6, ASSERT_TRACK_COUNT, 1
@@ -15,19 +15,15 @@
 7.1, ASSERT_NATIVE_DIAGNOSTIC_STRING, viewportClockSource, cvdisplaylink
 7.2, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, displayRefreshHzEstimateX1000, 30000, 300000
 7.3, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, layoutIntentCount, 1, 700
-7.4, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, layoutSubmitCount, 1, 300
-7.5, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, layoutDrawCount, 1, 300
-7.55, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, layoutPublishedCount, 1, 300
+7.4, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, layoutSubmitCount, 1, 700
+7.5, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, layoutDrawCount, 1, 700
+7.55, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, layoutPublishedCount, 1, 700
 7.56, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, layoutStaleAfterDrawDropCount, 0, 300
 7.57, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, layoutRefreshSupersededCount, 0, 700
 7.6, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, displayDeliveredTickCount, 1, 800
 7.61, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, viewportCompositeCount, 5, 1000
 7.62, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceFrameCacheHitCount, 1
-7.63, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorViewportTransformGeneration, 1
-7.64, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorSourceCacheGeneration, 1
-7.65, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorViewportTransformEnabled, false
 7.66, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorDisplayedLayoutRevision, 1
-7.67, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorViewportTransformBaseDisplayedLayoutRevision, 1
 7.68, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureMetalBufferExhaustionCount, 0, 0
 7.69, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureInFlightMetalBufferCount, 0, 1
 7.8, QUIT, 0

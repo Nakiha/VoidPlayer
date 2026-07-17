@@ -128,7 +128,7 @@ int send_codec_packet_seh_guarded(AVCodecContext* ctx,
                                   bool lock_device,
                                   std::recursive_mutex* device_mutex) {
     if (lock_device && device_mutex) {
-        std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex);
+        std::lock_guard<std::recursive_mutex> device_lock(*device_mutex);
         return seh_send_packet(ctx, pkt);
     }
     return seh_send_packet(ctx, pkt);
@@ -139,7 +139,7 @@ int receive_codec_frame_seh_guarded(AVCodecContext* ctx,
                                     bool lock_device,
                                     std::recursive_mutex* device_mutex) {
     if (lock_device && device_mutex) {
-        std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex);
+        std::lock_guard<std::recursive_mutex> device_lock(*device_mutex);
         return seh_receive_frame(ctx, frame);
     }
     return seh_receive_frame(ctx, frame);

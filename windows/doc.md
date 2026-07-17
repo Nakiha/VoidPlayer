@@ -1,126 +1,152 @@
-# Windows 宿主层文档
+# Windows 宿主层
 
-本文档是 Windows Flutter runner / Win32 宿主层入口。macOS runner 文档见
-[../macos/doc.md](../macos/doc.md)，shared native renderer 文档见
-[../native/docs/ARCHITECTURE.md](../native/docs/ARCHITECTURE.md)。
+Windows 已恢复可交互的 native SDR 与 HDR/scRGB 播放路径。视频不经过 Flutter Texture；
+runner 使用 DComp 合成 shared renderer 输出的 D3D11 视频 target 与 Flutter engine
+导出的完整 premultiplied-alpha UI surface。
 
-## 模块定位
+## 当前可用内容
 
-`windows/` 是 Flutter Windows embedding 和本项目 Win32 宿主集成层，负责：
+- Win32 Flutter runner、窗口生命周期和插件注册；
+- `video_renderer` MethodChannel/EventChannel 的 Windows native player facade；
+- 顶层 HWND 上 input-transparent 的 DComp final visual；每个新 Flutter generation
+  只消费一次锁定 V1 D3D11 keyed-mutex lease，并复制到 runner 私有 UI cache；
+- 原生文件选择器；
+- standalone native 模块中的 D3D11VA provider、独立 decode device 和稳定 shared snapshot frame storage；
+- runner-owned D3D11 BGRA8 / RGBA16F complete-viewport target ring 状态机；
+- `native/windows/presentation/windows_presentation_backend.*` 中已激活的 D3D11 target lifecycle backend；
+- `windows_d3d11_viewport_renderer.*` 中已验证的 D3D11VA/CPU YUV/BGRA、shared layout 与 SDR/scRGB viewport shader；
+- H.264/H.265/MPEG-2 D3D11VA、multi-track split、play/pause、seek、step、loop、layout 和 native capture 的 runner 集成；
+- timeline 用户 seek 与 macOS facade 一样进入 shared `SeekType::Exact` 管线；UI 时钟与
+  native 实际 presented frame 必须同时落到目标帧，不能只停在目标时间却显示此前关键帧；
+- marks sidebar 等纯横向 viewport 变化在 retained target handoff 时原子同步新 target
+  宽度，避免用旧 viewport rect 拉伸新纹理后再由 Flutter rect 纠正的一帧形变；
+- 基于当前 HWND output 的 DXGI HDR 状态、presentation adapter 和
+  `DISPLAYCONFIG_SDR_WHITE_LEVEL` 的 Auto SDR/scRGB policy。
+- runner message pump 到 `ActionRegistry` 的独立应用快捷键 channel；原始按键仍进入
+  Flutter 文本输入，Windows `HardwareKeyboard` 对已接管快捷键只去重、不重复执行。
 
-- 创建和管理原生 Win32 主窗口
-- 初始化 Flutter engine 和插件注册
-- 提供 `video_renderer` MethodChannel / Texture plugin 桥接
-- 提供 `video_renderer/events` EventChannel 和 native 诊断桥接
-- 按主窗口与 DXGI output 的最大交集探测当前显示器、color space 和亮度元数据
-- 默认解析 Windows Auto presentation：SDR-only 使用 BGRA8 native
-  compositor，PQ/HLG + HDR output 使用 FP16 scRGB；output adapter 不匹配时
-  通过 native compositor 迁移输出设备并使用 cross-adapter GPU-copy bridge，
-  不能桥接时可诊断降级到 native SDR；保留 `sdr`、
-  `native-compositor-sdr` 和 `native-compositor-scrgb` 强制诊断模式，
-  禁止回到 Flutter Texture SDR 视频上屏
-- 监听 display/settings/move/DPI 变化并刷新 output、SDR white level 与
-  D3D12/DComp target，不重建 player
-- 在 D3D12/DComp/source-cache/transport device-loss 时通过 native
-  presentation recovery 原地重建资源，保持 player、track、timeline 和最后
-  成功帧；debug UI 自动化可用
-  `debugSimulateWindowsDeviceLoss` / `DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS`
-  注入合成的 removed/reset/hung 场景
-- 注册 native texture id 仅用于 controller/player lifecycle；Windows 视频
-  上屏不得使用 Flutter Texture fallback
-- 在 compositor opt-in 下消费 Flutter engine 导出的完整 alpha surface
-  的 D3D12 shared texture / fence / generation，并把该 surface 交给
-  wgpu/D3D12 render core 做最终合成；runner 只保留窗口、DComp/DXGI
-  present、HDR/SDR target 和 device-loss 边界
-- 通过既有 source-projection MethodChannel 校验 projection/signature，并让
-  wgpu/D3D12 render core 对最多四轨 source-resolution bundle 实时执行
-  pan/zoom/split；source bundle、Flutter surface 和 overlay primitives 都由
-  wgpu/D3D12 路径消费
-- 投影交互性能应通过 wgpu source consume、Flutter surface consume、
-  present cadence 和 `windowsHotPath*` 诊断证明
-- source-projection overlay 由 wgpu/D3D12 composite pass 消费 video-space
-  primitives；新增 overlay 能力应继续落在 wgpu renderer，pan/zoom/split/order
-  不能在每次 tick 重建 CPU vertices
-- Windows 产品路径使用 D3D12VA + wgpu/D3D12 render core + D3D12 present
-  target。
-- 暴露 high-refresh interaction diagnostics，UI 自动化可用
-  `RESET_NATIVE_PERF_COUNTERS`、`BEGIN_NATIVE_INTERACTION_SAMPLE` 和
-  `END_NATIVE_INTERACTION_SAMPLE` 包住 pan/zoom/split/overlay 采样窗口
-- 暴露 `windowsHotPath*` 汇总诊断，作为 source-projection / retained
-  overlay 热路径的首选排查入口；低刷显示器给功能证据，高刷显示器必须让
-  hot-path gate 通过
-- 引入 native C++ renderer 构建产物和 Windows 运行时依赖
+runner 直接编译并链接 shared native renderer、FFmpeg、D3D11 与 DComp。构建强制要求
+patched Flutter local engine；普通 Flutter SDK
+不提供 surface-export ABI，也不能以 Flutter Texture 作为视频 fallback。
 
-它不负责：
-
-- Flutter UI 状态和交互业务；这些在 [../lib/doc.md](../lib/doc.md)
-- C++ 解码、同步、wgpu/D3D12 渲染器内部架构；这些在
-  [../native/docs/ARCHITECTURE.md](../native/docs/ARCHITECTURE.md)
-
-## 目录结构
+## 平台边界
 
 ```text
-windows/
-├── CMakeLists.txt                 # Windows runner/native/plugin 构建入口
-├── flutter/                       # Flutter 工具生成的 embedding 集成层，通常不手改
-├── runner/                        # Win32 应用宿主和插件桥接代码
-│   ├── flutter_window.*           # Flutter window / plugin 注册
-│   ├── analysis_ffi.*             # VAC2/VACHUNK generation, cache publish, overlay state FFI
-│   ├── main.cpp                   # Windows app 入口
-│   ├── win32_window.*             # Win32 窗口包装
-│   ├── windows_native_compositor.* # DComp/DXGI D3D12 present bridge
-│   └── video_renderer_plugin.*    # video_renderer MethodChannel + Texture bridge
-└── libs/ffmpeg/                   # Windows FFmpeg DLL bundle / import libs
+Dart UI / input
+  -> MethodChannel / EventChannel
+  -> WindowsNativePlayer -> shared Renderer
+  -> WindowsD3D11PresentationBackend -> runner-owned video target ring
+
+Flutter engine -> exported premultiplied-alpha UI surface
+  -> keyed-mutex acquire once per generation -> runner-owned UI cache
+
+video target + Flutter UI surface
+  -> passive WindowsNativeCompositor
+     SDR: BGRA8 + RGB_FULL_G22_NONE_P709
+     HDR: RGBA16F + RGB_FULL_G10_NONE_P709
+  -> DComp
+  -> HWND
 ```
 
-## 边界规则
+runner diagnostics 同时导出 Flutter surface export 的 request、schedule、vsync、present
+与 publish 计数，用来区分 engine frame pump、framework ticker 和 native compositor
+消费。暂停状态下可通过 `resetNativePerfCounters` 重置 publish 采样窗口；inactive viewport
+子树必须关闭动画 ticker，不能仅依赖 `IndexedStack` 隐藏后继续按显示刷新率发布 UI surface。
 
-- `flutter/` 目录由 Flutter 工具生成，除非升级 embedding 或修复生成层问题，否则不要手改。
-- `runner/` 可以处理 Win32 窗口、插件注册、MethodChannel 参数和 Texture bridge。
-- `runner/analysis_ffi.*` 可以做 Dart FFI 参数校验、cache path/publish、工具进程调度和 native analysis handle 管理；具体 VAC2/VACHUNK 格式仍归 `native/analysis`。
-- 复杂渲染/解码/同步逻辑不要写进 `runner/`，应放在 `native/`。
-- runner 只解析 Windows presentation 请求和 display capability；FP16
-  target、颜色映射、Flutter UI 合成和 fallback 应收敛在
-  `PresentationBackend` / wgpu D3D12 backend。
-- source cache 纹理创建、384 MiB budget、bundle generation/lease 和 source
-  pass 由 wgpu D3D12 backend 承载；runner 只校验 wire 参数、维护 signature，
-  并透出迁移期兼容诊断。
-- source-projection 的 `currentPresentedFrame` anchor 由 renderer 在完整
-  source-cache bundle 发布成功后更新；runner 只透出
-  `nativeCompositorPresentedAnchor*` diagnostics，不从 compositor 消费状态反推帧。
-- cross-adapter transport 属于 Windows presentation/native compositor 边界；
-  runner 只传递 producer/output adapter、刷新 display capability，并发布诊断。
-  禁止用 CPU readback、窗口截图或私有 ICC/LUT 替代 GPU-copy bridge 和系统
-  Advanced Color 校准。`VOIDPLAYER_WINDOWS_CROSS_ADAPTER_SYNC=shared-fence`
-  只用于本地多 adapter A/B 证据；默认仍是 event-query，shared-fence 失败必须
-  可诊断回落 event-query。
-- device-loss recovery 属于 `PresentationBackend`、wgpu/D3D12 backend 和
-  `WindowsNativeCompositor` 边界；runner 只暴露 debug 注入、ACK/serial 和
-  diagnostics。恢复失败按 native scRGB -> native SDR -> fail closed
-  的可诊断顺序处理，不销毁 player 或 track model，不恢复 Flutter Texture 视频。
-- 默认 Auto 与所有 native-compositor 模式必须使用锁定的 VoidPlayer
-  Flutter local engine；
-  普通 Flutter SDK 缺少 surface-export ABI，启动时必须 fail closed。
-- active native compositor 必须通过 locked engine 的 compositor-owned
-  surface export stream 接收 Flutter UI 更新；runner 不得在 active
-  状态切回 `mirror`、恢复普通 HWND present，或用 Flutter Texture 视频作为成功
-  fallback。缺少 surface-export ABI 或 requested export generation 超时必须显式
-  fail closed。
-- 禁止 color-key、`WS_EX_LAYERED`、窗口截图、桌面捕获和 child HWND sandwich。
-- 本地 engine 依次使用 `scripts/ci/build_flutter_windows_engine.ps1`、
-  `package_flutter_windows_engine.ps1` 和
-  `bootstrap_flutter_windows_engine.ps1` 构建、校验并安装；DComp runner
-  不能混用普通 Flutter SDK 产物。
-- Flutter UI 行为不要写进 `runner/`，应放在 `lib/`。
-- FFmpeg Windows bundle 的文件位置可以在这里记录，但 FFmpeg/native 管线设计仍归 native 文档维护。
+### HDR 与 SDR UI 合成
 
-## 相关文档
+Windows HDR 使用 linear scRGB 作为 native video 与最终 swap chain 的工作域，不把
+Flutter engine 的 surface 改成 FP16。两条输入合同始终分开：
 
-| 文档 | 内容 |
-|------|------|
-| [../lib/doc.md](../lib/doc.md) | Flutter / Dart UI 层入口 |
-| [../native/docs/ARCHITECTURE.md](../native/docs/ARCHITECTURE.md) | Native C++ 渲染引擎入口 |
-| [../native/docs/WINDOWS_PRESENTATION_BACKEND.md](../native/docs/WINDOWS_PRESENTATION_BACKEND.md) | Windows 产品上屏合同、诊断和追赶路线 |
-| [../native/docs/NATIVE_EVENT_PIPELINE.md](../native/docs/NATIVE_EVENT_PIPELINE.md) | native -> Dart EventChannel 事件通知合同 |
-| [../native/docs/FFI_AND_BINDINGS.md](../native/docs/FFI_AND_BINDINGS.md) | Native FFI / Python 绑定说明 |
-| [../native/docs/MAINTENANCE.md](../native/docs/MAINTENANCE.md) | Native 层维护规范 |
+```text
+native video
+  SDR output -> shared renderer tone-map -> BGRA8 target ring
+  HDR output -> shared renderer linear scRGB -> RGBA16F target ring
+
+Flutter UI
+  engine full surface -> BGRA8 premultiplied sRGB keyed-mutex lease
+                      -> runner-owned BGRA8 cache
+
+final compositor in HDR mode
+  Flutter: unpremultiply -> sRGB EOTF -> DISPLAYCONFIG SDR white / 80 -> premultiply
+  video:   sample already-linear RGBA16F scRGB
+  blend:   Flutter over video -> RGBA16F scRGB DComp swap chain
+```
+
+Flutter 传给 shared renderer 的 viewport 背景色也同步给 final compositor 和 Win32
+client erase fallback。视频矩形之外不使用硬编码黑色；SDR 直接使用该 sRGB 颜色，scRGB
+先按与 Flutter UI 相同的 SDR white 映射转为线性值，避免侧栏或窗口布局变化时暴露黑底。
+
+这样 Windows HDR 开启时，Flutter 的 SDR UI 仍由系统 SDR white level 映射；不会因为
+整张 Flutter surface 被误标成 linear FP16 而变暗。Flutter lease 不是完整 BGRA8
+premultiplied-alpha surface 时 compositor 直接拒绝，不能退回 Flutter Texture、截图或
+color-key 路径。
+
+默认 `VOIDPLAYER_WINDOWS_PRESENTATION_MODE=auto`：只有 media 含 PQ/HLG track、当前
+output 的 HDR 已开启且 output adapter 与 presentation device 匹配时才选择
+`native-compositor-scrgb`；其余情况保持 `native-compositor-sdr`。开发诊断可显式设为
+`native-compositor-sdr` 或 `native-compositor-scrgb`。scRGB swap chain、color space 或
+RGBA16F target ring 建立失败时先显式回落 native SDR；native SDR 也失败则 player 创建
+失败，绝不伪装成正常 Texture 播放。窗口跨显示器、HDR 设置、DPI 和 display topology
+变化会重新探测并原地升降级 target ring。
+
+### 播放帧与交互帧
+
+Windows 与 macOS 一样把两种 cadence 分开：
+
+```text
+video clock / decoded PTS
+  -> shared Renderer playback lane
+  -> 新 source frame
+
+pointer / wheel / layout intent
+  -> WindowsViewportPresentationController (latest-only, max 2 in flight)
+  -> 对 cached source frame 重新做 viewport projection
+
+两条 lane -> runner-owned video target ring
+          -> WindowsNativeCompositor
+          -> DXGI Present(1) / display cadence
+```
+
+因此 24/30/60fps 视频不会限制 zoom、pan、split 等交互的上屏频率。runner 从当前
+monitor mode 读取 nominal refresh 仅用于 diagnostics；真正的节拍由 compositor 的
+DXGI `Present(1)` 提供。在 120Hz 显示器上，连续交互可约每 8.3ms 提交一次。D3D11
+first-frame gate 激活前，layout intent 只更新 shared renderer 状态，不提交尚无 cached
+source frame 的交互重投影；首张 preview 会直接使用最新 layout，且不会把初始化等待误计为
+presentation draw failure。D3D11
+viewport backend 为每个 track 保留 presentation-device source cache：同一视频帧的
+交互重投影不重复跨 D3D11VA device 复制，只更新 layout shader constants 并绘制新
+target。Windows 与 macOS 都使用 6 个 native presentation targets；短暂 ring
+backpressure 会按 latest layout intent 合并并重试，不计作交互失败。compositor 完成
+GPU 消费后的 target 全部由同一条独立 native release queue 回收，不能依赖正在处理
+pointer/MethodChannel 的 Win32 UI 消息泵，也不允许不同 callback 来源分叉回收规则。
+若 shared renderer 在 draw 完成后判定 layout revision 已过期，则不发布旧帧，并在 shared
+presentation completion 边界直接回收该 completed target，避免静默耗尽 ring。
+
+presentation timing 保留端到端 `total` 供诊断，但性能健康判定只使用逐样本拆出的
+`work`：frame callback/compositor `Present(1)` 与 backend 显式 GPU completion wait 分别
+记为 callback/wait，不得再次算作 CPU/GPU 提交压力。这样同步到 60/120Hz 显示节拍不会
+制造压力告警；真正过慢的 backend work、可见掉帧和 backpressure 仍由独立指标告警。
+
+1. Windows presentation 策略只通过 `windows_presentation_backend.*` 的 D3D11 backend 边界进入。
+2. runner 负责窗口、target ring、surface lease 和最终合成，不接管 Flutter frame 调度。
+   与 macOS `MacOSNativeCompositorView` 同构：最终 compositor 不参与 hit-test，
+   不拦截 pointer/keyboard/gesture，不调用 Flutter frame request/pump；它只采样
+   Flutter 自己已经发布的最新 premultiplied-alpha surface。native video frame 只与
+   runner-owned UI cache 合成，不重新 acquire 未更新的 keyed-mutex ring slot。
+3. shared renderer 只提交 `RendererDrawSnapshot`，不暴露 GPU device、shared ring 或
+   external-target draw 旁路。
+4. color、layout、HDR、device-loss 和 UI smoke 使用 Windows 独立验证矩阵。
+
+当前产品链路是 D3D11VA + D3D11。runner 按 presentation policy 分配 BGRA8 或
+RGBA16F target ring，native backend 只绘制完整 viewport；runner 使用 Flutter engine
+现有 V1 D3D11 keyed-mutex lease 更新 runner-owned UI cache，并按 Flutter 报告的
+物理 viewport rect 定位 video surface。V2 的 D3D12 标签在 fork 提供真实
+D3D12 resource/fence 之前不接入。
+
+旧 capture-based DComp compositor、window capture 和 renderer C FFI 已删除。当前
+RGBA16F ring 是 native D3D11 presentation backend 的 active HDR target，不是 Flutter
+Texture 或旧 capture 路径。需要算法参考时看历史提交，不要把旧文件复制回 active tree。
+
+相关合同见 [Sandwich rendering](../native/docs/SANDWICH_RENDERING.md) 和
+[Native architecture](../native/docs/ARCHITECTURE.md)。

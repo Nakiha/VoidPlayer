@@ -1,13 +1,11 @@
 """Named validation gate profiles for VoidPlayer development."""
 
 import argparse
-import os
-import shutil
 import sys
 
 from .check_flutter_fork_protection import check_flutter_fork_protection
 from .check_macos_platform_protection import check_macos_platform_protection
-from .check_windows_fork_protection import check_windows_fork_protection
+from .check_windows_rebuild_boundary import check_windows_rebuild_boundary
 from .paths import ROOT
 from .process import header, run
 from .repo_hygiene import cmd_repo_hygiene
@@ -37,16 +35,6 @@ def _load_ui_profile(name: str, seen: set[str] | None = None) -> list[str]:
 
 def _python_dev(*args: str) -> None:
     run([sys.executable, str(ROOT / "dev.py"), *args], cwd=str(ROOT))
-
-
-def _python_dev_with_env(environment: dict[str, str], *args: str) -> None:
-    child_environment = os.environ.copy()
-    child_environment.update(environment)
-    run(
-        [sys.executable, str(ROOT / "dev.py"), *args],
-        cwd=str(ROOT),
-        env=child_environment,
-    )
 
 
 def _is_macos() -> bool:
@@ -103,286 +91,6 @@ def _run_macos_hdr_edr_smoke() -> None:
     _python_dev("mac-ui-test", "--build", *_load_ui_profile("macos-hdr-edr-smoke"))
 
 
-def _run_macos_wgpu_metal_smoke() -> None:
-    _python_dev_with_env(
-        {"VOIDPLAYER_MACOS_PRESENTATION_MODE": "wgpu-metal"},
-        "mac-ui-test",
-        "--build",
-        "ui_tests/macos/wgpu_metal_default_software_smoke.csv",
-        "ui_tests/macos/wgpu_metal_source_projection_overlay_smoke.csv",
-    )
-    _python_dev_with_env(
-        {
-            "VOIDPLAYER_MACOS_PRESENTATION_MODE": "wgpu-metal",
-            "VOIDPLAYER_WGPU_METAL_ENABLE_VIDEOTOOLBOX": "1",
-        },
-        "mac-ui-test",
-        "ui_tests/macos/wgpu_metal_videotoolbox_smoke.csv",
-        "ui_tests/macos/wgpu_metal_4k60_videotoolbox_smoke.csv",
-    )
-
-
-def _run_macos_wgpu_metal_edr_smoke() -> None:
-    _python_dev_with_env(
-        {
-            "VOIDPLAYER_MACOS_PRESENTATION_MODE": "wgpu-metal",
-            "VOIDPLAYER_WGPU_METAL_ENABLE_VIDEOTOOLBOX": "1",
-        },
-        "mac-ui-test",
-        "--build",
-        "ui_tests/macos/wgpu_metal_hlg_edr_smoke.csv",
-    )
-
-
-def _run_windows_preservation() -> None:
-    _python_dev("test", "--native-only")
-    local_engine_src = os.environ.get(
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH",
-        str(ROOT / ".toolchains" / "flutter" / "engine" / "src"),
-    )
-    local_engine_environment = {
-        "VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "auto",
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH": local_engine_src,
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE": os.environ.get(
-            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE",
-            "host_release",
-        ),
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE": os.environ.get(
-            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE",
-            "host_release",
-        ),
-    }
-    _python_dev_with_env(
-        local_engine_environment,
-        "ui-test",
-        "--build",
-        *_load_ui_profile("windows-preservation-auto"),
-    )
-    _python_dev_with_env(
-        {
-            **local_engine_environment,
-            "VOIDPLAYER_WINDOWS_PRESENTATION_MODE":
-                "native-compositor-scrgb",
-        },
-        "ui-test",
-        *_load_ui_profile("windows-preservation-scrgb"),
-    )
-    _python_dev_with_env(
-        {
-            **local_engine_environment,
-            "VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "sdr",
-        },
-        "ui-test",
-        *_load_ui_profile("windows-preservation-sdr"),
-    )
-
-
-def _generate_windows_hdr_auto_media() -> None:
-    ffmpeg = shutil.which("ffmpeg")
-    if not ffmpeg:
-        print("ERROR: ffmpeg is required for the Windows HDR Auto gate.")
-        sys.exit(1)
-    output_dir = ROOT / "build" / "generated" / "windows"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    common = [
-        ffmpeg,
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-f",
-        "lavfi",
-        "-i",
-        "testsrc2=size=640x360:rate=30",
-        "-frames:v",
-        "120",
-        "-g",
-        "30",
-    ]
-    run(
-        [
-            *common,
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-pix_fmt",
-            "yuv420p",
-            str(output_dir / "hdr_auto_sdr.mp4"),
-        ],
-        cwd=str(ROOT),
-    )
-    run(
-        [
-            *common,
-            "-c:v",
-            "libx265",
-            "-preset",
-            "ultrafast",
-            "-x265-params",
-            (
-                "log-level=error:hdr10=1:repeat-headers=1:"
-                "colorprim=bt2020:transfer=arib-std-b67:"
-                "colormatrix=bt2020nc"
-            ),
-            "-color_primaries",
-            "bt2020",
-            "-colorspace",
-            "bt2020nc",
-            "-color_trc",
-            "arib-std-b67",
-            "-pix_fmt",
-            "yuv420p10le",
-            str(output_dir / "hdr_auto_hlg.mp4"),
-        ],
-        cwd=str(ROOT),
-    )
-
-
-def _run_windows_hdr_auto() -> None:
-    _generate_windows_hdr_auto_media()
-    local_engine_src = os.environ.get(
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH",
-        str(ROOT / ".toolchains" / "flutter" / "engine" / "src"),
-    )
-    _python_dev_with_env(
-        {
-            "VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "auto",
-            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH": local_engine_src,
-            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE": os.environ.get(
-                "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE",
-                "host_release",
-            ),
-            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE": os.environ.get(
-                "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE",
-                "host_release",
-            ),
-        },
-        "ui-test",
-        "--build",
-        "ui_tests/smoke/windows_hdr_auto_runtime.csv",
-    )
-
-
-def _run_windows_display_tests() -> None:
-    run(
-        [
-            str(
-                ROOT
-                / "build/native/standalone/windows-msvc/Release"
-                / "video_renderer_tests.exe"
-            ),
-            "[windows_display]",
-        ],
-        cwd=str(ROOT),
-    )
-
-
-def _run_windows_device_recovery_tests() -> None:
-    run(
-        [
-            str(
-                ROOT
-                / "build/native/standalone/windows-msvc/Release"
-                / "video_renderer_tests.exe"
-            ),
-            "[windows_device_recovery]",
-        ],
-        cwd=str(ROOT),
-    )
-
-
-def _run_windows_high_refresh_tests() -> None:
-    run(
-        [
-            str(
-                ROOT
-                / "build/native/standalone/windows-msvc/Release"
-                / "video_renderer_tests.exe"
-            ),
-            "[windows_high_refresh]",
-        ],
-        cwd=str(ROOT),
-    )
-
-
-def _run_windows_overlay_layer_tests() -> None:
-    run(
-        [
-            str(
-                ROOT
-                / "build/native/standalone/windows-msvc/Release"
-                / "video_renderer_tests.exe"
-            ),
-            "[windows_overlay_layer]",
-        ],
-        cwd=str(ROOT),
-    )
-
-
-def _run_windows_cross_adapter_local() -> None:
-    local_engine_src = os.environ.get(
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH",
-        str(ROOT / ".toolchains" / "flutter" / "engine" / "src"),
-    )
-    local_engine_environment = {
-        "VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "auto",
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH": local_engine_src,
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE": os.environ.get(
-            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE",
-            "host_release",
-        ),
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE": os.environ.get(
-            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE",
-            "host_release",
-        ),
-    }
-    _python_dev_with_env(
-        {
-            **local_engine_environment,
-            "VOIDPLAYER_WINDOWS_CROSS_ADAPTER_SYNC": "event-query",
-        },
-        "ui-test",
-        "--build",
-        "ui_tests/smoke/native_compositor_auto_sdr.csv",
-    )
-    _python_dev_with_env(
-        {
-            **local_engine_environment,
-            "VOIDPLAYER_WINDOWS_CROSS_ADAPTER_SYNC": "shared-fence",
-        },
-        "ui-test",
-        "ui_tests/smoke/native_compositor_auto_sdr.csv",
-    )
-
-
-def _run_windows_high_refresh_local() -> None:
-    _run_windows_high_refresh_tests()
-    _run_windows_overlay_layer_tests()
-    local_engine_src = os.environ.get(
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH",
-        str(ROOT / ".toolchains" / "flutter" / "engine" / "src"),
-    )
-    local_engine_environment = {
-        "VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "native-compositor-scrgb",
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH": local_engine_src,
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE": os.environ.get(
-            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE",
-            "host_release",
-        ),
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE": os.environ.get(
-            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE",
-            "host_release",
-        ),
-    }
-    _python_dev_with_env(
-        local_engine_environment,
-        "ui-test",
-        "--build",
-        *_load_ui_profile("windows-high-refresh-local"),
-    )
-
-
 def _run_macos_release_readiness() -> None:
     _python_dev("package")
     run(
@@ -407,10 +115,6 @@ def cmd_gate(args: argparse.Namespace) -> None:
             _run_macos_native_fast()
         elif _is_windows():
             _python_dev("test", "--native-only", "--github")
-            _run_windows_display_tests()
-            _run_windows_device_recovery_tests()
-            _run_windows_high_refresh_tests()
-            _run_windows_overlay_layer_tests()
             run([sys.executable, "scripts/dev/check_release_compliance.py"], cwd=str(ROOT))
         else:
             _python_dev("test", "--native-only")
@@ -420,14 +124,14 @@ def cmd_gate(args: argparse.Namespace) -> None:
         cmd_repo_hygiene(argparse.Namespace())
         return
 
-    if profile == "windows-fork-protection":
-        errors = check_windows_fork_protection()
+    if profile == "windows-rebuild-boundary":
+        errors = check_windows_rebuild_boundary()
         if errors:
-            print("Windows fork protection check failed:")
+            print("Windows rebuild boundary check failed:")
             for error in errors:
                 print(f"  - {error}")
             sys.exit(1)
-        print("Windows fork protection check passed.")
+        print("Windows rebuild boundary check passed.")
         return
 
     if profile == "flutter-fork-protection":
@@ -486,42 +190,6 @@ def cmd_gate(args: argparse.Namespace) -> None:
         _run_macos_hdr_edr_smoke()
         return
 
-    if profile == "macos-wgpu-metal-smoke":
-        if not _is_macos():
-            _unsupported(profile, "macOS")
-        _run_macos_wgpu_metal_smoke()
-        return
-
-    if profile == "macos-wgpu-metal-edr-smoke":
-        if not _is_macos():
-            _unsupported(profile, "macOS with an EDR-capable display")
-        _run_macos_wgpu_metal_edr_smoke()
-        return
-
-    if profile == "windows-preservation":
-        if not _is_windows():
-            _unsupported(profile, "Windows")
-        _run_windows_preservation()
-        return
-
-    if profile == "windows-hdr-auto":
-        if not _is_windows():
-            _unsupported(profile, "Windows with HDR enabled")
-        _run_windows_hdr_auto()
-        return
-
-    if profile == "windows-cross-adapter-local":
-        if not _is_windows():
-            _unsupported(profile, "Windows with multiple GPU outputs")
-        _run_windows_cross_adapter_local()
-        return
-
-    if profile == "windows-high-refresh-local":
-        if not _is_windows():
-            _unsupported(profile, "Windows with a high-refresh display")
-        _run_windows_high_refresh_local()
-        return
-
     if profile == "macos-release-readiness":
         if not _is_macos():
             _unsupported(profile, "macOS")
@@ -537,7 +205,7 @@ def cmd_gate(args: argparse.Namespace) -> None:
             _run_macos_ui_nightly()
             _run_macos_release_readiness()
         elif _is_windows():
-            _run_windows_preservation()
+            _python_dev("test", "--native-only", "--github")
             _python_dev("package")
             run([sys.executable, "scripts/dev/check_release_compliance.py"], cwd=str(ROOT))
         else:

@@ -136,9 +136,9 @@ void main() {
   });
 
   testWidgets(
-    'Windows native compositor never exposes Flutter texture fallback',
+    'macOS native compositor hides Flutter texture only while active',
     (tester) async {
-      if (!Platform.isMacOS && !Platform.isWindows) return;
+      if (!Platform.isMacOS) return;
       final feedback = AppFeedbackController();
       addTearDown(feedback.dispose);
 
@@ -160,10 +160,7 @@ void main() {
         ),
       );
 
-      expect(
-        find.byType(Texture),
-        Platform.isWindows ? findsNothing : findsOneWidget,
-      );
+      expect(find.byType(Texture), findsOneWidget);
 
       await tester.pumpWidget(
         _localized(
@@ -190,7 +187,7 @@ void main() {
   testWidgets(
     'native compositor viewport rect follows sidebar and timeline layout',
     (tester) async {
-      if (!Platform.isMacOS && !Platform.isWindows) return;
+      if (!Platform.isMacOS) return;
       final feedback = AppFeedbackController();
       addTearDown(feedback.dispose);
       final rects = <({int left, int top, int width, int height})>[];

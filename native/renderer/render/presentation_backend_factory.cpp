@@ -1,11 +1,10 @@
 #include "renderer/render/presentation_backend_factory.h"
 
-#ifdef _WIN32
-#include "windows/wgpu/d3d12_presentation_backend.h"
-#endif
-
 #ifdef __APPLE__
-#include "macos/wgpu/wgpu_metal_presentation_backend.h"
+#include "macos/metal/metal_presentation_backend.h"
+#endif
+#ifdef _WIN32
+#include "windows/presentation/windows_presentation_backend.h"
 #endif
 
 namespace vr {
@@ -15,9 +14,9 @@ class DefaultPresentationBackendProvider final : public PresentationBackendProvi
 public:
     bool supports(RenderBackendKind kind) const override {
 #ifdef _WIN32
-        return kind == RenderBackendKind::WgpuD3D12;
+        return kind == RenderBackendKind::NativeD3D11;
 #elif defined(__APPLE__)
-        return kind == RenderBackendKind::WgpuMetal;
+        return kind == RenderBackendKind::Metal;
 #else
         (void)kind;
         return false;
@@ -26,12 +25,12 @@ public:
 
     std::unique_ptr<PresentationBackend> create(RenderBackendKind kind) const override {
 #ifdef _WIN32
-        if (kind == RenderBackendKind::WgpuD3D12) {
-            return std::make_unique<WgpuD3D12PresentationBackend>();
+        if (kind == RenderBackendKind::NativeD3D11) {
+            return create_windows_presentation_backend();
         }
 #elif defined(__APPLE__)
-        if (kind == RenderBackendKind::WgpuMetal) {
-            return std::make_unique<vp_macos::WgpuMetalPresentationBackend>();
+        if (kind == RenderBackendKind::Metal) {
+            return vp_macos::create_metal_presentation_backend();
         }
 #else
         (void)kind;

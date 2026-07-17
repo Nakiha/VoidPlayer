@@ -118,30 +118,6 @@ void main() {
       expect(runtime.quitCodes, [0]);
     });
 
-    test('simulated Windows device loss reaches the native API', () async {
-      final api = _FakeNativePlayerApi();
-      final controller = NativePlayerController(api: api);
-      await controller.createPlayer(['a.mp4'], width: 320, height: 180);
-
-      final runtime = _FakeRuntime();
-      final runner = TestRunner(
-        scriptPath: _writeScript('''
-0.0,DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS,compositor,contract-test
-0.1,QUIT,0
-'''),
-        automation: _bridge(controller),
-        runtime: runtime,
-      );
-
-      await runner.run();
-
-      expect(
-        api.calls,
-        contains('debugSimulateWindowsDeviceLoss:compositor:contract-test'),
-      );
-      expect(runtime.quitCodes, [0]);
-    });
-
     test('wait presented frame range polls until frame enters range', () async {
       final api = _FakeNativePlayerApi(
         presentedFrames: [
@@ -303,7 +279,7 @@ class _FakeNativePlayerApi implements NativePlayerApi {
     int? viewportBackgroundColor,
   }) async {
     calls.add('createPlayer:${width}x$height:${videoPaths.join('|')}');
-    return const CreatePlayerResult(textureId: 1, tracks: []);
+    return const CreatePlayerResult(playerId: 1, tracks: []);
   }
 
   @override
@@ -378,14 +354,6 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> debugSimulateWindowsDeviceLoss({
-    required String target,
-    required String reason,
-  }) async {
-    calls.add('debugSimulateWindowsDeviceLoss:$target:$reason');
-  }
-
-  @override
   Future<void> resetNativePerfCounters() async {
     calls.add('resetNativePerfCounters');
   }
@@ -401,39 +369,7 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  }) async {}
-
-  @override
-  Future<void> prepareNativeCompositorSourceCache({
-    required List<int> sourceSlots,
-    required List<int> sourceOrder,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-    required List<double> displayOffsetX,
-    required List<double> displayOffsetY,
-    required List<double> invDisplaySizeX,
-    required List<double> invDisplaySizeY,
-    required List<double> viewOffsetUvX,
-    required List<double> viewOffsetUvY,
-  }) async {}
-
-  @override
   Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) async {}
-
-  @override
-  Future<void> clearNativeCompositorSourceCache({
-    required String reason,
-  }) async {}
 
   @override
   Future<void> setViewportBackgroundColor(int colorValue) async {}

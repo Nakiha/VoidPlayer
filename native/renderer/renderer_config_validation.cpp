@@ -16,37 +16,43 @@ RendererConfigValidationResult invalid(std::string message) {
                         std::move(message));
 }
 
-RendererConfigValidationResult validate_headless_backend(
+RendererConfigValidationResult validate_offscreen_backend(
     const RendererBackendInterop& backend) {
     const auto budget = default_native_resource_budget();
     switch (backend.type) {
     case RendererBackendType::Metal:
-        return invalid("macOS Metal renderer backend has been removed; use wgpu-metal");
-    case RendererBackendType::WgpuMetal:
 #ifdef __APPLE__
         if (backend.output == nullptr) {
-            return invalid("headless wgpu-metal renderer requires an output target");
+            return invalid("offscreen metal renderer requires an output target");
         }
         if (backend.max_track_slots < 0 ||
             static_cast<size_t>(backend.max_track_slots) > budget.max_tracks) {
-            return invalid("headless wgpu-metal renderer max track slots out of range");
+            return invalid("offscreen metal renderer max track slots out of range");
         }
         return ok_result();
 #else
-        return invalid("wgpu-metal renderer is only supported on macOS");
+        return invalid("metal renderer is only supported on macOS");
 #endif
-    case RendererBackendType::WgpuD3D12:
+    case RendererBackendType::NativeD3D11:
 #ifdef _WIN32
         if (backend.output == nullptr) {
-            return invalid("headless wgpu-d3d12 renderer requires an output target");
+            return invalid("native-d3d11 renderer requires a target ring");
         }
-        if (backend.max_track_slots < 0 ||
+        if (backend.max_track_slots < 1 ||
             static_cast<size_t>(backend.max_track_slots) > budget.max_tracks) {
-            return invalid("headless wgpu-d3d12 renderer max track slots out of range");
+            return invalid("native-d3d11 renderer max track slots out of range");
         }
         return ok_result();
 #else
-        return invalid("wgpu-d3d12 renderer is only supported on Windows");
+        return invalid("native-d3d11 renderer is only supported on Windows");
+#endif
+    case RendererBackendType::NativeD3D12:
+#ifdef _WIN32
+        return invalid(
+            "windows native-d3d12 renderer backend is reserved for the "
+            "runner-composed sandwich path and is not implemented yet");
+#else
+        return invalid("native-d3d12 renderer is only supported on Windows");
 #endif
     case RendererBackendType::Unknown:
     case RendererBackendType::Vulkan:
@@ -114,11 +120,11 @@ RendererConfigValidationResult validate_renderer_config(
         }
     }
 
-    if (config.headless) {
+    if (config.offscreen) {
         if (config.hwnd != nullptr) {
-            return invalid("headless renderer must not also receive an HWND");
+            return invalid("offscreen renderer must not also receive an HWND");
         }
-        if (auto result = validate_headless_backend(config.backend); !result.ok) {
+        if (auto result = validate_offscreen_backend(config.backend); !result.ok) {
             return result;
         }
     } else if (config.hwnd == nullptr) {

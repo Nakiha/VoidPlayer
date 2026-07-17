@@ -47,6 +47,9 @@ public:
     // Render thread reads frames
     std::optional<TextureFrame> peek(int offset = 0) const;
     bool advance();
+    // Positions a reconstructed seek window without claiming the skipped
+    // history frame was presented.
+    bool advance_history_cursor();
     bool retreat();
     bool can_retreat() const;
     size_t available_retreat_count() const;

@@ -2,6 +2,7 @@
 
 #include "renderer/track/track_pipeline_factory.h"
 #include "renderer/track/track_lifecycle.h"
+#include "renderer/track/track_playback_pacing.h"
 #include "renderer/track/track_preview_policy.h"
 #include "renderer/track/track_present_policy.h"
 #include "renderer/track/track_snapshot.h"
@@ -76,9 +77,10 @@ public:
     std::vector<RendererLayoutTrackReference> layout_track_references() const;
     bool has_active_tracks() const;
     size_t count() const;
-    bool has_preroll_blocking_track() const;
     bool has_buffering_track() const;
     std::vector<RenderLoopTrackDiagnosticSnapshot> render_loop_diagnostics() const;
+    PlaybackPacingSnapshot playback_pacing_snapshot(
+        int64_t current_pts_us) const;
     void set_video_decode_paused(
         bool paused,
         const std::function<void(size_t slot, TrackPipeline& track, bool paused)>&
@@ -104,13 +106,17 @@ public:
         const PresentDecision& last_decision);
     StepForwardExactSeekTarget choose_step_forward_exact_seek_target(
         int64_t clock_pts_us,
-        const PresentDecision& last_decision) const;
+        const PresentDecision& last_decision,
+        std::optional<int64_t> logical_step_anchor_us = std::nullopt) const;
     bool build_step_backward_decision(int64_t current_pts_us,
                                       const PresentDecision& last_decision,
                                       PresentDecision& decision) const;
     StepDecisionApplication apply_step_backward_decision(
         const PresentDecision& decision);
     StepBackwardExactSeekTarget choose_step_backward_exact_seek_target(
+        int64_t clock_pts_us,
+        const PresentDecision& last_decision) const;
+    StepBackwardReconstructionPlan build_step_backward_reconstruction_plan(
         int64_t clock_pts_us,
         const PresentDecision& last_decision) const;
     void apply_carry_forward(const PresentDecision& last_decision,
@@ -122,7 +128,7 @@ public:
         int64_t target_pts_us) const;
     std::vector<LayoutTrackGeometryUpdate> update_layout_track_geometry_from_decision(
         const PresentDecision& decision);
-    EmptyBufferEofClamp empty_buffer_eof_clamp(
+    PlaybackEofBoundary playback_eof_boundary(
         const PresentDecision& last_decision) const;
     std::optional<int64_t> next_frame_event_pts_us(int64_t current_pts_us) const;
     RendererPausedCachedDecision paused_cached_decision(
@@ -171,12 +177,15 @@ public:
         SeekType type,
         bool playing,
         bool force_recreate_paused_hevc,
-        const RendererTrackSeekHooks& hooks);
+        const RendererTrackSeekHooks& hooks,
+        const StepBackwardTrackSeekTargets* target_overrides = nullptr);
     bool apply_seek_to_all_and_log(int64_t target_pts_us,
                                    SeekType type,
                                    bool playing,
                                    bool force_recreate_paused_hevc,
-                                   const RendererTrackSeekHooks& hooks);
+                                   const RendererTrackSeekHooks& hooks,
+                                   const StepBackwardTrackSeekTargets*
+                                       target_overrides = nullptr);
 
     int64_t cached_duration_us() const;
     void set_cached_duration_us(int64_t duration_us);

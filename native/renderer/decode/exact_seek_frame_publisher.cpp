@@ -4,8 +4,6 @@
 #include "renderer/decode/decoded_frame_publisher.h"
 #include "renderer/decode/exact_seek_candidate_store.h"
 #include "renderer/decode/exact_seek_publish_policy.h"
-#include "renderer/decode/hw/hw_decode_provider.h"
-
 #include <spdlog/spdlog.h>
 
 #include <optional>
@@ -18,9 +16,6 @@ ExactSeekPreviewFramePublishResult publish_exact_seek_preview_frames(
     size_t selected,
     TrackBuffer& output_buffer,
     DecodedFramePublisher& publisher,
-    bool hw_enabled,
-    HwDecodeProvider* hw_provider,
-    bool& hw_visibility_flush_pending,
     size_t max_window_frames) {
     ExactSeekPreviewFramePublishResult result;
     if (selected >= candidates.reorder_count()) {
@@ -41,17 +36,12 @@ ExactSeekPreviewFramePublishResult publish_exact_seek_preview_frames(
     }
 
     result.can_publish = true;
-    for (size_t i = selected; i < window.end; ++i) {
+    for (size_t i = window.start; i < window.end; ++i) {
         auto& candidate = candidates.reorder_at(i);
         if (!candidate.frame) {
             continue;
         }
-        if (i == selected && hw_enabled && hw_provider) {
-            hw_provider->wait_idle();
-            hw_visibility_flush_pending = false;
-        } else {
-            publisher.flush_before_publish_if_needed(true);
-        }
+        publisher.flush_before_publish_if_needed(true);
 
         std::optional<TextureFrame> frame;
         if (i == selected &&
@@ -66,7 +56,27 @@ ExactSeekPreviewFramePublishResult publish_exact_seek_preview_frames(
             result.conversion_failed = true;
             return result;
         }
+        if (i < selected) {
+            ++result.history_count;
+        }
     }
+    for (size_t i = 0; i < result.history_count; ++i) {
+        if (!output_buffer.advance_history_cursor()) {
+            spdlog::error(
+                "[DecodeThread] Failed to position exact-seek predecessor history");
+            candidates.clear();
+            result.conversion_failed = true;
+            return result;
+        }
+    }
+
+    const auto predecessor = output_buffer.peek(-1);
+    const auto current = output_buffer.peek(0);
+    spdlog::info(
+        "[DecodeThread] Exact seek publish cursor: history={} predecessor_pts={:.6f}s current_pts={:.6f}s",
+        result.history_count,
+        predecessor.has_value() ? predecessor->pts_us / 1e6 : -1.0,
+        current.has_value() ? current->pts_us / 1e6 : -1.0);
 
     candidates.move_reorder_tail_to_pending(window.end);
     result.published_count = window.published;

@@ -23,14 +23,6 @@ on:
         options:
           - "false"
           - "true"
-      windows_ui_preservation:
-        description: "Run the Windows runner UI preservation gate"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
   schedule:
     - cron: "17 20 * * 0"
   push:
@@ -132,71 +124,6 @@ jobs:
         shell: pwsh
         run: python dev.py gate pr-fast
 
-  windows-ui-preservation:
-    name: Windows UI preservation
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_ui_preservation == 'true' }}
-    needs: ffmpeg-artifacts
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          lfs: true
-          submodules: false
-          fetch-depth: 0
-
-      - name: Initialize analysis submodules
-        shell: pwsh
-        run: python scripts/ci/init_analysis_submodules.py
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: ci-ffmpeg-artifacts
-          path: build/ci-ffmpeg
-
-      - name: Restore and verify Windows FFmpeg artifact
-        shell: pwsh
-        run: scripts/ci/restore_ffmpeg_windows.ps1
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          update: true
-          install: >-
-            base-devel
-            diffutils
-            make
-            nasm
-            pkgconf
-
-      - name: Install Python test/build dependencies
-        run: python -m pip install --upgrade pip pytest pybind11
-
-      - uses: actions/cache@v5
-        with:
-          path: .toolchains/flutter
-          key: voidplayer-flutter-${{ runner.os }}-${{ hashFiles('toolchains/flutter.lock.json') }}
-
-      - name: Bootstrap pinned Flutter toolchain
-        shell: pwsh
-        run: scripts/ci/bootstrap_flutter_toolchain.ps1
-
-      - name: Check release compliance notices
-        shell: pwsh
-        run: python scripts/dev/check_release_compliance.py
-
-      - name: Run Windows UI preservation smoke
-        shell: pwsh
-        env:
-          VOIDPLAYER_ALLOW_MISSING_FFMPEG_ANALYZER: "1"
-        run: >-
-          python dev.py ui-test --build
-          ui_tests/smoke/basic.csv
-          ui_tests/smoke/native_seek_preview_event.csv
-
   macos-native-test:
     name: macOS native test
     needs: ffmpeg-artifacts
@@ -295,7 +222,6 @@ jobs:
           -DBUILD_ANALYSIS=ON
           -DBUILD_ANALYSIS_TESTS=OFF
           -DBUILD_TESTS=ON
-          -DBUILD_FFI=OFF
           -DBUILD_PYTHON=OFF
 
       - name: Build macOS analysis smokes
@@ -364,39 +290,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: python-off-ffi-on-tests-on
+          - name: release-analysis-tests
             build_python: "OFF"
-            build_ffi: "ON"
             build_tests: "ON"
             build_analysis: "ON"
             config: "Release"
-          - name: debug-python-off-ffi-on-tests-on
+          - name: debug-analysis-tests
             build_python: "OFF"
-            build_ffi: "ON"
             build_tests: "ON"
             build_analysis: "ON"
             config: "Debug"
-          - name: python-off-ffi-on-tests-off
+          - name: release-renderer-tests
             build_python: "OFF"
-            build_ffi: "ON"
-            build_tests: "OFF"
-            build_analysis: "ON"
-            config: "Release"
-          - name: python-off-ffi-off-tests-off
-            build_python: "OFF"
-            build_ffi: "OFF"
-            build_tests: "OFF"
-            build_analysis: "ON"
-            config: "Release"
-          - name: analysis-off-ffi-on-tests-off
-            build_python: "OFF"
-            build_ffi: "ON"
-            build_tests: "OFF"
-            build_analysis: "OFF"
-            config: "Release"
-          - name: analysis-off-ffi-off-tests-on
-            build_python: "OFF"
-            build_ffi: "OFF"
             build_tests: "ON"
             build_analysis: "OFF"
             config: "Release"
@@ -426,7 +331,6 @@ jobs:
         run: >
           cmake -S native -B "native/build-ci-${{ matrix.name }}"
           -DBUILD_PYTHON=${{ matrix.build_python }}
-          -DBUILD_FFI=${{ matrix.build_ffi }}
           -DBUILD_TESTS=${{ matrix.build_tests }}
           -DBUILD_ANALYSIS=${{ matrix.build_analysis }}
           -DBUILD_ANALYSIS_TESTS=OFF
@@ -435,13 +339,3 @@ jobs:
       - name: Build native
         shell: pwsh
         run: cmake --build "native/build-ci-${{ matrix.name }}" --config ${{ matrix.config }} --parallel
-
-      - name: Run FFI ABI smoke
-        if: ${{ matrix.build_ffi == 'ON' && matrix.build_tests == 'ON' }}
-        shell: pwsh
-        run: ctest --test-dir "native/build-ci-${{ matrix.name }}" -C ${{ matrix.config }} --output-on-failure -R test_ffi_c
-
-      - name: Check FFI dist smoke
-        if: ${{ matrix.build_ffi == 'ON' }}
-        shell: pwsh
-        run: python scripts/dev/check_native_dist.py --ffi "native/build-ci-${{ matrix.name }}/dist/ffi"

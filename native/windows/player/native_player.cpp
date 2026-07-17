@@ -1,539 +1,289 @@
 #include "windows/player/native_player.h"
-#include "audio/audio_output_factory.h"
-#include "renderer/renderer_config_validation.h"
+
 #include <mutex>
+#include <utility>
 
 namespace vr {
 
-NativePlayer::NativePlayer()
-    : playback_(create_default_audio_output)
-    , renderer_(playback_) {}
+WindowsNativePlayer::WindowsNativePlayer()
+    : renderer_(std::make_unique<Renderer>()) {}
 
-NativePlayer::~NativePlayer() {
-    shutdown();
+WindowsNativePlayer::~WindowsNativePlayer() {
+  shutdown();
 }
 
-bool NativePlayer::initialize(const RendererConfig& config) {
-    std::unique_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (state_ != State::Created || renderer_.is_initialized()) {
-        return false;
-    }
-
-    if (!validate_renderer_config(config)) {
-        return false;
-    }
-
-    state_ = State::Initializing;
-    playback_.start_session();
-    if (!renderer_.initialize(config)) {
-        playback_.stop_session();
-        state_ = State::Created;
-        return false;
-    }
-    state_ = State::Initialized;
-    return true;
+bool WindowsNativePlayer::initialize(const RendererConfig& config) {
+  std::unique_lock<std::shared_mutex> lock(mutex_);
+  if (ready_locked()) {
+    return false;
+  }
+  if (!renderer_) {
+    renderer_ = std::make_unique<Renderer>();
+  }
+  return renderer_->initialize(config);
 }
 
-void NativePlayer::shutdown() {
-    std::unique_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (state_ == State::ShuttingDown) {
-        return;
-    }
-    state_ = State::ShuttingDown;
-    renderer_.shutdown();
-    playback_.stop_session();
-    state_ = State::Created;
+void WindowsNativePlayer::shutdown() {
+  std::unique_lock<std::shared_mutex> lock(mutex_);
+  if (renderer_) {
+    renderer_->set_frame_callback({});
+    renderer_->set_frame_failure_callback({});
+    renderer_->set_event_callback({});
+    renderer_->shutdown();
+  }
 }
 
-bool NativePlayer::renderer_ready_locked() const {
-    return state_ == State::Initialized && renderer_.is_initialized();
+bool WindowsNativePlayer::ready_locked() const {
+  return renderer_ && renderer_->is_initialized();
 }
 
-void NativePlayer::play() {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return;
-    }
-    renderer_.play();
+bool WindowsNativePlayer::initialized() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked();
 }
 
-void NativePlayer::pause() {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return;
-    }
-    renderer_.pause();
+#define VP_WINDOWS_PLAYER_VOID(method, ...)             \
+  do {                                                   \
+    std::shared_lock<std::shared_mutex> lock(mutex_);    \
+    if (ready_locked()) {                                \
+      renderer_->method(__VA_ARGS__);                    \
+    }                                                    \
+  } while (false)
+
+void WindowsNativePlayer::play() { VP_WINDOWS_PLAYER_VOID(play); }
+void WindowsNativePlayer::pause() { VP_WINDOWS_PLAYER_VOID(pause); }
+void WindowsNativePlayer::seek(int64_t pts_us, int64_t request_id) {
+  // User-visible timeline seeks have the same exact-frame contract as the
+  // macOS facade. Keyframe seek is only a decoder entry point inside the
+  // shared exact-seek pipeline; exposing it here leaves the clock at the
+  // requested time while presenting an earlier keyframe.
+  VP_WINDOWS_PLAYER_VOID(seek, pts_us, SeekType::Exact, request_id);
+}
+void WindowsNativePlayer::step_forward() {
+  VP_WINDOWS_PLAYER_VOID(step_forward);
+}
+void WindowsNativePlayer::step_backward() {
+  VP_WINDOWS_PLAYER_VOID(step_backward);
+}
+void WindowsNativePlayer::set_speed(double speed) {
+  VP_WINDOWS_PLAYER_VOID(set_speed, speed);
+}
+void WindowsNativePlayer::set_loop_range(bool enabled,
+                                         int64_t start_us,
+                                         int64_t end_us) {
+  VP_WINDOWS_PLAYER_VOID(set_loop_range, enabled, start_us, end_us);
+}
+void WindowsNativePlayer::set_audible_track(int file_id) {
+  VP_WINDOWS_PLAYER_VOID(set_audible_track, file_id);
+}
+void WindowsNativePlayer::set_track_offset(int file_id, int64_t offset_us) {
+  VP_WINDOWS_PLAYER_VOID(set_track_offset, file_id, offset_us);
 }
 
-void NativePlayer::seek(int64_t target_pts_us,
-                        SeekType type,
-                        int64_t request_id) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return;
-    }
-    renderer_.seek(target_pts_us, type, request_id);
+int64_t WindowsNativePlayer::track_offset_us(int file_id) const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->track_offset_us(file_id) : 0;
 }
 
-void NativePlayer::set_speed(double speed) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return;
-    }
-    renderer_.set_speed(speed);
+void WindowsNativePlayer::set_background_color(float red,
+                                               float green,
+                                               float blue,
+                                               float alpha) {
+  VP_WINDOWS_PLAYER_VOID(set_background_color, red, green, blue, alpha);
+}
+void WindowsNativePlayer::apply_layout(const LayoutState& layout) {
+  VP_WINDOWS_PLAYER_VOID(apply_layout, layout);
+}
+void WindowsNativePlayer::apply_interaction_layout(const LayoutState& layout) {
+  VP_WINDOWS_PLAYER_VOID(apply_interaction_layout, layout);
+}
+void WindowsNativePlayer::resize(int width, int height) {
+  VP_WINDOWS_PLAYER_VOID(resize, width, height);
 }
 
-void NativePlayer::set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return;
-    }
-    renderer_.set_loop_range(enabled, start_us, end_us);
+#undef VP_WINDOWS_PLAYER_VOID
+
+int WindowsNativePlayer::add_track(const std::string& path,
+                                   bool use_hardware_decode) {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->add_track(path, use_hardware_decode) : -1;
 }
 
-void NativePlayer::set_audible_track(int file_id) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return;
-    }
-    renderer_.set_audible_track(file_id);
+void WindowsNativePlayer::remove_track(int file_id) {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  if (ready_locked()) {
+    renderer_->remove_track(file_id);
+  }
 }
 
-int NativePlayer::audible_track() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return -1;
-    }
-    return renderer_.audible_track();
+bool WindowsNativePlayer::is_playing() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() && renderer_->is_playing();
 }
 
-void NativePlayer::step_forward() {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return;
-    }
-    renderer_.step_forward();
+int64_t WindowsNativePlayer::current_pts_us() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->current_pts_us() : 0;
 }
 
-void NativePlayer::step_backward() {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return;
-    }
-    renderer_.step_backward();
+int64_t WindowsNativePlayer::duration_us() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->duration_us() : 0;
 }
 
-bool NativePlayer::is_playing() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    return renderer_ready_locked() && renderer_.is_playing();
+LayoutState WindowsNativePlayer::layout() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->layout() : LayoutState{};
 }
 
-bool NativePlayer::is_initialized() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    return renderer_ready_locked();
+std::vector<TrackInfo> WindowsNativePlayer::tracks() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->track_infos() : std::vector<TrackInfo>{};
 }
 
-int64_t NativePlayer::current_pts_us() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return 0;
-    }
-    return renderer_.current_pts_us();
+std::vector<TrackPerfStats> WindowsNativePlayer::track_perf_stats() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->track_perf_stats()
+                        : std::vector<TrackPerfStats>{};
 }
 
-double NativePlayer::current_speed() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return 1.0;
-    }
-    return renderer_.current_speed();
+RendererGpuMemoryStats WindowsNativePlayer::gpu_memory_stats() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->gpu_memory_stats()
+                        : RendererGpuMemoryStats{};
 }
 
-size_t NativePlayer::track_count() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return 0;
-    }
-    return renderer_.track_count();
+PlaybackPacingDiagnostics
+WindowsNativePlayer::playback_pacing_diagnostics() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->playback_pacing_diagnostics()
+                        : PlaybackPacingDiagnostics{};
 }
 
-int64_t NativePlayer::duration_us() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return 0;
-    }
-    return renderer_.duration_us();
+PresentationBackendMetrics WindowsNativePlayer::presentation_metrics() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->presentation_backend_metrics()
+                        : PresentationBackendMetrics{};
 }
 
-int NativePlayer::add_track(const std::string& video_path, bool use_hardware_decode) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return -1;
-    }
-    return renderer_.add_track(video_path, use_hardware_decode);
-}
-
-void NativePlayer::remove_track(int file_id) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return;
-    }
-    renderer_.remove_track(file_id);
-}
-
-bool NativePlayer::has_track(int slot) const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    return renderer_ready_locked() && renderer_.has_track(slot);
-}
-
-std::pair<int, int> NativePlayer::track_dimensions(int slot) const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return {0, 0};
-    }
-    return renderer_.track_dimensions(slot);
-}
-
-std::vector<TrackInfo> NativePlayer::track_infos() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return {};
-    }
-    return renderer_.track_infos();
-}
-
-std::vector<TrackPerfStats> NativePlayer::track_perf_stats() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return {};
-    }
-    return renderer_.track_perf_stats();
-}
-
-RendererPresentedAnchorDiagnostics
-NativePlayer::presented_anchor_diagnostics() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return {};
-    }
-    return renderer_.presented_anchor_diagnostics();
-}
-
-RendererGpuMemoryStats NativePlayer::gpu_memory_stats() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return {};
-    }
-    return renderer_.gpu_memory_stats();
+PresentationBackendStats WindowsNativePlayer::presentation_stats() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->presentation_backend_stats()
+                        : PresentationBackendStats{};
 }
 
 PresentationBackendDiagnostics
-NativePlayer::presentation_backend_diagnostics() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return {};
-    }
-    return renderer_.presentation_backend_diagnostics();
+WindowsNativePlayer::presentation_diagnostics() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->presentation_backend_diagnostics()
+                        : PresentationBackendDiagnostics{};
 }
 
-AudioOutputStats NativePlayer::audio_output_stats() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return {};
-    }
-    return renderer_.audio_output_stats();
+std::string WindowsNativePlayer::presentation_error() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->presentation_backend_last_error()
+                        : std::string("player-unavailable");
 }
 
-bool NativePlayer::d3d_device_lost() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    return renderer_ready_locked() && renderer_.d3d_device_lost();
+bool WindowsNativePlayer::copy_last_frame_info(
+    PresentationBackendFrameInfo* out) const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() && renderer_->copy_last_presentation_frame_info(out);
 }
 
-long NativePlayer::d3d_device_removed_reason() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return 0;
-    }
-    return renderer_.d3d_device_removed_reason();
+void WindowsNativePlayer::set_frame_callback(RendererFrameCallback callback) {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  if (renderer_) {
+    renderer_->set_frame_callback(std::move(callback));
+  }
 }
 
-bool NativePlayer::recover_presentation_device_loss(
-    const char* reason,
-    long removed_reason) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    return renderer_ready_locked() &&
-           renderer_.recover_presentation_device_loss(reason, removed_reason);
+void WindowsNativePlayer::set_frame_failure_callback(
+    std::function<void(const char*)> callback) {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  if (renderer_) {
+    renderer_->set_frame_failure_callback(std::move(callback));
+  }
 }
 
-void NativePlayer::set_track_offset(int file_id, int64_t offset_us) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return;
-    }
-    renderer_.set_track_offset(file_id, offset_us);
+void WindowsNativePlayer::set_event_callback(RendererEventCallback callback) {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  if (renderer_) {
+    renderer_->set_event_callback(std::move(callback));
+  }
 }
 
-void NativePlayer::apply_layout(const LayoutState& state) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return;
-    }
-    renderer_.apply_layout(state);
+void WindowsNativePlayer::mark_target_displayed(void* texture) {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  if (ready_locked()) {
+    renderer_->mark_offscreen_target_displayed(texture);
+  }
 }
 
-void NativePlayer::set_background_color(float r, float g, float b, float a) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return;
-    }
-    renderer_.set_background_color(r, g, b, a);
+void WindowsNativePlayer::protect_target(void* texture) {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  if (ready_locked()) {
+    renderer_->protect_offscreen_target(texture);
+  }
 }
 
-LayoutState NativePlayer::layout() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return {};
-    }
-    return renderer_.layout();
+void WindowsNativePlayer::release_target(void* texture) {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  if (ready_locked()) {
+    renderer_->release_offscreen_target(texture);
+  }
 }
 
-void NativePlayer::set_frame_callback(std::function<void()> cb) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    renderer_.set_frame_callback(
-        [cb = std::move(cb)](const PresentationBackendFrameInfo*) {
-            if (cb) {
-                cb();
-            }
-        });
+bool WindowsNativePlayer::install_target_ring(
+    const void* const* textures,
+    size_t texture_count,
+    void* displayed_texture,
+    void* protected_texture,
+    int width,
+    int height,
+    int max_track_slots) {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() && renderer_->install_offscreen_target_ring(
+                               textures, texture_count, displayed_texture,
+                               protected_texture, width, height,
+                               max_track_slots);
 }
 
-void NativePlayer::set_event_callback(RendererEventCallback cb) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    renderer_.set_event_callback(std::move(cb));
+bool WindowsNativePlayer::update_presentation_sdr_white_level(double nits) {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() && renderer_->update_presentation_sdr_white_level(nits);
 }
 
-int NativePlayer::texture_width() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return 0;
-    }
-    return renderer_.texture_width();
+bool WindowsNativePlayer::request_frame_refresh(const char* reason) {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() && renderer_->request_frame_refresh(reason);
 }
 
-int NativePlayer::texture_height() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return 0;
-    }
-    return renderer_.texture_height();
+RendererFrameRefreshResult WindowsNativePlayer::request_interaction_frame() {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->request_interaction_frame()
+                        : RendererFrameRefreshResult::Failed;
 }
 
-bool NativePlayer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        snapshot = {};
-        return false;
-    }
-    return renderer_.acquire_shared_texture(snapshot);
+bool WindowsNativePlayer::capture_front_buffer(std::vector<uint8_t>& bgra,
+                                               int& width,
+                                               int& height) {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() && renderer_->capture_front_buffer(bgra, width, height);
 }
 
-void NativePlayer::release_shared_texture(int buffer_index,
-                                          uint64_t buffer_generation) const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return;
-    }
-    renderer_.release_shared_texture(buffer_index, buffer_generation);
+bool WindowsNativePlayer::capture_front_buffer_region(
+    int x,
+    int y,
+    int width,
+    int height,
+    std::vector<uint8_t>& bgra,
+    int& region_width,
+    int& region_height) {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() && renderer_->capture_front_buffer_region(
+                               x, y, width, height, bgra,
+                               region_width, region_height);
 }
 
-void* NativePlayer::native_render_device() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return nullptr;
-    }
-    return renderer_.native_render_device();
-}
-
-void* NativePlayer::native_render_command_queue() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return nullptr;
-    }
-    return renderer_.native_render_command_queue();
-}
-
-bool NativePlayer::acquire_shared_fp16_texture(
-    SharedFp16TextureSnapshot& snapshot) const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    return renderer_ready_locked() &&
-           renderer_.acquire_shared_fp16_texture(snapshot);
-}
-
-void NativePlayer::release_shared_fp16_texture(
-    int buffer_index, uint64_t ring_generation) const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (renderer_ready_locked()) {
-        renderer_.release_shared_fp16_texture(
-            buffer_index, ring_generation);
-    }
-}
-
-void NativePlayer::set_shared_fp16_frame_callback(
-    std::function<void()> cb) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (renderer_ready_locked()) {
-        renderer_.set_shared_fp16_frame_callback(std::move(cb));
-    }
-}
-
-bool NativePlayer::update_external_flutter_surface(
-    const PresentationExternalD3D12Surface& surface) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    return renderer_ready_locked() &&
-           renderer_.update_external_flutter_surface(surface);
-}
-
-void NativePlayer::clear_external_flutter_surface() {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (renderer_ready_locked()) {
-        renderer_.clear_external_flutter_surface();
-    }
-}
-
-bool NativePlayer::draw_current_frame_to_external_d3d12_target(
-    const PresentationExternalD3D12RenderTarget& target,
-    const char* reason) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    return renderer_ready_locked() &&
-           renderer_.draw_current_frame_to_external_d3d12_target(
-               target, reason);
-}
-
-std::string NativePlayer::presentation_backend_last_error() const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    return renderer_ready_locked() ? renderer_.presentation_backend_last_error()
-                                   : "renderer-not-ready";
-}
-
-bool NativePlayer::configure_source_cache(
-    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    return renderer_ready_locked() &&
-           renderer_.configure_source_cache(descriptors);
-}
-
-void NativePlayer::clear_source_cache(const char* reason) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (renderer_ready_locked()) {
-        renderer_.clear_source_cache(reason);
-    }
-}
-
-bool NativePlayer::update_source_projection(
-    const WindowsSourceProjection& projection) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    return renderer_ready_locked() &&
-           renderer_.update_source_projection(projection);
-}
-
-void NativePlayer::clear_source_projection() {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (renderer_ready_locked()) {
-        renderer_.clear_source_projection();
-    }
-}
-
-bool NativePlayer::acquire_source_cache_bundle(
-    SharedSourceCacheBundleSnapshot& snapshot) const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    return renderer_ready_locked() &&
-           renderer_.acquire_source_cache_bundle(snapshot);
-}
-
-void NativePlayer::release_source_cache_bundle(
-    int buffer_index, uint64_t ring_generation) const {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (renderer_ready_locked()) {
-        renderer_.release_source_cache_bundle(
-            buffer_index, ring_generation);
-    }
-}
-
-void NativePlayer::set_source_cache_frame_callback(
-    std::function<void()> cb) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (renderer_ready_locked()) {
-        renderer_.set_source_cache_frame_callback(std::move(cb));
-    }
-}
-
-bool NativePlayer::request_frame_refresh(const char* reason) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    return renderer_ready_locked() &&
-           renderer_.request_frame_refresh(reason);
-}
-
-bool NativePlayer::update_presentation_sdr_white_level(double nits) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    return renderer_ready_locked() &&
-           renderer_.update_presentation_sdr_white_level(nits);
-}
-
-std::shared_ptr<const AnalysisOverlayPrimitivePackage>
-NativePlayer::current_overlay_primitives(std::string* error) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        if (error) {
-            *error = "renderer is not active";
-        }
-        return {};
-    }
-    return renderer_.current_overlay_primitives(error);
-}
-
-bool NativePlayer::prewarm_presentation_target(int width, int height) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    return renderer_ready_locked() &&
-           renderer_.prewarm_presentation_target(width, height);
-}
-
-void NativePlayer::resize(int width, int height) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        return;
-    }
-    renderer_.resize(width, height);
-}
-
-bool NativePlayer::capture_front_buffer(std::vector<uint8_t>& bgra,
-                                        int& width,
-                                        int& height) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        bgra.clear();
-        width = 0;
-        height = 0;
-        return false;
-    }
-    return renderer_.capture_front_buffer(bgra, width, height);
-}
-
-bool NativePlayer::capture_front_buffer_region(int x,
-                                               int y,
-                                               int width,
-                                               int height,
-                                               std::vector<uint8_t>& bgra,
-                                               int& region_width,
-                                               int& region_height) {
-    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    if (!renderer_ready_locked()) {
-        bgra.clear();
-        region_width = 0;
-        region_height = 0;
-        return false;
-    }
-    return renderer_.capture_front_buffer_region(
-        x, y, width, height, bgra, region_width, region_height);
-}
-
-} // namespace vr
+}  // namespace vr

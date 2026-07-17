@@ -11,6 +11,7 @@
 extern "C" {
 #endif
 
+
 /*
  * macOS native bridge contract:
  *
@@ -40,6 +41,7 @@ void VPMacOSConfigureLogging(const char* logs_dir,
                              const char* log_file_name,
                              const char* level);
 void VPMacOSLogProfilerSummary(const char* message);
+void VPMacOSNativePrewarmMetalPipelines(void);
 void VPMacOSNativeAnalysisOverlayClearTracks(void);
 int VPMacOSNativeAnalysisOverlaySetTrack(int32_t track_file_id,
                                          const char* analysis_path);
@@ -121,23 +123,23 @@ void VPMacOSNativePlayerReleaseMetalPresentationTarget(
     VPMacOSNativePlayer* player,
     void* pixel_buffer);
 void VPMacOSNativePlayerClearMetalPresentationTarget(VPMacOSNativePlayer* player);
-int VPMacOSNativePlayerRendererOwnedPresentationActive(VPMacOSNativePlayer* player);
-int VPMacOSNativePlayerLastRendererOwnedPresentationSucceeded(VPMacOSNativePlayer* player);
-int VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(
+int VPMacOSNativePlayerNativeTargetPresentationActive(VPMacOSNativePlayer* player);
+int VPMacOSNativePlayerLastNativeTargetPresentationSucceeded(VPMacOSNativePlayer* player);
+int VPMacOSNativePlayerCopyLastNativeTargetFrameInfo(
     VPMacOSNativePlayer* player,
     VPMacOSNativeFrameInfo* out);
-int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
+int VPMacOSNativePlayerCopyNativeTargetPresentationState(
     VPMacOSNativePlayer* player,
-    VPMacOSNativeRendererOwnedPresentationState* out);
+    VPMacOSNativeTargetPresentationState* out);
 int VPMacOSNativePlayerCopyTrackDiagnostics(
     VPMacOSNativePlayer* player,
     VPMacOSNativeTrackDiagnosticInfo* out,
     size_t capacity,
     size_t* out_count);
-void VPMacOSNativePlayerResetRendererOwnedPresentationStats(VPMacOSNativePlayer* player);
-uint64_t VPMacOSNativePlayerRendererOwnedPresentationUploadCount(
+void VPMacOSNativePlayerResetNativeTargetPresentationStats(VPMacOSNativePlayer* player);
+uint64_t VPMacOSNativePlayerNativeTargetPresentationUploadCount(
     VPMacOSNativePlayer* player);
-uint64_t VPMacOSNativePlayerRendererOwnedPresentationFailureCount(
+uint64_t VPMacOSNativePlayerNativeTargetPresentationFailureCount(
     VPMacOSNativePlayer* player);
 int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
     VPMacOSNativePlayer* player,
@@ -147,46 +149,23 @@ int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
 enum {
   VPMacOSNativeFrameRefreshSuppressFrameCallback = 1u << 0,
 };
-int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
+int VPMacOSNativePlayerRequestNativeTargetFrameRefresh(
     VPMacOSNativePlayer* player,
     int32_t timeout_ms,
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
-int VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
+int VPMacOSNativePlayerRequestNativeTargetFrameRefreshWithOptions(
     VPMacOSNativePlayer* player,
     int32_t timeout_ms,
     uint32_t flags,
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
-int VPMacOSNativePlayerCommitSourceProviderPreview(
+int VPMacOSNativePlayerRequestInteractionLayoutFrame(
     VPMacOSNativePlayer* player,
-    int32_t timeout_ms,
-    const int32_t* expected_file_ids,
-    size_t expected_file_id_count,
-    VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
-int VPMacOSNativePlayerBakeCurrentFrameSources(
-    VPMacOSNativePlayer* player,
-    VPMacOSMetalPresentationBackend* backend,
-    VPMacOSNativeSourceFrameBakeTarget* targets,
-    size_t target_count,
-    char* error,
-    size_t error_size);
-int VPMacOSNativePlayerCopyCurrentOverlayPrimitives(
-    VPMacOSNativePlayer* player,
-    VPMacOSNativeOverlayPrimitiveSnapshot* snapshot,
-    VPMacOSNativeOverlayGpuRect* fill_rects,
-    size_t fill_rect_capacity,
-    VPMacOSNativeOverlayGpuRect* line_rects,
-    size_t line_rect_capacity,
-    VPMacOSNativeOverlayGpuRect* motion_lines,
-    size_t motion_line_capacity,
-    char* error,
-    size_t error_size);
-
 void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerPause(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerSetSpeed(VPMacOSNativePlayer* player, double speed);
@@ -203,9 +182,6 @@ int64_t VPMacOSNativePlayerTrackOffsetUs(VPMacOSNativePlayer* player,
                                          int32_t file_id);
 void VPMacOSNativePlayerApplyLayout(VPMacOSNativePlayer* player,
                                     const VPMacOSNativeLayoutState* state);
-void VPMacOSNativePlayerNoteViewportCompositorActivity(VPMacOSNativePlayer* player);
-void VPMacOSNativePlayerSetViewportCompositorActive(VPMacOSNativePlayer* player,
-                                                    int active);
 int VPMacOSNativePlayerCopyLayout(VPMacOSNativePlayer* player,
                                   VPMacOSNativeLayoutState* out);
 int VPMacOSNativePlayerCopyLayoutPresentationParams(

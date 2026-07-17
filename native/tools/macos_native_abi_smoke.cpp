@@ -1,5 +1,4 @@
 #include "macos/player/native_player_bridge.h"
-#include "macos/wgpu/wgpu_ffi_bridge.h"
 
 #include <cstddef>
 #include <cstdio>
@@ -29,10 +28,8 @@ bool require_c_abi_struct(const char* name) {
 }  // namespace
 
 int main() {
-  static_assert(VP_MACOS_NATIVE_API_VERSION == 7u,
+  static_assert(VP_MACOS_NATIVE_API_VERSION == 8u,
                 "bump this smoke when the macOS native ABI version changes");
-  static_assert(VP_WGPU_FFI_ABI_VERSION == 16,
-                "bump this smoke when the wgpu FFI ABI version changes");
   static_assert(offsetof(VPMacOSNativeFrameInfo, struct_size) == 0,
                 "versioned ABI structs must start with struct_size");
   static_assert(offsetof(VPMacOSNativeFrameInfo, api_version) ==
@@ -44,8 +41,6 @@ int main() {
 
   if (!require_c_abi_struct<VPMacOSNativeFrameInfo>("VPMacOSNativeFrameInfo") ||
       !require_c_abi_struct<VPMacOSNativeTrackInfo>("VPMacOSNativeTrackInfo") ||
-      !require_c_abi_struct<VPMacOSNativeOverlayPrimitiveSnapshot>(
-          "VPMacOSNativeOverlayPrimitiveSnapshot") ||
       !require_c_abi_struct<VPMacOSCaptureMetrics>("VPMacOSCaptureMetrics") ||
       !require_c_abi_struct<VPMacOSNativeLayoutState>(
           "VPMacOSNativeLayoutState") ||
@@ -53,22 +48,15 @@ int main() {
           "VPMacOSNativeLayoutPresentationParams") ||
       !require_c_abi_struct<VPMacOSNativePresentationSchedulerStats>(
           "VPMacOSNativePresentationSchedulerStats") ||
-      !require_c_abi_struct<VPMacOSNativeRendererOwnedPresentationState>(
-          "VPMacOSNativeRendererOwnedPresentationState") ||
+      !require_c_abi_struct<VPMacOSNativeTargetPresentationState>(
+          "VPMacOSNativeTargetPresentationState") ||
       !require_c_abi_struct<VPMacOSNativeTrackDiagnosticInfo>(
           "VPMacOSNativeTrackDiagnosticInfo") ||
       !require_c_abi_struct<VPMacOSNativePlayerPerfStats>(
           "VPMacOSNativePlayerPerfStats") ||
       !require_c_abi_struct<VPMacOSNativeAudioDiagnostics>(
-          "VPMacOSNativeAudioDiagnostics") ||
-      !require_c_abi_struct<VPWgpuMetalRendererInfo>(
-          "VPWgpuMetalRendererInfo") ||
-      !require_c_abi_struct<VPWgpuMetalProfilerSnapshot>(
-          "VPWgpuMetalProfilerSnapshot")) {
+          "VPMacOSNativeAudioDiagnostics")) {
     return 1;
-  }
-  if (VPWgpuMetalRendererMetalDevice(nullptr) != nullptr) {
-    return fail("wgpu FFI Metal device query must reject null renderer");
   }
 
   VPMacOSNativeFrameInfo frame_info{};
@@ -79,18 +67,6 @@ int main() {
   if (frame_info.api_version != VP_MACOS_NATIVE_API_VERSION) {
     return fail("VPMacOSNativeFrameInfoInit wrote an unexpected api_version");
   }
-  VPMacOSNativeOverlayPrimitiveSnapshot overlay_snapshot{};
-  VPMacOSNativeOverlayPrimitiveSnapshotInit(&overlay_snapshot);
-  if (overlay_snapshot.struct_size != sizeof(VPMacOSNativeOverlayPrimitiveSnapshot)) {
-    return fail("VPMacOSNativeOverlayPrimitiveSnapshotInit wrote an unexpected struct_size");
-  }
-  if (overlay_snapshot.api_version != VP_MACOS_NATIVE_API_VERSION) {
-    return fail("VPMacOSNativeOverlayPrimitiveSnapshotInit wrote an unexpected api_version");
-  }
-  if (overlay_snapshot.source_baked_overlay_disabled != 1) {
-    return fail("overlay snapshot should report source-baked overlay disabled by default");
-  }
-
   VPMacOSNativePlayerDestroy(nullptr);
   VPMacOSNativePlayerClose(nullptr);
   VPMacOSNativePlayerSetFrameAvailableCallback(nullptr, nullptr, nullptr);

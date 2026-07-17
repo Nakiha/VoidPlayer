@@ -187,7 +187,8 @@ RendererTrackMutationController::apply_seek_to_all(
     SeekType type,
     bool playing,
     bool force_recreate_paused_hevc,
-    const RendererTrackSeekHooks& hooks) {
+    const RendererTrackSeekHooks& hooks,
+    const StepBackwardTrackSeekTargets* target_overrides) {
     std::vector<RendererTrackSeekApplicationResult> results;
     auto& tracks = registry_.mutable_tracks_for_mutation();
     for (size_t i = 0; i < kMaxTracks; ++i) {
@@ -202,8 +203,12 @@ RendererTrackMutationController::apply_seek_to_all(
             },
             hooks.recreate_pipeline_for_seek,
         };
+        const int64_t slot_target_pts_us =
+            target_overrides && (*target_overrides)[i].has_value()
+                ? *(*target_overrides)[i]
+                : target_pts_us;
         auto seek_result = apply_track_seek_to_slot(
-            tracks, i, target_pts_us, type, playing,
+            tracks, i, slot_target_pts_us, type, playing,
             force_recreate_paused_hevc, seek_hooks);
         if (!seek_result.slot_present) {
             continue;
@@ -228,13 +233,15 @@ bool RendererTrackMutationController::apply_seek_to_all_and_log(
     SeekType type,
     bool playing,
     bool force_recreate_paused_hevc,
-    const RendererTrackSeekHooks& hooks) {
+    const RendererTrackSeekHooks& hooks,
+    const StepBackwardTrackSeekTargets* target_overrides) {
     const auto seek_results = apply_seek_to_all(
         target_pts_us,
         type,
         playing,
         force_recreate_paused_hevc,
-        hooks);
+        hooks,
+        target_overrides);
     return log_renderer_track_seek_application_results(seek_results);
 }
 

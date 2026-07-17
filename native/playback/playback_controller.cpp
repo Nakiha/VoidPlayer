@@ -14,6 +14,7 @@ PlaybackController::~PlaybackController() {
 
 void PlaybackController::start_session() {
     stop_session();
+    pacing_held_ = false;
     clock_.pause();
     clock_.seek(0);
     clock_.set_speed(1.0);
@@ -30,11 +31,14 @@ void PlaybackController::stop_session() {
     clock_.pause();
     clock_.seek(0);
     clock_.set_speed(1.0);
+    pacing_held_ = false;
 }
 
 void PlaybackController::play() {
-    if (audio_output_) audio_output_->play();
-    clock_.resume();
+    if (!pacing_held_) {
+        if (audio_output_) audio_output_->play();
+        clock_.resume();
+    }
 }
 
 void PlaybackController::pause() {
@@ -50,8 +54,38 @@ void PlaybackController::set_speed(double speed) {
     clock_.set_speed(speed);
 }
 
+void PlaybackController::set_effective_speed(double speed) {
+    clock_.set_effective_speed(speed);
+}
+
+void PlaybackController::hold_for_pacing() {
+    if (pacing_held_) {
+        return;
+    }
+    pacing_held_ = true;
+    if (audio_output_) {
+        audio_output_->pause();
+    }
+    clock_.pause();
+}
+
+void PlaybackController::release_pacing_hold() {
+    if (!pacing_held_) {
+        return;
+    }
+    pacing_held_ = false;
+    clock_.resume();
+    if (audio_output_) {
+        audio_output_->play();
+    }
+}
+
 double PlaybackController::speed() const {
     return clock_.speed();
+}
+
+double PlaybackController::effective_speed() const {
+    return clock_.effective_speed();
 }
 
 } // namespace vr

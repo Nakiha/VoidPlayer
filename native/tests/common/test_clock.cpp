@@ -12,6 +12,7 @@ TEST_CASE("Clock: default state is paused at 0", "[clock]") {
     Clock clock([&mt]() { return mt(); });
     REQUIRE(clock.is_paused() == true);
     REQUIRE(clock.speed() == 1.0);
+    REQUIRE(clock.effective_speed() == 1.0);
     REQUIRE(clock.current_pts_us() == 0);
 }
 
@@ -113,4 +114,24 @@ TEST_CASE("Clock: half speed advances half as fast", "[clock]") {
     // At 0.5x, 200ms wall -> 100ms PTS
     REQUIRE(pts >= 90000);
     REQUIRE(pts <= 110000);
+}
+
+TEST_CASE("Clock: pacing rate is separate from requested speed", "[clock]") {
+    MockTime mt{0};
+    Clock clock([&mt]() { return mt(); });
+    clock.play();
+    clock.set_speed(1.0);
+    clock.set_effective_speed(0.5);
+
+    REQUIRE(clock.speed() == 1.0);
+    REQUIRE(clock.effective_speed() == 0.5);
+
+    mt.t = 200000;
+    REQUIRE(clock.current_pts_us() == 100000);
+
+    const int64_t before = clock.current_pts_us();
+    clock.set_effective_speed(0.75);
+    REQUIRE(clock.current_pts_us() == before);
+    mt.t = 300000;
+    REQUIRE(clock.current_pts_us() == 175000);
 }

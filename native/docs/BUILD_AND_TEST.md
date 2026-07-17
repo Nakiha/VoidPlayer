@@ -16,7 +16,8 @@ python3.12 dev.py gate macos-ui-smoke
 python3.12 dev.py package
 ```
 
-Windows UI automation：
+Windows UI automation 当前仅保留为 runner 自动化入口；native presentation 后端
+在本 restart 分支是 reserved/fail-closed，旧 preservation smoke 已移除：
 
 ```bash
 python dev.py ui-test --build ui_tests/smoke/basic.csv
@@ -36,7 +37,7 @@ python3.12 dev.py gate macos-ui-smoke
 python3.12 dev.py gate macos-ui-nightly
 python3.12 dev.py gate macos-hdr-edr-smoke
 python3.12 dev.py gate macos-release-readiness
-python3.12 dev.py gate windows-preservation
+python3.12 dev.py gate windows-rebuild-boundary
 ```
 
 Native 子目录仍可直接使用 CMake/presets，但日常开发应通过顶层 `dev.py` 保持平台产物和依赖检查一致。
@@ -48,7 +49,7 @@ Native 子目录仍可直接使用 CMake/presets，但日常开发应通过顶�
 
 | 目录 | 说明 |
 | --- | --- |
-| `build/native/standalone/` | `dev.py build --native`、native CMake presets、独立 CTest/FFI/Python 产物 |
+| `build/native/standalone/` | `dev.py build --native`、native CMake presets、独立 CTest/Python 产物 |
 | `build/native/runner/` | Flutter/Xcode runner 内嵌 native 静态库或中间产物 |
 | `build/native/analysis/` | analysis CLI 等辅助 native 工具构建目录 |
 
@@ -61,12 +62,9 @@ Source ownership is split under `native/cmake/`:
 | 文件 | 说明 |
 | --- | --- |
 | `NativeSourcesPortable.cmake` | shared playback/media/renderer source lists |
-| `NativeSourcesWindows.cmake` | Windows facade、D3D11 backend、Windows-only renderer integration |
+| `NativeSourcesWindows.cmake` | portable analysis overlay、D3D11VA provider/shared snapshot foundation plus fail-closed presentation factory；D3D11/DX12 target 与 runner composition 尚未实现 |
 | `NativeSourcesMacOS.cmake` | macOS native bridge、Metal/CVPixelBuffer presentation |
 | `NativeSourcesAnalysis.cmake` | analysis cache/generator source list |
-| `NativeSourcesShaders.cmake` | embedded HLSL shader inputs |
-| `WindowsBindingTargets.cmake` | Windows FFI / pybind11 binding targets |
-| `NativeInstall.cmake` | FFI / Python dist staging rules |
 
 新增 native 源文件时先按 ownership 放进对应清单；`NativeSources.cmake` 只保留 shared path setup、includes 和通用 CMake helper functions。
 
@@ -77,19 +75,16 @@ Source ownership is split under `native/cmake/`:
 | `void_renderer_portable_driver` | macOS/native smokes | shared renderer driver object target |
 | `void_macos_native_player` | macOS | macOS native bridge + Metal presentation backend |
 | `macos_native_abi_smoke` | macOS | macOS C ABI layout/status/lifetime contract smoke |
-| `video_renderer_ffi` | Windows/native FFI | C FFI shared library，导出 `naki_vr_*` |
-| `video_renderer_native` | Windows/Python | pybind11 module for demo/scripts |
+| `video_renderer_native` | native/Python | pybind11 module for demo/scripts |
 | `VoidPlayerCli` | analysis enabled | analysis cache/overlay CLI |
-| `video_renderer_tests` | Windows | Catch2 renderer/unit/integration tests |
+| `video_renderer_tests` | native | Catch2 renderer/unit/integration tests |
 | `analysis_tests` | analysis enabled | VAC2/VACHUNK/cache tests |
-| `test_ffi_c` | FFI tests | C ABI smoke |
-| `macos_*_smoke` / `renderer_metal_headless_smoke` | macOS | Metal、VideoToolbox、native player、capture、audio native smokes |
+| `macos_*_smoke` / `renderer_metal_offscreen_smoke` | macOS | Metal、VideoToolbox、native player、offscreen target、capture、audio smokes |
 
 常用 CMake 开关：
 
 | 开关 | 默认 | 说明 |
 | --- | --- | --- |
-| `BUILD_FFI` | `ON` | 构建 C FFI target |
 | `BUILD_PYTHON` | `ON` | 构建 pybind11 Python binding；找不到依赖时自动关闭 |
 | `BUILD_TESTS` | `ON` | 构建 CTest targets |
 | `BUILD_ANALYSIS` | `ON` | 构建 analysis cache/overlay/CLI；关闭时 renderer 使用 no-op overlay stub |
@@ -108,18 +103,17 @@ python3.12 dev.py test --native-only
 python3.12 dev.py gate pr-fast
 ```
 
-Windows CI 还会跑 release compliance notice smoke：
+Windows CI 还会跑 release compliance notice smoke；Windows native presentation
+backend coverage is intentionally disabled on this restart branch until the
+D3D11/DX12 backend is reintroduced：
 
 ```bash
 python3.12 scripts/dev/check_release_compliance.py
 ```
 
-Windows `pr-fast` also executes the safe `[windows_display]` resolver tests,
-`[windows_cross_adapter]` capability tests, and
-both `windows_d3d11_color_layout_parity_smoke` and
-`windows_d3d11_fp16_scrgb_smoke`. GitHub-hosted Windows explicitly allows the
-documented WARP fallback for D3D11 backend contract canaries; local desktop
-evidence should use the real hardware adapter.
+Windows `pr-fast` runs native tests and compliance only. The old DComp,
+D3D11 parity, HDR Auto, high-refresh, and cross-adapter gates
+were removed with the Windows backend cutover.
 
 macOS CI 的 native fast gate uses the hosted-runner CTest profile：
 
@@ -127,7 +121,7 @@ macOS CI 的 native fast gate uses the hosted-runner CTest profile：
 bash scripts/ci/run_macos_native_fast.sh
 ```
 
-Hosted macOS PR fast excludes tests labelled `hosted-flaky`; today that is `renderer_metal_headless_smoke`.
+Hosted macOS PR fast excludes tests labelled `hosted-flaky`; today that is `renderer_metal_offscreen_smoke`.
 Keep that canary for nightly/headed or targeted Metal changes because GitHub runner GPU presentation can report a
 black front buffer while the shared native player Metal canary passes.
 
@@ -142,7 +136,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 
 ## macOS Stabilization Gates
 
-macOS native playback 当前是 feature-complete / stabilization 状态。修改 shared renderer、wgpu-metal backend、VideoToolbox、
+macOS native playback 当前是 feature-complete / stabilization 状态。修改 shared renderer、native Metal backend、VideoToolbox、
 Swift texture bridge 或 diagnostics 时，优先使用以下 gate：
 
 ```bash
@@ -156,19 +150,18 @@ python3.12 dev.py gate macos-ui-smoke
 | `native_facade_smoke.csv` | channel、metadata、diagnostics、首帧健康 |
 | `native_controls_smoke.csv` | basic play/pause/seek/step commands |
 | `native_compositor_auto_sdr_policy_smoke.csv` | default Auto policy keeps SDR media on the SDR native-compositor target |
-| `native_seek_frame_smoke.csv` | seek preview / renderer-owned refresh |
+| `native_seek_frame_smoke.csv` | seek preview / native-target refresh |
 | `native_loop_range_smoke.csv` | loop policy |
 | `native_audio_play_seek_smoke.csv` | miniaudio/CoreAudio playback、seek、audible-track diagnostics |
 | `native_layout_split_smoke.csv` | split/layout and multi-track presentation |
-| `native_4k60_playback_smoke.csv` | VideoToolbox CVPixelBuffer + wgpu-metal 4K canary |
-| `native_vvc_software_playback_smoke.csv` | software fallback + renderer-owned package path |
+| `native_vvc_software_playback_smoke.csv` | software fallback + native-target package path |
 | `native_p010_presentation_smoke.csv` | 10-bit/P010 presentation path |
 | `native_add_short_after_eof_smoke.csv` | EOF carry-forward after adding a shorter third track |
-| `native_callback_stress_smoke.csv` | callback lifecycle stress |
+| `native_compositor_lifecycle_stress_smoke.csv` | native compositor lifecycle stress |
 
 Native macOS CTest includes `videotoolbox_provider_smoke`,
-`macos_metal_uploader_smoke`, `macos_wgpu_metal_presentation_backend_smoke`,
-`renderer_metal_headless_smoke`, and `macos_native_player_shared_renderer_smoke`.
+`macos_metal_uploader_smoke`, `renderer_metal_offscreen_smoke`, and
+`macos_native_player_shared_renderer_smoke`.
 
 HDR Auto promotion needs a real EDR-capable display, so it is an explicit local
 gate rather than a hosted CI default:
@@ -181,75 +174,18 @@ This gate generates a portable 10-bit HEVC/HLG fixture and asserts that Auto
 selects `native-compositor-edr`, uses the `64RGBAHalf` target, and produces
 values above SDR reference white.
 
-The default wgpu-metal backend has explicit local gates. The baseline gate
-covers software packages, retained source-projection/overlay composition,
-VideoToolbox CVPixelBuffer source import, and 4K60 cadence:
+## Windows Restart Guard
 
-```bash
-python3.12 dev.py gate macos-wgpu-metal-smoke
-```
-
-The EDR wgpu gate requires an EDR-capable display. It verifies forced
-wgpu-metal EDR policy, RGBA16F renderer-owned targets, HLG/BT.2020 diagnostics,
-and values above SDR reference white:
-
-```bash
-python3.12 dev.py gate macos-wgpu-metal-edr-smoke
-```
-
-## Windows Preservation Gate
-
-The macOS backend work changed shared renderer boundaries, so Windows preservation remains a release gate. Run it on a
-Windows host before closing macOS release readiness:
+Windows native presentation is intentionally disabled in this branch. The active
+contract is that D3D11/DX12 backends stay reserved/fail-closed until the Windows
+runner-composed sandwich backend is rebuilt:
 
 ```powershell
-python dev.py gate windows-preservation
+python dev.py gate windows-rebuild-boundary
 ```
 
-The native portion includes
-`windows_d3d11_color_layout_parity_smoke` plus
-`windows_d3d11_fp16_scrgb_smoke`. They capture the remaining D3D11 present
-bridge BGRA and RGBA16F outputs for SDR layout parity and FP16/scRGB
-transfer/white-level behavior in standalone/native parity builds. The Flutter
-Windows runner does not compile the legacy `D3D11RenderBackend`; full-frame
-Flutter premultiplied-alpha composition is a wgpu/D3D12 product-path
-responsibility and is covered by the external Flutter surface UI probes.
-Run them directly with:
-
-```powershell
-ctest --test-dir build/native/standalone/windows-msvc -C Release `
-  -R "windows_d3d11_(color_layout_parity|fp16_scrgb)_smoke" `
-  --output-on-failure
-```
-
-`windows-preservation` first rebuilds the runner with the locked Windows local
-engine and runs `native_compositor_auto_sdr.csv`. The same runner then executes
-forced scRGB DComp/source-projection, native SDR, and fail-closed compositor
-smokes without another build.
-
-On a desktop with Windows HDR enabled, run the hardware-only Auto transition
-gate:
-
-```powershell
-python dev.py gate windows-hdr-auto
-```
-
-It generates SDR and HLG fixtures and verifies live native SDR -> scRGB ->
-native SDR transitions. Toggling Windows HDR while the process remains open is
-still a manual check because the test protocol does not mutate system display
-settings.
-
-On a multi-adapter desktop, run the cross-adapter local gate before merging
-output migration or display calibration changes:
-
-```powershell
-python dev.py gate windows-cross-adapter-local
-```
-
-It runs the safe cross-adapter native tests and an Auto SDR local-engine UI
-smoke. The gate records transport diagnostics and same-adapter fallback on
-single-GPU machines; multi-GPU/HDR evidence must still be reviewed from
-diagnostics/logs because CI cannot synthesize a real output-adapter mismatch.
+When Windows work resumes, add a new D3D11/DX12 backend matrix instead of
+reviving the removed preservation profiles unchanged.
 
 Install packaged local-engine outputs with:
 
@@ -258,7 +194,9 @@ scripts/ci/bootstrap_flutter_windows_engine.ps1 -Mode release `
   -ArtifactDirectory build/flutter-engine-artifacts
 ```
 
-Add targeted Windows UI scripts when touching seek, loop, viewport/layout, codec, track, analysis, or D3D11 shared texture/capture behavior.
+Add targeted Windows UI scripts only when the Windows runner-composed sandwich
+backend is reintroduced. Until then, Windows validation should prove the
+backend remains fail-closed instead of reviving the removed preservation scripts.
 
 ## Nightly / Headed UI Gates
 
@@ -270,7 +208,7 @@ python3.12 dev.py gate macos-ui-nightly
 ```
 
 Native sanitizer coverage is a separate local/nightly gate. It builds the macOS native presets with ASAN and TSAN,
-then runs CTest while excluding the already-marked headless Metal hosted-flaky smoke:
+then runs CTest while excluding the already-marked offscreen Metal hosted-flaky smoke:
 
 ```bash
 python3.12 dev.py gate macos-native-sanitizers

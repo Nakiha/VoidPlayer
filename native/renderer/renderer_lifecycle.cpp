@@ -17,9 +17,6 @@ bool Renderer::Impl::initialize(const RendererConfig& config) {
         configure_logging(config.log_config);
     }
 
-    // Crash handling is process-global. Hosts must opt in explicitly via the
-    // windows_crash_handler module; Renderer initialization does not install hooks.
-
     std::lock_guard<std::mutex> state_lock(state_mutex_);
     if (initialized_.load() || loop_driver_.running() || loop_driver_.thread_joinable()) {
         spdlog::warn("Renderer: initialize called while already initialized or running");
@@ -34,6 +31,7 @@ bool Renderer::Impl::initialize(const RendererConfig& config) {
     surface_state_.configure(config);
     layout_state_.reset_revisions();
     shutting_down_.store(false, std::memory_order_release);
+    interaction_presentation_until_us_.store(0, std::memory_order_release);
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
     presentation_metrics_.reset();
     timeline_.start_session_if_needed();
@@ -45,11 +43,10 @@ bool Renderer::Impl::initialize(const RendererConfig& config) {
     backend_config.width = surface_state_.width();
     backend_config.height = surface_state_.height();
     backend_config.max_track_slots = config.backend.max_track_slots;
-    backend_config.headless = surface_state_.headless();
+    backend_config.offscreen = surface_state_.offscreen();
     backend_config.output_target = config.backend.output_target;
     backend_config.sdr_white_level_nits =
         config.backend.sdr_white_level_nits;
-    backend_config.shared_fp16_output = config.backend.shared_fp16_output;
     const auto* backend_provider = config.backend.provider
         ? config.backend.provider
         : default_presentation_backend_provider();
@@ -182,7 +179,6 @@ void Renderer::Impl::release_resources_locked() {
     // Must happen before decode_thread->stop() frees hw_device_ctx,
     // otherwise hw_frame_ref cleanup will access a freed device context.
     present_history_.reset();
-    external_d3d12_visible_decision_ = PresentDecision();
     loop_driver_.reset_presentation_scheduler();
 
     track_controller_.stop_all([this](size_t, TrackPipeline& track) {
@@ -202,7 +198,7 @@ void Renderer::Impl::release_resources_locked() {
         analysis_overlay_renderer_->reset();
     }
     loop_driver_.reset_preview_state();
-    loop_driver_.reset_preroll_state();
+    loop_driver_.reset_playback_pacing();
     if (timeline_.seek()) {
         timeline_.seek()->reset();
     }
@@ -210,6 +206,7 @@ void Renderer::Impl::release_resources_locked() {
     loop_driver_.clear_pending_resize();
     loop_driver_.reset_timing();
     track_controller_.reset_perf_baseline();
+    interaction_presentation_until_us_.store(0, std::memory_order_release);
     initialized_ = false;
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
 }

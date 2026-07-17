@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../utils/async_guard.dart';
 import 'time_label.dart';
 import 'timeline_slider.dart';
@@ -66,6 +67,7 @@ class ControlsBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
     return Container(
       height: 40,
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -73,102 +75,98 @@ class ControlsBar extends StatelessWidget {
         children: [
           Semantics(
             container: true,
-            label: 'Playback controls',
-            explicitChildNodes: false,
-            child: ExcludeSemantics(
-              child: SizedBox(
-                width: timelineStartWidth,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final visibleItems = _visibleItemsForWidth(
-                      constraints.maxWidth,
-                    );
-                    final showZoom = visibleItems.contains(
-                      _ControlsBarItem.zoom,
-                    );
-                    final showFullscreen = visibleItems.contains(
-                      _ControlsBarItem.fullscreen,
-                    );
-                    final showStep = visibleItems.contains(
-                      _ControlsBarItem.step,
-                    );
-                    final showPlay = visibleItems.contains(
-                      _ControlsBarItem.play,
-                    );
-                    final showTime = visibleItems.contains(
-                      _ControlsBarItem.time,
-                    );
+            label: l.playbackControls,
+            explicitChildNodes: true,
+            child: SizedBox(
+              width: timelineStartWidth,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final visibleItems = _visibleItemsForWidth(
+                    constraints.maxWidth,
+                  );
+                  final showZoom = visibleItems.contains(_ControlsBarItem.zoom);
+                  final showFullscreen = visibleItems.contains(
+                    _ControlsBarItem.fullscreen,
+                  );
+                  final showStep = visibleItems.contains(_ControlsBarItem.step);
+                  final showPlay = visibleItems.contains(_ControlsBarItem.play);
+                  final showTime = visibleItems.contains(_ControlsBarItem.time);
 
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: _leftPadding,
-                      ),
-                      child: Row(
-                        children: [
-                          if (showZoom) ...[
-                            ZoomComboBox(
-                              value: zoomRatio,
-                              onChanged: onZoomChanged,
-                            ),
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: _leftPadding,
+                    ),
+                    child: Row(
+                      children: [
+                        if (showZoom) ...[
+                          ZoomComboBox(
+                            value: zoomRatio,
+                            onChanged: onZoomChanged,
+                          ),
+                          const SizedBox(width: _gapWidth),
+                        ],
+                        if (showFullscreen)
+                          _ControlIconButton(
+                            onPressed: onToggleFullScreen,
+                            tooltip: isFullScreen
+                                ? l.exitFullScreen
+                                : l.enterFullScreen,
+                            icon: isFullScreen
+                                ? Icons.fullscreen_exit
+                                : Icons.fullscreen,
+                            iconSize: 20,
+                          ),
+                        if (showStep)
+                          _ControlIconButton(
+                            onPressed: () =>
+                                fireAndLog('step backward', onStepBackward()),
+                            tooltip: l.previousFrame,
+                            icon: Icons.skip_previous,
+                            iconSize: 18,
+                          ),
+                        if (showPlay)
+                          _ControlIconButton(
+                            onPressed: () =>
+                                fireAndLog('toggle playback', onTogglePlay()),
+                            tooltip: isPlaying ? l.pause : l.play,
+                            icon: isPlaying ? Icons.pause : Icons.play_arrow,
+                            iconSize: 20,
+                          ),
+                        if (showStep)
+                          _ControlIconButton(
+                            onPressed: () =>
+                                fireAndLog('step forward', onStepForward()),
+                            tooltip: l.nextFrame,
+                            icon: Icons.skip_next,
+                            iconSize: 18,
+                          ),
+                        if (showTime) ...[
+                          if (showZoom ||
+                              showFullscreen ||
+                              showStep ||
+                              showPlay)
                             const SizedBox(width: _gapWidth),
-                          ],
-                          if (showFullscreen)
-                            _ControlIconButton(
-                              onPressed: onToggleFullScreen,
-                              icon: isFullScreen
-                                  ? Icons.fullscreen_exit
-                                  : Icons.fullscreen,
-                              iconSize: 20,
-                            ),
-                          if (showStep)
-                            _ControlIconButton(
-                              onPressed: () =>
-                                  fireAndLog('step backward', onStepBackward()),
-                              icon: Icons.skip_previous,
-                              iconSize: 18,
-                            ),
-                          if (showPlay)
-                            _ControlIconButton(
-                              onPressed: () =>
-                                  fireAndLog('toggle playback', onTogglePlay()),
-                              icon: isPlaying ? Icons.pause : Icons.play_arrow,
-                              iconSize: 20,
-                            ),
-                          if (showStep)
-                            _ControlIconButton(
-                              onPressed: () =>
-                                  fireAndLog('step forward', onStepForward()),
-                              icon: Icons.skip_next,
-                              iconSize: 18,
-                            ),
-                          if (showTime) ...[
-                            if (showZoom ||
-                                showFullscreen ||
-                                showStep ||
-                                showPlay)
-                              const SizedBox(width: _gapWidth),
-                            SizedBox(
-                              width: _timeWidth,
-                              child: ClipRect(
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: EditableTimeLabel(
-                                    currentUs: currentPtsUs,
-                                    totalUs: durationUs,
-                                    seekMinUs: seekMinUs,
-                                    seekMaxUs: seekMaxUs,
-                                    onSeek: onSeek,
-                                  ),
+                          SizedBox(
+                            width: _timeWidth,
+                            child: ClipRect(
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: EditableTimeLabel(
+                                  currentUs: currentPtsUs,
+                                  totalUs: durationUs,
+                                  seekMinUs: seekMinUs,
+                                  seekMaxUs: seekMaxUs,
+                                  onSeek: onSeek,
                                 ),
                               ),
                             ),
-                          ] else
-                            const Spacer(),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+                          ),
+                        ] else
+                          const Spacer(),
+                      ],
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -212,25 +210,38 @@ class ControlsBar extends StatelessWidget {
 
 class _ControlIconButton extends StatelessWidget {
   final VoidCallback onPressed;
+  final String tooltip;
   final IconData icon;
   final double iconSize;
 
   const _ControlIconButton({
     required this.onPressed,
+    required this.tooltip,
     required this.icon,
     required this.iconSize,
   });
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 32,
-      height: 32,
-      child: IconButton(
-        onPressed: onPressed,
-        icon: Icon(icon, size: iconSize),
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+    return Semantics(
+      button: true,
+      label: tooltip,
+      onTap: onPressed,
+      child: ExcludeSemantics(
+        child: SizedBox(
+          width: 32,
+          height: 32,
+          child: Tooltip(
+            message: tooltip,
+            excludeFromSemantics: true,
+            child: IconButton(
+              onPressed: onPressed,
+              icon: Icon(icon, size: iconSize),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            ),
+          ),
+        ),
       ),
     );
   }

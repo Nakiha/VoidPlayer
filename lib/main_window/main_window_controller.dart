@@ -26,7 +26,7 @@ import '../track_manager.dart';
 import '../utils/async_guard.dart';
 import '../video_renderer_controller.dart';
 import '../viewport/viewport_display_state.dart';
-import '../viewport/viewport_projection_diagnostics.dart';
+import '../viewport/viewport_interaction_diagnostics.dart';
 import '../widgets/loop_range_bar.dart';
 import 'main_window_actions.dart';
 import 'main_window_agent.dart';
@@ -275,7 +275,7 @@ class MainWindowController {
     if (_lastNativeCompositorFrameRequestReason == reason) {
       return;
     }
-    log.fine('[WindowsCompositorDebug] queue Flutter export frame: $reason');
+    log.fine('[NativeCompositorDebug] queue Flutter export frame: $reason');
     _nativeCompositorFrameRequestQueued = true;
     scheduleMicrotask(() {
       _nativeCompositorFrameRequestQueued = false;
@@ -317,6 +317,7 @@ class MainWindowController {
     return MainWindowViewModelFactory.build(
       session: _session,
       layout: _layout,
+      hasPlayer: _state.playerId != null,
       textureId: _textureId,
       nativeCompositorActive: _nativeCompositorActive,
       viewportState: _viewportState,

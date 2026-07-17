@@ -116,9 +116,9 @@ VPMacOSMetalPresentationBackendSourceBakeBackend(
     return backend->source_bake_backend;
   }
   auto source_bake_backend =
-      vr::create_presentation_backend(vr::RenderBackendKind::WgpuMetal);
+      vr::create_presentation_backend(vr::RenderBackendKind::Metal);
   if (!source_bake_backend) {
-    write_bridge_error(error, error_size, "wgpu-metal source bake backend is unavailable");
+    write_bridge_error(error, error_size, "metal source bake backend is unavailable");
     return {};
   }
   vr::PresentationBackendConfig config;
@@ -126,7 +126,7 @@ VPMacOSMetalPresentationBackendSourceBakeBackend(
   config.width = width;
   config.height = height;
   config.max_track_slots = 1;
-  config.headless = true;
+  config.offscreen = true;
   if (!source_bake_backend->initialize(config)) {
     write_bridge_error(
         error,

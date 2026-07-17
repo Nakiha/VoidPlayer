@@ -143,6 +143,7 @@ typedef struct VPMacOSNativeOverlayGpuPrimitiveSet {
 
 VPMacOSMetalUploader* VPMacOSMetalUploaderCreate(void);
 void VPMacOSMetalUploaderDestroy(VPMacOSMetalUploader* uploader);
+void VPMacOSMetalUploaderPrewarmPipelines(void);
 int VPMacOSMetalUploaderIsAvailable(VPMacOSMetalUploader* uploader);
 int64_t VPMacOSMetalUploaderDirectYUVUploadCount(VPMacOSMetalUploader* uploader);
 int64_t VPMacOSMetalUploaderCVPixelBufferUploadCount(VPMacOSMetalUploader* uploader);

@@ -118,8 +118,8 @@ enum MacOSNativePlayerError: Error, CustomStringConvertible {
         message == "not all present decision frames are ready" ||
         message == "timed out waiting for a decoded frame" ||
         message == "shared macOS renderer has not presented a frame yet" ||
-        message == "renderer-owned Metal presentation target is not installed" ||
-        message == "renderer-owned Metal presentation target changed during refresh"
+        message == "native Metal presentation target is not installed" ||
+        message == "native Metal presentation target changed during refresh"
     case .invalidPayload:
       return false
     case .transientFrameUnavailable:

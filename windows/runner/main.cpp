@@ -5,12 +5,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <optional>
 #include <regex>
 #include <sstream>
 #include <vector>
+
+#include <spdlog/spdlog.h>
 
 #include "flutter_window.h"
 #include "startup_trace.h"
@@ -92,6 +95,57 @@ std::optional<double> ExtractJsonNumber(const std::string& json,
   } catch (...) {
     return std::nullopt;
   }
+}
+
+bool IsTrackedShortcutKey(WPARAM virtual_key) {
+  switch (virtual_key) {
+    case VK_SPACE:
+    case VK_LEFT:
+    case VK_RIGHT:
+    case 'M':
+    case 'O':
+    case VK_F11:
+    case VK_ESCAPE:
+    case VK_CONTROL:
+    case VK_LCONTROL:
+    case VK_RCONTROL:
+      return true;
+    default:
+      return false;
+  }
+}
+
+const char* ShortcutMessageName(UINT message) {
+  switch (message) {
+    case WM_KEYDOWN:
+      return "WM_KEYDOWN";
+    case WM_KEYUP:
+      return "WM_KEYUP";
+    case WM_SYSKEYDOWN:
+      return "WM_SYSKEYDOWN";
+    case WM_SYSKEYUP:
+      return "WM_SYSKEYUP";
+    default:
+      return "other";
+  }
+}
+
+void TraceShortcutMessage(const MSG& message, uint64_t sequence) {
+  if ((message.message != WM_KEYDOWN && message.message != WM_KEYUP &&
+       message.message != WM_SYSKEYDOWN && message.message != WM_SYSKEYUP) ||
+      !IsTrackedShortcutKey(message.wParam)) {
+    return;
+  }
+  const auto bits = static_cast<uint64_t>(message.lParam);
+  spdlog::info(
+      "[ShortcutTrace][Win32] seq={} message={} vk=0x{:02x} repeat={} "
+      "scan=0x{:02x} extended={} was_down={} transition_up={} target=0x{:x} "
+      "focus=0x{:x}",
+      sequence, ShortcutMessageName(message.message), message.wParam,
+      bits & 0xffffu, (bits >> 16u) & 0xffu, (bits >> 24u) & 1u,
+      (bits >> 30u) & 1u, (bits >> 31u) & 1u,
+      reinterpret_cast<uintptr_t>(message.hwnd),
+      reinterpret_cast<uintptr_t>(::GetFocus()));
 }
 
 std::optional<std::string> ExtractWindowJson(const std::string& json) {
@@ -205,7 +259,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   RunnerStartupTraceMark("message loop starting");
 
   ::MSG msg;
+  uint64_t shortcut_message_sequence = 0;
   while (::GetMessage(&msg, nullptr, 0, 0)) {
+    TraceShortcutMessage(msg, ++shortcut_message_sequence);
+    window.ForwardShortcutMessage(msg);
     ::TranslateMessage(&msg);
     ::DispatchMessage(&msg);
   }

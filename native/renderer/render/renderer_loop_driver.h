@@ -1,5 +1,6 @@
 #pragma once
 
+#include "renderer/playback/playback_pacing_controller.h"
 #include "renderer/render/render_loop_controller.h"
 #include "renderer/render/presentation_scheduler.h"
 #include "renderer/render/renderer_preview_state.h"
@@ -10,18 +11,6 @@
 #include <utility>
 
 namespace vr {
-
-struct RendererLoopPrerollDecision {
-    bool clock_paused = false;
-    bool force_preview_redraw = false;
-    bool pause_clock = false;
-    bool resume_clock = false;
-    bool resume_decode = false;
-    bool log_transition_complete = false;
-    bool log_preroll_pending = false;
-    bool log_preroll_complete = false;
-    double preroll_complete_pts_s = -1.0;
-};
 
 struct RendererLoopResizeDecision {
     bool should_apply = false;
@@ -60,11 +49,10 @@ public:
     RendererLoopResizeDecision take_resize_decision(
         std::chrono::steady_clock::time_point now);
     void clear_pending_resize();
-    void reset_preroll_state();
-    RendererLoopPrerollDecision evaluate_preroll(bool playing,
-                                                 bool clock_paused,
-                                                 bool any_buffering,
-                                                 int64_t current_pts_us);
+    void reset_playback_pacing();
+    PlaybackPacingDecision evaluate_playback_pacing(
+        const PlaybackPacingInput& input);
+    PlaybackPacingDiagnostics playback_pacing_diagnostics() const;
     void reset_preview_state();
     void force_preview_redraw();
     void mark_preview_presented(bool drawn = true);
@@ -78,6 +66,7 @@ public:
         int64_t pts_us);
     void reset_presentation_scheduler();
     PresentationSchedulerTick tick_presentation(RenderSink& sink);
+    void commit_presented(const PresentDecision& decision);
     std::chrono::microseconds frame_deadline_sleep(int64_t current_pts_us,
                                                    int64_t next_event_pts_us,
                                                    double speed,
@@ -91,7 +80,7 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<int> pending_width_{0};
     std::atomic<int> pending_height_{0};
-    bool was_buffering_ = false;
+    PlaybackPacingController playback_pacing_;
     RendererPreviewState preview_;
     RenderLoopController controller_;
     PresentationScheduler presentation_scheduler_;

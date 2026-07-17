@@ -36,12 +36,17 @@ using RendererEventCallback = std::function<void(const RendererEvent&)>;
 using RendererFrameCallback =
     std::function<void(const PresentationBackendFrameInfo*)>;
 
+enum class RendererFrameRefreshResult : uint8_t {
+    Presented,
+    NotReady,
+    Failed,
+};
+
 struct RendererGpuMemoryStats {
     uint64_t total_estimated_bytes = 0;
     uint64_t decoder_pool_bytes = 0;
     uint64_t exact_seek_snapshot_bytes = 0;
     uint64_t presenter_texture_bytes = 0;
-    uint64_t headless_output_bytes = 0;
     uint64_t fp16_target_bytes = 0;
     uint64_t analysis_overlay_bytes = 0;
     uint64_t cpu_frame_bytes = 0;
@@ -50,26 +55,9 @@ struct RendererGpuMemoryStats {
     uint64_t exact_seek_candidate_cpu_bytes = 0;
     uint64_t exact_seek_stable_cpu_bytes = 0;
     size_t exact_seek_budget_drop_count = 0;
-    int headless_width = 0;
-    int headless_height = 0;
-    int headless_buffer_count = 0;
     int analysis_overlay_width = 0;
     int analysis_overlay_height = 0;
     std::vector<TrackGpuMemoryStats> tracks;
-};
-
-enum class SharedTextureHandleType {
-    None = 0,
-};
-
-struct SharedTextureSnapshot {
-    SharedTextureHandleType type = SharedTextureHandleType::None;
-    void* texture = nullptr;  ///< AddRef'd backend texture; caller must Release().
-    void* handle = nullptr;
-    int width = 0;
-    int height = 0;
-    int buffer_index = -1;
-    uint64_t buffer_generation = 0;
 };
 
 } // namespace vr

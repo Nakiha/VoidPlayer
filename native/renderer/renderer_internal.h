@@ -7,7 +7,6 @@
 #include "renderer/playback/renderer_playback_command_policy.h"
 #include "renderer/seek/renderer_seek_log_policy.h"
 #include "renderer/track/track_lifecycle.h"
-#include "renderer/track/track_preroll_policy.h"
 #include "renderer/track/track_present_policy.h"
 #include "renderer/track/track_preview_policy.h"
 #include "renderer/track/track_step_policy.h"
@@ -18,6 +17,7 @@
 #include "renderer/render/presentation_backend_factory.h"
 #include "renderer/render/presentation_snapshot.h"
 #include "renderer/render/render_thread_platform.h"
+#include "renderer/render/renderer_frame_refresh_policy.h"
 #include "renderer/render/renderer_timing_utils.h"
 #include "renderer/render/renderer_viewport_trace.h"
 #include "renderer/render/swap_chain_present_policy.h"
@@ -33,7 +33,5 @@ namespace vr {
 
 static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250);
 static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
-static constexpr auto kViewportCompositorActivityGrace =
-    std::chrono::milliseconds(25);
-
+static constexpr auto kStepBackwardReconstructionWait = std::chrono::milliseconds(250);
 } // namespace vr

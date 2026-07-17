@@ -1,6 +1,7 @@
 """Flutter app build, launch, demo, and UI test commands."""
 
 import csv
+import ctypes
 import json
 import os
 import shutil
@@ -74,19 +75,6 @@ def _macos_local_engine_args(debug: bool) -> list[str]:
     return args
 
 
-def _windows_native_compositor_requested() -> bool:
-    mode = os.environ.get(
-        "VOIDPLAYER_WINDOWS_PRESENTATION_MODE", ""
-    ).strip().lower()
-    return mode in (
-        "",
-        "auto",
-        "sdr",
-        "native-compositor-sdr",
-        "native-compositor-scrgb",
-    )
-
-
 def _windows_local_engine_args(debug: bool) -> list[str]:
     engine_src = Path(
         os.environ.get(
@@ -94,24 +82,16 @@ def _windows_local_engine_args(debug: bool) -> list[str]:
             str(ROOT / ".toolchains" / "flutter" / "engine" / "src"),
         )
     )
-    if debug:
-        engine_name = (
-            os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE")
-            or "host_debug_unopt"
-        )
-        engine_host = (
-            os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST")
-            or engine_name
-        )
-    else:
-        engine_name = (
-            os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE")
-            or "host_release"
-        )
-        engine_host = (
-            os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE")
-            or engine_name
-        )
+    engine_name = os.environ.get(
+        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE" if debug
+        else "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE",
+        "host_debug_unopt" if debug else "host_release",
+    )
+    engine_host = os.environ.get(
+        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST" if debug
+        else "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE",
+        engine_name,
+    )
     engine_path = engine_src / "out" / engine_name
     required = (
         engine_path / "flutter_windows.dll",
@@ -121,8 +101,8 @@ def _windows_local_engine_args(debug: bool) -> list[str]:
         engine_path / "flutter_patched_sdk",
     )
     if not engine_path.exists() or any(not path.exists() for path in required):
-        print("ERROR: Windows native compositor modes require the locked local engine.")
-        print("Run scripts/ci/bootstrap_flutter_windows_engine.ps1 or set:")
+        print("ERROR: Windows native compositor requires the locked local engine.")
+        print("Set:")
         print("  VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH=<engine/src>")
         print("  VOIDPLAYER_FLUTTER_LOCAL_ENGINE[_RELEASE]=<output-name>")
         sys.exit(1)
@@ -133,20 +113,6 @@ def _windows_local_engine_args(debug: bool) -> list[str]:
     ]
 
 
-def _windows_engine_marker_path(debug: bool) -> Path:
-    return app_exe_path(debug).parent / ".voidplayer_flutter_engine_mode"
-
-
-def _windows_app_uses_native_engine(debug: bool) -> bool:
-    try:
-        return (
-            _windows_engine_marker_path(debug).read_text(encoding="utf-8").strip()
-            in ("native-compositor", "native-compositor-scrgb")
-        )
-    except OSError:
-        return False
-
-
 def flutter_build(debug: bool) -> None:
     """Build Flutter Windows app."""
     build_type = "Debug" if debug else "Release"
@@ -155,19 +121,10 @@ def flutter_build(debug: bool) -> None:
     header(f"Build Flutter ({build_type})")
 
     cmd = _flutter_cmd("build", "windows")
-    if _windows_native_compositor_requested():
-        cmd.extend(_windows_local_engine_args(debug))
+    cmd.extend(_windows_local_engine_args(debug))
     cmd.append("--debug" if debug else "--release")
 
     run(cmd, cwd=str(ROOT))
-    marker = _windows_engine_marker_path(debug)
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(
-        "native-compositor\n"
-        if _windows_native_compositor_requested()
-        else "standard\n",
-        encoding="utf-8",
-    )
 
 
 def flutter_build_macos(debug: bool) -> None:
@@ -401,8 +358,6 @@ def cmd_run(args) -> None:
     )
     if _is_macos():
         flutter_args.extend(_macos_local_engine_args(debug))
-    elif _windows_native_compositor_requested():
-        flutter_args.extend(_windows_local_engine_args(debug))
     flutter_args.append("--debug" if debug else "--release")
 
     if args.log_level:
@@ -434,11 +389,7 @@ def _cmd_launch(args) -> None:
     debug = bool(args.debug)
     exe = app_exe_path(debug)
 
-    needs_native_engine = (
-        _windows_native_compositor_requested()
-        and not _windows_app_uses_native_engine(debug)
-    )
-    if args.build or not exe.exists() or needs_native_engine:
+    if args.build or not exe.exists():
         flutter_build(debug)
 
     if not exe.exists():
@@ -521,7 +472,7 @@ def cmd_test(args) -> None:
     if not args.flutter_only:
         if _is_macos():
             if args.github:
-                print("macOS native GitHub mode: excluding hosted-runner-only Metal headless flake.")
+                print("macOS native GitHub mode: excluding hosted-runner-only Metal offscreen flake.")
             native_build_macos(args.debug, test=True, github=args.github)
         else:
             native_build(args.debug, test=True, github=args.github)
@@ -570,11 +521,7 @@ def _cmd_ui_test(args) -> None:
 
     exe = app_exe_path(args.debug)
 
-    needs_native_engine = (
-        _windows_native_compositor_requested()
-        and not _windows_app_uses_native_engine(args.debug)
-    )
-    if args.build or not exe.exists() or needs_native_engine:
+    if args.build or not exe.exists():
         flutter_build(args.debug)
 
     if not exe.exists():
@@ -996,6 +943,29 @@ def _run_ui_test_process(cmd: list[str]) -> tuple[int, bool]:
         errors="replace",
         bufsize=1,
     )
+    if _is_windows():
+        raw_affinity = os.environ.get("VOIDPLAYER_UI_TEST_AFFINITY_MASK", "").strip()
+        if raw_affinity:
+            affinity_mask = int(raw_affinity, 0)
+            if affinity_mask <= 0:
+                raise ValueError(
+                    "VOIDPLAYER_UI_TEST_AFFINITY_MASK must be a positive integer mask"
+                )
+            kernel32 = ctypes.windll.kernel32
+            kernel32.SetProcessAffinityMask.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_size_t,
+            ]
+            kernel32.SetProcessAffinityMask.restype = ctypes.c_int
+            if not kernel32.SetProcessAffinityMask(
+                ctypes.c_void_p(process._handle),
+                ctypes.c_size_t(affinity_mask),
+            ):
+                raise ctypes.WinError()
+            print(
+                "Applied UI test process affinity "
+                f"pid={process.pid} mask=0x{affinity_mask:X}"
+            )
     assert process.stdout is not None
     for line in process.stdout:
         print(line, end="")

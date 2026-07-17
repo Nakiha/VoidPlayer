@@ -32,15 +32,48 @@ PresentationScheduler::PresentedSignature PresentationScheduler::signature_for(
     const PresentDecision& decision) {
     PresentedSignature signature;
     signature.should_present = decision.should_present;
-    size_t slot = kMaxTracks;
-    int64_t pts_us = kNoTimestampUs;
-    if (representative_presented_frame(decision, slot, pts_us)) {
-        signature.reference_slot = slot;
-        signature.pts_us = pts_us;
-        signature.file_id = decision.file_ids[slot];
-        signature.track_generation = decision.track_generations[slot];
+    for (size_t slot = 0; slot < kMaxTracks; ++slot) {
+        const auto& frame = decision.frames[slot];
+        if (!frame.has_value()) {
+            continue;
+        }
+        auto& out = signature.frames[slot];
+        out.present = true;
+        out.pts_us = frame->pts_us;
+        out.dts_us = frame->dts_us;
+        out.source_packet_index = frame->source_packet_index;
+        out.storage_identity =
+            reinterpret_cast<uintptr_t>(frame->texture_handle);
+        if (out.storage_identity == 0 && frame->cpu_data) {
+            out.storage_identity =
+                reinterpret_cast<uintptr_t>(frame->cpu_data.get());
+        }
+        out.file_id = decision.file_ids[slot];
+        out.track_generation = decision.track_generations[slot];
     }
     return signature;
+}
+
+bool PresentationScheduler::signatures_equal(
+    const PresentedSignature& left,
+    const PresentedSignature& right) {
+    if (left.should_present != right.should_present) {
+        return false;
+    }
+    for (size_t slot = 0; slot < kMaxTracks; ++slot) {
+        const auto& a = left.frames[slot];
+        const auto& b = right.frames[slot];
+        if (a.present != b.present ||
+            a.pts_us != b.pts_us ||
+            a.dts_us != b.dts_us ||
+            a.source_packet_index != b.source_packet_index ||
+            a.storage_identity != b.storage_identity ||
+            a.file_id != b.file_id ||
+            a.track_generation != b.track_generation) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void PresentationScheduler::reset() {
@@ -60,31 +93,17 @@ PresentationSchedulerTick PresentationScheduler::tick(RenderSink& render_sink) {
     result.has_presentable_frame = true;
     result.selected_pts_us = pts_us;
     const auto signature = signature_for(result.decision);
-    if (signature.should_present == last_presented_signature_.should_present &&
-        signature.pts_us == last_presented_signature_.pts_us &&
-        signature.reference_slot == last_presented_signature_.reference_slot &&
-        signature.file_id == last_presented_signature_.file_id &&
-        signature.track_generation == last_presented_signature_.track_generation) {
+    if (signatures_equal(signature, last_presented_signature_)) {
         return result;
     }
 
-    last_presented_signature_ = signature;
     result.should_notify = true;
     return result;
 }
 
-bool PresentationScheduler::advance_to_clock(RenderSink& render_sink,
-                                             int64_t* selected_pts_us) const {
-    const auto decision = render_sink.evaluate();
-    int64_t pts_us = 0;
-    size_t slot = kMaxTracks;
-    if (!representative_presented_frame(decision, slot, pts_us)) {
-        return false;
-    }
-    if (selected_pts_us) {
-        *selected_pts_us = pts_us;
-    }
-    return true;
+void PresentationScheduler::commit_presented(
+    const PresentDecision& decision) {
+    last_presented_signature_ = signature_for(decision);
 }
 
 } // namespace vr

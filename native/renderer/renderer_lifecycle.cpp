@@ -198,7 +198,7 @@ void Renderer::Impl::release_resources_locked() {
         analysis_overlay_renderer_->reset();
     }
     loop_driver_.reset_preview_state();
-    loop_driver_.reset_preroll_state();
+    loop_driver_.reset_playback_pacing();
     if (timeline_.seek()) {
         timeline_.seek()->reset();
     }

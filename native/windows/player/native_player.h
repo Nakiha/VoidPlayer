@@ -45,6 +45,7 @@ class WindowsNativePlayer final {
   LayoutState layout() const;
   std::vector<TrackInfo> tracks() const;
   std::vector<TrackPerfStats> track_perf_stats() const;
+  PlaybackPacingDiagnostics playback_pacing_diagnostics() const;
   RendererGpuMemoryStats gpu_memory_stats() const;
   PresentationBackendMetrics presentation_metrics() const;
   PresentationBackendStats presentation_stats() const;

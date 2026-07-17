@@ -124,10 +124,6 @@ size_t RendererTrackController::count() const {
     return registry_->count();
 }
 
-bool RendererTrackController::has_preroll_blocking_track() const {
-    return registry_->has_preroll_blocking_track();
-}
-
 bool RendererTrackController::has_buffering_track() const {
     return registry_->has_buffering_track();
 }
@@ -135,6 +131,11 @@ bool RendererTrackController::has_buffering_track() const {
 std::vector<RenderLoopTrackDiagnosticSnapshot>
 RendererTrackController::render_loop_diagnostics() const {
     return presentation_model_->render_loop_diagnostics();
+}
+
+PlaybackPacingSnapshot RendererTrackController::playback_pacing_snapshot(
+    int64_t current_pts_us) const {
+    return presentation_model_->playback_pacing_snapshot(current_pts_us);
 }
 
 void RendererTrackController::set_video_decode_paused(
@@ -251,9 +252,9 @@ RendererTrackController::update_layout_track_geometry_from_decision(
         decision);
 }
 
-EmptyBufferEofClamp RendererTrackController::empty_buffer_eof_clamp(
+PlaybackEofBoundary RendererTrackController::playback_eof_boundary(
     const PresentDecision& last_decision) const {
-    return presentation_model_->empty_buffer_eof_clamp(last_decision);
+    return presentation_model_->playback_eof_boundary(last_decision);
 }
 
 std::optional<int64_t> RendererTrackController::next_frame_event_pts_us(

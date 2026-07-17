@@ -22,10 +22,14 @@ public:
     void resume();                      // base_time_us += (now - pause_time_us)
     void seek(int64_t target_pts_us);   // base_pts_us = target, base_time_us = now
     void set_speed(double new_speed);   // preserve current_pts_us, adjust base_time_us
+    void set_effective_speed(double new_speed);
 
     // State queries
     bool is_paused() const;
+    // User-requested playback speed.
     double speed() const;
+    // Clock rate after shared playback pacing admission.
+    double effective_speed() const;
 
 private:
     int64_t get_time_us() const;
@@ -35,7 +39,8 @@ private:
     int64_t base_time_us_ = 0;
     int64_t base_pts_us_ = 0;
     int64_t pause_time_us_ = 0;
-    double speed_ = 1.0;
+    double requested_speed_ = 1.0;
+    double effective_speed_ = 1.0;
     bool paused_ = true;
 };
 

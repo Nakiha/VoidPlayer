@@ -144,6 +144,10 @@ RendererPresentedAnchorDiagnostics Renderer::presented_anchor_diagnostics() cons
     return impl_->presented_anchor_diagnostics();
 }
 
+PlaybackPacingDiagnostics Renderer::playback_pacing_diagnostics() const {
+    return impl_->playback_pacing_diagnostics();
+}
+
 PresentationBackendMetrics Renderer::presentation_backend_metrics() const {
     return impl_->presentation_backend_metrics();
 }

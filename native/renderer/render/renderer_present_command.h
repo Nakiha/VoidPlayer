@@ -46,7 +46,9 @@ public:
                                   const char* reason);
     static RendererFrameRefreshResult redraw_layout(
         RendererPresentCommandContext& context);
-    static void present_frame(RendererPresentCommandContext& context,
+    // Returns true once the backend accepts a synchronous draw or asynchronous
+    // handoff. Presentation cursors must not advance when this returns false.
+    static bool present_frame(RendererPresentCommandContext& context,
                               const PresentDecision& decision);
 };
 

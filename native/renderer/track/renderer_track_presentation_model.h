@@ -4,6 +4,7 @@
 #include "renderer/track/track_perf_baseline.h"
 #include "renderer/track/track_present_policy.h"
 #include "renderer/track/track_preview_policy.h"
+#include "renderer/track/track_playback_pacing.h"
 #include "renderer/track/track_snapshot.h"
 
 #include <array>
@@ -36,7 +37,9 @@ public:
     void populate_draw_tracks(RendererDrawTrackSnapshotList& out) const;
     std::vector<RendererLayoutTrackReference> layout_track_references() const;
     std::vector<RenderLoopTrackDiagnosticSnapshot>
-    render_loop_diagnostics() const;
+        render_loop_diagnostics() const;
+    PlaybackPacingSnapshot playback_pacing_snapshot(
+        int64_t current_pts_us) const;
 
     StepDecisionBuildResult build_step_forward_decision(
         int64_t current_pts_us,
@@ -64,7 +67,7 @@ public:
         int64_t target_pts_us) const;
     std::vector<LayoutTrackGeometryUpdate> update_layout_track_geometry_from_decision(
         const PresentDecision& decision);
-    EmptyBufferEofClamp empty_buffer_eof_clamp(
+    PlaybackEofBoundary playback_eof_boundary(
         const PresentDecision& last_decision) const;
     std::optional<int64_t> next_frame_event_pts_us(int64_t current_pts_us) const;
     RendererPausedCachedDecision paused_cached_decision(

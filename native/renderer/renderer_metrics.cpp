@@ -2,6 +2,12 @@
 
 namespace vr {
 
+PlaybackPacingDiagnostics
+Renderer::Impl::playback_pacing_diagnostics() const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    return loop_driver_.playback_pacing_diagnostics();
+}
+
 std::string Renderer::Impl::presentation_backend_last_error() const {
     return presentation_.backend_last_error();
 }

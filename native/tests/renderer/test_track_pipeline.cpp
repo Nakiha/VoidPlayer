@@ -7,7 +7,7 @@
 #include "renderer/track/track_lifecycle.h"
 #include "renderer/track/track_pipeline_factory.h"
 #include "renderer/track/track_perf_baseline.h"
-#include "renderer/track/track_preroll_policy.h"
+#include "renderer/track/track_playback_pacing.h"
 #include "renderer/track/track_present_policy.h"
 #include "renderer/track/track_preview_policy.h"
 #include "renderer/track/track_snapshot.h"
@@ -1103,32 +1103,82 @@ TEST_CASE("TrackStepPolicy computes minimum current frame duration",
     REQUIRE(compute_min_current_frame_duration_us(oversized_manager) == 33333);
 }
 
-TEST_CASE("TrackPrerollPolicy detects preroll-blocking tracks",
-          "[track_pipeline][track_preroll_policy]") {
+TEST_CASE("TrackPlaybackPacing snapshots preroll and underrun frontiers",
+          "[track_pipeline][playback_pacing]") {
     TrackPipelineManager manager;
-    REQUIRE_FALSE(has_preroll_blocking_track(manager));
+    auto empty = snapshot_track_playback_pacing(manager, 0);
+    REQUIRE_FALSE(empty.has_active_tracks);
 
     auto ready = std::make_unique<TrackPipeline>();
     ready->track_buffer = std::make_shared<TrackBuffer>();
-    ready->track_buffer->set_state(TrackState::Ready);
+    ready->packet_queue = std::make_unique<PacketQueue>();
+    for (int i = 0; i < 4; ++i) {
+        TextureFrame frame;
+        frame.pts_us = i * 33333;
+        frame.duration_us = 33333;
+        frame.texture_handle =
+            reinterpret_cast<void*>(static_cast<uintptr_t>(i + 1));
+        ready->track_buffer->push_frame(frame);
+    }
+    ready->track_buffer->set_state(TrackState::Buffering);
     manager[0] = std::move(ready);
-    REQUIRE_FALSE(has_preroll_blocking_track(manager));
+    auto buffering = snapshot_track_playback_pacing(manager, 0);
+    REQUIRE(buffering.preroll_blocked);
+    REQUIRE_FALSE(buffering.starvation_risk);
+    REQUIRE(buffering.resume_ready);
+    REQUIRE(buffering.safe_frontier_us == 99999);
 
-    manager[0]->track_buffer->set_state(TrackState::Buffering);
-    REQUIRE(has_preroll_blocking_track(manager));
+    manager[0]->track_buffer->set_state(TrackState::Ready);
+    auto ready_snapshot = snapshot_track_playback_pacing(manager, 50000);
+    REQUIRE_FALSE(ready_snapshot.preroll_blocked);
+    REQUIRE_FALSE(ready_snapshot.starvation_risk);
+    REQUIRE(ready_snapshot.bottleneck_slot == 0);
+    REQUIRE(ready_snapshot.headroom_us == 49999);
 
-    manager[0]->track_buffer->set_state(TrackState::Empty);
-    REQUIRE(has_preroll_blocking_track(manager));
+    manager[0]->track_buffer->advance();
+    manager[0]->track_buffer->advance();
+    manager[0]->track_buffer->advance();
+    auto starved = snapshot_track_playback_pacing(manager, 99999);
+    REQUIRE(starved.starvation_risk);
+    REQUIRE_FALSE(starved.resume_ready);
+    REQUIRE(starved.min_buffered_frames == 1);
 
-    manager[0]->track_buffer->set_state(TrackState::Flushing);
-    REQUIRE(has_preroll_blocking_track(manager));
+    manager[0]->packet_queue->signal_eof();
+    auto eof = snapshot_track_playback_pacing(manager, 99999);
+    REQUIRE(eof.all_active_tracks_eof);
+    REQUIRE_FALSE(eof.starvation_risk);
+    REQUIRE(eof.resume_ready);
+}
 
-    manager[0]->track_buffer->set_state(TrackState::Error);
-    REQUIRE_FALSE(has_preroll_blocking_track(manager));
+TEST_CASE("TrackPlaybackPacing ignores tracks before positive offset start",
+          "[track_pipeline][playback_pacing]") {
+    const auto make_ready_track = [](int64_t offset_us,
+                                     int64_t interval_us) {
+        auto track = std::make_unique<TrackPipeline>();
+        track->offset_us = offset_us;
+        track->packet_queue = std::make_unique<PacketQueue>();
+        track->track_buffer = std::make_shared<TrackBuffer>();
+        for (int i = 0; i < 4; ++i) {
+            TextureFrame frame;
+            frame.pts_us = i * interval_us;
+            frame.duration_us = interval_us;
+            frame.texture_handle =
+                reinterpret_cast<void*>(static_cast<uintptr_t>(
+                    offset_us + i + 1));
+            track->track_buffer->push_frame(frame);
+        }
+        track->track_buffer->set_state(TrackState::Ready);
+        return track;
+    };
 
-    auto missing_buffer = std::make_unique<TrackPipeline>();
-    manager[1] = std::move(missing_buffer);
-    REQUIRE(has_preroll_blocking_track(manager));
+    TrackPipelineManager manager;
+    manager[0] = make_ready_track(0, 40000);
+    manager[1] = make_ready_track(1000000, 10000);
+
+    const auto snapshot = snapshot_track_playback_pacing(manager, 0);
+    REQUIRE(snapshot.bottleneck_slot == 0);
+    REQUIRE(snapshot.safe_frontier_us == 120000);
+    REQUIRE(snapshot.headroom_us == 120000);
 }
 
 TEST_CASE("TrackPreviewPolicy builds paused preview snapshots",
@@ -1358,7 +1408,7 @@ TEST_CASE("TrackPresentPolicy carries forward active last frames",
     REQUIRE_FALSE(decision.frames[3].has_value());
 }
 
-TEST_CASE("TrackPresentPolicy computes empty-buffer EOF clamp facts",
+TEST_CASE("TrackPresentPolicy computes playback EOF boundary",
           "[track_pipeline][track_present_policy]") {
     const auto make_frame = [](int64_t pts_us, int64_t duration_us) {
         TextureFrame frame;
@@ -1386,8 +1436,8 @@ TEST_CASE("TrackPresentPolicy computes empty-buffer EOF clamp facts",
         };
 
     TrackPipelineManager empty_manager;
-    auto empty = compute_empty_buffer_eof_clamp(empty_manager, PresentDecision());
-    REQUIRE(empty.all_active_buffers_empty);
+    auto empty = compute_playback_eof_boundary(empty_manager, PresentDecision());
+    REQUIRE(empty.all_active_tracks_bounded);
     REQUIRE(empty.max_end_pts_us == 0);
 
     TrackPipelineManager manager;
@@ -1397,25 +1447,25 @@ TEST_CASE("TrackPresentPolicy computes empty-buffer EOF clamp facts",
     last_decision.frames[0] = make_frame(1000, 40);
     last_decision.frames[1] = make_frame(2000, 50);
 
-    auto clamp = compute_empty_buffer_eof_clamp(manager, last_decision);
-    REQUIRE(clamp.all_active_buffers_empty);
+    auto clamp = compute_playback_eof_boundary(manager, last_decision);
+    REQUIRE(clamp.all_active_tracks_bounded);
     REQUIRE(clamp.max_end_pts_us == 2030);
 
     manager[2] = make_track(0, make_frame(3000, 30), false);
-    auto non_empty = compute_empty_buffer_eof_clamp(manager, last_decision);
-    REQUIRE_FALSE(non_empty.all_active_buffers_empty);
+    auto non_empty = compute_playback_eof_boundary(manager, last_decision);
+    REQUIRE_FALSE(non_empty.all_active_tracks_bounded);
 
     TrackPipelineManager bounded_manager;
     bounded_manager[0] =
         make_track(250, make_frame(3000, 30), false, 9000);
-    auto bounded = compute_empty_buffer_eof_clamp(bounded_manager, PresentDecision());
-    REQUIRE(bounded.all_active_buffers_empty);
+    auto bounded = compute_playback_eof_boundary(bounded_manager, PresentDecision());
+    REQUIRE(bounded.all_active_tracks_bounded);
     REQUIRE(bounded.max_end_pts_us == 9250);
 
     TrackPipelineManager tail_manager;
     tail_manager[0] = make_track(100, make_frame(3000, 30), true);
-    auto tail = compute_empty_buffer_eof_clamp(tail_manager, PresentDecision());
-    REQUIRE(tail.all_active_buffers_empty);
+    auto tail = compute_playback_eof_boundary(tail_manager, PresentDecision());
+    REQUIRE(tail.all_active_tracks_bounded);
     REQUIRE(tail.max_end_pts_us == 3130);
 
     TrackPipelineManager eof_buffered_manager;
@@ -1423,8 +1473,8 @@ TEST_CASE("TrackPresentPolicy computes empty-buffer EOF clamp facts",
         make_track(100, make_frame(3000, 30), true, 10000);
     eof_buffered_manager[0]->track_buffer->push_frame(make_frame(4000, 30));
     auto eof_buffered =
-        compute_empty_buffer_eof_clamp(eof_buffered_manager, PresentDecision());
-    REQUIRE(eof_buffered.all_active_buffers_empty);
+        compute_playback_eof_boundary(eof_buffered_manager, PresentDecision());
+    REQUIRE(eof_buffered.all_active_tracks_bounded);
     REQUIRE(eof_buffered.max_end_pts_us == 10100);
 
     TrackPipelineManager missing_buffer_manager;
@@ -1433,8 +1483,8 @@ TEST_CASE("TrackPresentPolicy computes empty-buffer EOF clamp facts",
     PresentDecision missing_last;
     missing_last.frames[0] = make_frame(10, 5);
     auto missing_buffer =
-        compute_empty_buffer_eof_clamp(missing_buffer_manager, missing_last);
-    REQUIRE(missing_buffer.all_active_buffers_empty);
+        compute_playback_eof_boundary(missing_buffer_manager, missing_last);
+    REQUIRE(missing_buffer.all_active_tracks_bounded);
     REQUIRE(missing_buffer.max_end_pts_us == 22);
 }
 

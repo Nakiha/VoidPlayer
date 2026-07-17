@@ -2,7 +2,6 @@
 
 #include "renderer/track/track_lifecycle.h"
 #include "renderer/track/track_present_policy.h"
-#include "renderer/track/track_preroll_policy.h"
 #include "renderer/track/track_step_policy.h"
 
 #include <algorithm>
@@ -123,10 +122,6 @@ bool RendererTrackRegistry::has_active_tracks() const {
 
 size_t RendererTrackRegistry::count() const {
     return tracks_.count();
-}
-
-bool RendererTrackRegistry::has_preroll_blocking_track() const {
-    return vr::has_preroll_blocking_track(tracks_);
 }
 
 bool RendererTrackRegistry::has_buffering_track() const {

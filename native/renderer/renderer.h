@@ -3,6 +3,7 @@
 #include "audio/audio_output_stats.h"
 #include "media/seek_controller.h"
 #include "renderer/layout/layout_state.h"
+#include "renderer/playback/playback_pacing_controller.h"
 #include "renderer/render/presentation_backend_types.h"
 #include "renderer/render/renderer_present_history.h"
 #include "renderer/render/renderer_device_state.h"
@@ -73,6 +74,7 @@ public:
     std::vector<TrackInfo> track_infos() const;
     std::vector<TrackPerfStats> track_perf_stats() const;
     RendererPresentedAnchorDiagnostics presented_anchor_diagnostics() const;
+    PlaybackPacingDiagnostics playback_pacing_diagnostics() const;
 
     PresentationBackendMetrics presentation_backend_metrics() const;
     PresentationBackendStats presentation_backend_stats() const;

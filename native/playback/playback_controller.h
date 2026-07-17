@@ -36,12 +36,18 @@ public:
     void pause();
     void seek_clock(int64_t target_pts_us);
     void set_speed(double speed);
+    void set_effective_speed(double speed);
+    void hold_for_pacing();
+    void release_pacing_hold();
+    bool pacing_held() const { return pacing_held_; }
     double speed() const;
+    double effective_speed() const;
 
 private:
     Clock clock_;
     AudioOutputFactory audio_output_factory_;
     std::unique_ptr<AudioOutput> audio_output_;
+    bool pacing_held_ = false;
 };
 
 } // namespace vr

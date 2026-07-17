@@ -7,7 +7,6 @@
 #include "renderer/playback/renderer_playback_command_policy.h"
 #include "renderer/seek/renderer_seek_log_policy.h"
 #include "renderer/track/track_lifecycle.h"
-#include "renderer/track/track_preroll_policy.h"
 #include "renderer/track/track_present_policy.h"
 #include "renderer/track/track_preview_policy.h"
 #include "renderer/track/track_step_policy.h"

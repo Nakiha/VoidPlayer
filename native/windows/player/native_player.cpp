@@ -153,6 +153,13 @@ RendererGpuMemoryStats WindowsNativePlayer::gpu_memory_stats() const {
                         : RendererGpuMemoryStats{};
 }
 
+PlaybackPacingDiagnostics
+WindowsNativePlayer::playback_pacing_diagnostics() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->playback_pacing_diagnostics()
+                        : PlaybackPacingDiagnostics{};
+}
+
 PresentationBackendMetrics WindowsNativePlayer::presentation_metrics() const {
   std::shared_lock<std::shared_mutex> lock(mutex_);
   return ready_locked() ? renderer_->presentation_backend_metrics()

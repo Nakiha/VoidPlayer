@@ -19,6 +19,7 @@ add_executable(video_renderer_tests
     renderer/test_renderer_frame_refresh_policy.cpp
     renderer/test_renderer_presentation_completion.cpp
     renderer/test_presentation_metrics_store.cpp
+    renderer/test_playback_pacing_controller.cpp
     renderer/test_renderer_seek_log_policy.cpp
     renderer/test_renderer_lifecycle.cpp
     renderer/test_renderer_config_validation.cpp

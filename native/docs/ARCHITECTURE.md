@@ -68,6 +68,30 @@ native/
 | `TrackPipeline` | 每轨 demux/decode/buffer state |
 | `FrameConverter` | AVFrame 到 native-target frame storage；硬解 import 只在已实现 backend 上启用 |
 
+### Exact playback pacing
+
+Shared native playback uses a single `PlaybackPacingController` boundary.
+`RendererTrackPresentationModel` supplies immutable per-track PTS-frontier
+facts; the pacing controller owns preroll, mid-stream rebuffer hysteresis, and
+the effective clock rate. Platform runners do not participate in playback
+admission.
+
+- The user-requested speed and effective clock speed are separate.
+- With no audible track, safe PTS headroom may reduce effective speed before an
+  underrun.
+- With audible audio, pacing remains at the requested speed and uses an
+  audio/video hold instead of changing video rate without time stretching.
+- The slowest currently active, non-EOF track is the pacing bottleneck.
+- Positive-offset tracks do not constrain the clock before their global start.
+- `RenderSink::evaluate()` is non-mutating. A native presentation submission
+  must be accepted before `commit_presented()` advances queue cursors.
+- Queue heads are committed in global PTS order. The scheduler never greedily
+  skips decoded frames to catch a wall clock.
+
+Viewport interaction remains display-linked and independent: while playback is
+held for decode recovery, Windows/macOS runners continue reprojecting the last
+complete native source frame.
+
 ## 数据流总览
 
 ```text

@@ -252,7 +252,7 @@ bool RendererPresentCommandProcessor::draw_paused_frame(
     return true;
 }
 
-void RendererPresentCommandProcessor::present_frame(
+bool RendererPresentCommandProcessor::present_frame(
     RendererPresentCommandContext& context,
     const PresentDecision& decision) {
     const auto profiler_start = std::chrono::steady_clock::now();
@@ -314,7 +314,7 @@ void RendererPresentCommandProcessor::present_frame(
         };
     RendererPresentationDrawResult sync_draw_result;
     bool sync_completed = false;
-    context.presentation.submit_and_dispatch(
+    const bool accepted = context.presentation.submit_and_dispatch(
         std::move(request),
         dispatch_hooks(context,
                        completion_ctx,
@@ -327,7 +327,7 @@ void RendererPresentCommandProcessor::present_frame(
                        &sync_completed,
                        &sync_draw_result));
     if (!sync_completed) {
-        return;
+        return accepted;
     }
     const auto total_us = elapsed_us_since(profiler_start);
     static std::atomic<uint64_t> present_profiler_count{0};
@@ -356,6 +356,7 @@ void RendererPresentCommandProcessor::present_frame(
             snapshot_layout_revision,
             final_preview_drawn);
     }
+    return accepted;
 }
 
 RendererFrameRefreshResult RendererPresentCommandProcessor::redraw_layout(

@@ -254,6 +254,21 @@ call platform callbacks, or touch backend GPU resources.
 | PacketQueue | EOF signal | Demux completion |
 | PacketQueue | `abort()` | Stop blocked demux/decode work |
 
+`TrackBuffer` presentation uses a two-phase cursor contract:
+
+1. the render thread snapshots queue heads through non-mutating
+   `RenderSink::evaluate()` and `PresentationScheduler::tick()`;
+2. the selected composite is submitted to native presentation;
+3. only after a synchronous draw or asynchronous handoff is accepted,
+   scheduler and `RenderSink::commit_presented()` advance their matching
+   identities. Rejected submissions retain the same frame for retry.
+
+Decode threads may continue filling other ring slots during selection.
+Backpressure is checked before selection so a rejected submission cannot
+consume a decoded frame. Playback pacing reads queue counts/PTS under the
+existing track-buffer locks and never holds those locks while calling a
+platform backend.
+
 ## Startup And Shutdown
 
 ```text

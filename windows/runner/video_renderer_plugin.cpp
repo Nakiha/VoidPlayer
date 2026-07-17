@@ -1392,6 +1392,7 @@ void VideoRendererPlugin::HandleMethodCall(
       const auto renderer_metrics = player_->presentation_metrics();
       const auto stats = player_->presentation_stats();
       const auto backend = player_->presentation_diagnostics();
+      const auto pacing = player_->playback_pacing_diagnostics();
       const bool hardware_decode_active =
           std::any_of(memory.tracks.begin(), memory.tracks.end(),
                       [](const auto& track) { return track.hardware_enabled; });
@@ -1433,6 +1434,34 @@ void VideoRendererPlugin::HandleMethodCall(
           EncodableValue(hardware_decode_active);
       diagnostics[EncodableValue("hardwareDecodeDownloadsToCpu")] =
           EncodableValue(hardware_decode_downloads_to_cpu);
+      diagnostics[EncodableValue("playbackPacingState")] =
+          EncodableValue(std::string(
+              vr::playback_pacing_state_name(pacing.state)));
+      diagnostics[EncodableValue("requestedPlaybackSpeed")] =
+          EncodableValue(pacing.requested_speed);
+      diagnostics[EncodableValue("effectivePlaybackSpeed")] =
+          EncodableValue(pacing.effective_speed);
+      diagnostics[EncodableValue("effectivePlaybackSpeedX1000")] =
+          EncodableValue(static_cast<int64_t>(
+              pacing.effective_speed * 1000.0));
+      diagnostics[EncodableValue("playbackSafeFrontierUs")] =
+          EncodableValue(pacing.safe_frontier_us);
+      diagnostics[EncodableValue("playbackSafeHeadroomUs")] =
+          EncodableValue(pacing.headroom_us);
+      diagnostics[EncodableValue("playbackBottleneckTrack")] =
+          EncodableValue(pacing.bottleneck_slot);
+      diagnostics[EncodableValue("playbackMinBufferedFrames")] =
+          EncodableValue(static_cast<int64_t>(
+              pacing.min_buffered_frames));
+      diagnostics[EncodableValue("playbackRebufferCount")] =
+          EncodableValue(
+              SaturatingInt64(pacing.rebuffer_count));
+      diagnostics[EncodableValue("playbackRebufferDurationUs")] =
+          EncodableValue(
+              SaturatingInt64(pacing.rebuffer_duration_us));
+      diagnostics[EncodableValue("presentationSkippedFrameCount")] =
+          EncodableValue(SaturatingInt64(
+              pacing.presentation_skipped_frame_count));
       diagnostics[EncodableValue("snapshotCompletionWaitCount")] =
           EncodableValue(SaturatingInt64(snapshot_completion_wait_count));
       diagnostics[EncodableValue("snapshotCompletionWaitMaxUs")] =

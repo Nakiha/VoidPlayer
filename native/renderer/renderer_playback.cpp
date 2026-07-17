@@ -179,6 +179,7 @@ void Renderer::Impl::SeekCommandProcessor::seek(
         renderer.loop_driver_.force_preview_redraw();
         renderer.present_history_.reset();
         renderer.loop_driver_.reset_presentation_scheduler();
+        renderer.loop_driver_.reset_playback_pacing();
     }
 }
 

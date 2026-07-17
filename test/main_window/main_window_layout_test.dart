@@ -177,34 +177,37 @@ void main() {
     expect(coordinator.viewportHeight, 200);
   });
 
-  test('native compositor preempt resize refreshes native target layout', () async {
-    final stateStore = MainWindowStateStore()
-      ..setPlayerIdentity(playerId: 1, textureId: 1)
-      ..setNativeCompositorActive(true)
-      ..setLayout(const LayoutState(order: [1, -1, -1, -1]));
-    addTearDown(stateStore.dispose);
-    final trackManager = TrackManager()..setTracks([track(1)]);
-    addTearDown(trackManager.dispose);
-    final controller = _FakeNativePlayerController();
-    final coordinator = MainWindowLayoutCoordinator(
-      vsync: const TestVSync(),
-      controller: controller,
-      stateStore: stateStore,
-      trackManager: trackManager,
-      mounted: () => true,
-    );
-    addTearDown(coordinator.dispose);
-    coordinator.viewportWidth = 2196;
-    coordinator.viewportHeight = 876;
-    controller.currentSize = const Size(2196, 876);
+  test(
+    'native compositor preempt resize refreshes native target layout',
+    () async {
+      final stateStore = MainWindowStateStore()
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
+        ..setNativeCompositorActive(true)
+        ..setLayout(const LayoutState(order: [1, -1, -1, -1]));
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager()..setTracks([track(1)]);
+      addTearDown(trackManager.dispose);
+      final controller = _FakeNativePlayerController();
+      final coordinator = MainWindowLayoutCoordinator(
+        vsync: const TestVSync(),
+        controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
+        mounted: () => true,
+      );
+      addTearDown(coordinator.dispose);
+      coordinator.viewportWidth = 2196;
+      coordinator.viewportHeight = 876;
+      controller.currentSize = const Size(2196, 876);
 
-    await coordinator.preemptViewportResize(width: 1516, height: 876);
+      await coordinator.preemptViewportResize(width: 1516, height: 876);
 
-    expect(controller.resizes, const [Size(1516, 876)]);
-    expect(controller.calls, const ['resize', 'getLayout']);
-    expect(coordinator.viewportWidth, 1516);
-    expect(coordinator.viewportHeight, 876);
-  });
+      expect(controller.resizes, const [Size(1516, 876)]);
+      expect(controller.calls, const ['resize', 'getLayout']);
+      expect(coordinator.viewportWidth, 1516);
+      expect(coordinator.viewportHeight, 876);
+    },
+  );
 
   test('visible marks sidebar width changes preempt native resize', () async {
     final stateStore = MainWindowStateStore()

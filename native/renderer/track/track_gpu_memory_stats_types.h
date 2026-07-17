@@ -19,6 +19,11 @@ struct TrackGpuMemoryStats {
     uint64_t decoder_frame_bytes = 0;
     uint64_t decoder_pool_bytes = 0;
     uint64_t exact_seek_snapshot_bytes = 0;
+    uint64_t snapshot_completion_wait_count = 0;
+    uint64_t snapshot_completion_wait_total_us = 0;
+    uint64_t snapshot_completion_wait_max_us = 0;
+    uint64_t snapshot_completion_wait_over_budget_count = 0;
+    uint64_t snapshot_completion_wait_timeout_count = 0;
     uint64_t presenter_copy_texture_bytes = 0;
     uint64_t track_buffer_cpu_bytes = 0;
     uint64_t packet_queue_bytes = 0;

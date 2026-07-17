@@ -271,6 +271,26 @@ flutter::EncodableList TrackDiagnosticList(
          EncodableValue(SaturatingInt64(cpu_frame_bytes))},
         {EncodableValue("packetQueueMemoryBytes"),
          EncodableValue(SaturatingInt64(packet_queue_bytes))},
+        {EncodableValue("snapshotCompletionWaitCount"),
+         EncodableValue(SaturatingInt64(
+             memory == memory_stats.tracks.end()
+                 ? 0
+                 : memory->snapshot_completion_wait_count))},
+        {EncodableValue("snapshotCompletionWaitMaxUs"),
+         EncodableValue(SaturatingInt64(
+             memory == memory_stats.tracks.end()
+                 ? 0
+                 : memory->snapshot_completion_wait_max_us))},
+        {EncodableValue("snapshotCompletionWaitOverBudgetCount"),
+         EncodableValue(SaturatingInt64(
+             memory == memory_stats.tracks.end()
+                 ? 0
+                 : memory->snapshot_completion_wait_over_budget_count))},
+        {EncodableValue("snapshotCompletionWaitTimeoutCount"),
+         EncodableValue(SaturatingInt64(
+             memory == memory_stats.tracks.end()
+                 ? 0
+                 : memory->snapshot_completion_wait_timeout_count))},
         {EncodableValue("currentPtsUs"), EncodableValue(perf.current_pts_us)},
         {EncodableValue("currentDtsUs"), EncodableValue(perf.current_dts_us)},
     };
@@ -1381,6 +1401,21 @@ void VideoRendererPlugin::HandleMethodCall(
                         return track.hardware_enabled &&
                                track.hardware_download_to_cpu;
                       });
+      uint64_t snapshot_completion_wait_count = 0;
+      uint64_t snapshot_completion_wait_max_us = 0;
+      uint64_t snapshot_completion_wait_over_budget_count = 0;
+      uint64_t snapshot_completion_wait_timeout_count = 0;
+      for (const auto& track : memory.tracks) {
+        snapshot_completion_wait_count +=
+            track.snapshot_completion_wait_count;
+        snapshot_completion_wait_max_us = std::max(
+            snapshot_completion_wait_max_us,
+            track.snapshot_completion_wait_max_us);
+        snapshot_completion_wait_over_budget_count +=
+            track.snapshot_completion_wait_over_budget_count;
+        snapshot_completion_wait_timeout_count +=
+            track.snapshot_completion_wait_timeout_count;
+      }
       auto track_diagnostics =
           TrackDiagnosticList(*player_, tracks, track_perf, memory);
       uint64_t dedicated_gpu_usage =
@@ -1398,6 +1433,16 @@ void VideoRendererPlugin::HandleMethodCall(
           EncodableValue(hardware_decode_active);
       diagnostics[EncodableValue("hardwareDecodeDownloadsToCpu")] =
           EncodableValue(hardware_decode_downloads_to_cpu);
+      diagnostics[EncodableValue("snapshotCompletionWaitCount")] =
+          EncodableValue(SaturatingInt64(snapshot_completion_wait_count));
+      diagnostics[EncodableValue("snapshotCompletionWaitMaxUs")] =
+          EncodableValue(SaturatingInt64(snapshot_completion_wait_max_us));
+      diagnostics[EncodableValue("snapshotCompletionWaitOverBudgetCount")] =
+          EncodableValue(
+              SaturatingInt64(snapshot_completion_wait_over_budget_count));
+      diagnostics[EncodableValue("snapshotCompletionWaitTimeoutCount")] =
+          EncodableValue(
+              SaturatingInt64(snapshot_completion_wait_timeout_count));
       diagnostics[EncodableValue("dedicatedGpuUsageBytes")] =
           EncodableValue(SaturatingInt64(dedicated_gpu_usage));
       diagnostics[EncodableValue("cpuFrameMemoryBytes")] =

@@ -626,6 +626,11 @@ TEST_CASE("TrackSnapshot builds track GPU memory stats",
     decode_stats.estimated_hw_frame_bytes = 1024;
     decode_stats.estimated_hw_pool_bytes = 8192;
     decode_stats.snapshot_pool.estimated_bytes = 512;
+    decode_stats.snapshot_pool.completion_wait_count = 9;
+    decode_stats.snapshot_pool.completion_wait_total_us = 27000;
+    decode_stats.snapshot_pool.completion_wait_max_us = 12000;
+    decode_stats.snapshot_pool.completion_wait_over_budget_count = 2;
+    decode_stats.snapshot_pool.completion_wait_timeout_count = 0;
     decode_stats.exact_seek_candidate_cpu_bytes = 128;
     decode_stats.exact_seek_stable_cpu_bytes = 256;
     decode_stats.exact_seek_reorder_count = 5;
@@ -653,6 +658,11 @@ TEST_CASE("TrackSnapshot builds track GPU memory stats",
     REQUIRE(stats.decoder_frame_bytes == 1024);
     REQUIRE(stats.decoder_pool_bytes == 8192);
     REQUIRE(stats.exact_seek_snapshot_bytes == 512);
+    REQUIRE(stats.snapshot_completion_wait_count == 9);
+    REQUIRE(stats.snapshot_completion_wait_total_us == 27000);
+    REQUIRE(stats.snapshot_completion_wait_max_us == 12000);
+    REQUIRE(stats.snapshot_completion_wait_over_budget_count == 2);
+    REQUIRE(stats.snapshot_completion_wait_timeout_count == 0);
     REQUIRE(stats.presenter_copy_texture_bytes == 4096);
     REQUIRE(stats.exact_seek_candidate_cpu_bytes == 128);
     REQUIRE(stats.exact_seek_stable_cpu_bytes == 256);

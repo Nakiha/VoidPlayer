@@ -310,6 +310,16 @@ TrackGpuMemoryStats snapshot_track_gpu_memory_stats(
         stats.decoder_frame_bytes = decode_stats->estimated_hw_frame_bytes;
         stats.decoder_pool_bytes = decode_stats->estimated_hw_pool_bytes;
         stats.exact_seek_snapshot_bytes = decode_stats->snapshot_pool.estimated_bytes;
+        stats.snapshot_completion_wait_count =
+            decode_stats->snapshot_pool.completion_wait_count;
+        stats.snapshot_completion_wait_total_us =
+            decode_stats->snapshot_pool.completion_wait_total_us;
+        stats.snapshot_completion_wait_max_us =
+            decode_stats->snapshot_pool.completion_wait_max_us;
+        stats.snapshot_completion_wait_over_budget_count =
+            decode_stats->snapshot_pool.completion_wait_over_budget_count;
+        stats.snapshot_completion_wait_timeout_count =
+            decode_stats->snapshot_pool.completion_wait_timeout_count;
         stats.exact_seek_candidate_cpu_bytes =
             decode_stats->exact_seek_candidate_cpu_bytes;
         stats.exact_seek_stable_cpu_bytes =

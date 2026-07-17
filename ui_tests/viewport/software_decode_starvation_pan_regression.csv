@@ -1,0 +1,25 @@
+# Run locally with void_player.exe pinned to one logical CPU to simulate an
+# underpowered decoder. Even when four software decoders cannot keep up, native
+# presentation must retain complete frames and keep pan/zoom projection alive.
+@WINDOW,1600,900
+
+0.0,SET_DECODE_MODE,forceSoftware
+0.2,ADD_MEDIA,resources/video/h266_10s_1920x1080.mp4
+1.5,ADD_MEDIA,resources/video/av1_10s_1920x1080.webm
+2.8,ADD_MEDIA,resources/video/vp9_10s_1920x1080.webm
+4.1,ADD_MEDIA,resources/video/h265_10s_1920x1080.mp4
+6.0,ASSERT_TRACK_COUNT,4
+6.1,SET_RENDER_SIZE,1280,720
+6.5,PLAY
+6.7,WAIT_PLAYING,3000
+7.5,CAPTURE_VIEWPORT,starved_before_pan
+7.6,ASSERT_CAPTURE_NOT_BLACK,starved_before_pan,0.01,4.0
+7.7,PAN_ZOOM_VIEWPORT,180,-90,1.5,260,8,0.5,0.5
+10.2,CAPTURE_VIEWPORT,starved_after_pan
+10.3,ASSERT_CAPTURE_NOT_BLACK,starved_after_pan,0.01,4.0
+10.4,ASSERT_CAPTURE_CHANGED,starved_before_pan,starved_after_pan
+10.5,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,layoutRefreshFailureCount,0,0
+10.6,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,snapshotCompletionWaitCount,0,0
+10.7,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,snapshotCompletionWaitTimeoutCount,0,0
+10.9,PAUSE
+11.1,QUIT,0

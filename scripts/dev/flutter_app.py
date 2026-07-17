@@ -1,6 +1,7 @@
 """Flutter app build, launch, demo, and UI test commands."""
 
 import csv
+import ctypes
 import json
 import os
 import shutil
@@ -942,6 +943,29 @@ def _run_ui_test_process(cmd: list[str]) -> tuple[int, bool]:
         errors="replace",
         bufsize=1,
     )
+    if _is_windows():
+        raw_affinity = os.environ.get("VOIDPLAYER_UI_TEST_AFFINITY_MASK", "").strip()
+        if raw_affinity:
+            affinity_mask = int(raw_affinity, 0)
+            if affinity_mask <= 0:
+                raise ValueError(
+                    "VOIDPLAYER_UI_TEST_AFFINITY_MASK must be a positive integer mask"
+                )
+            kernel32 = ctypes.windll.kernel32
+            kernel32.SetProcessAffinityMask.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_size_t,
+            ]
+            kernel32.SetProcessAffinityMask.restype = ctypes.c_int
+            if not kernel32.SetProcessAffinityMask(
+                ctypes.c_void_p(process._handle),
+                ctypes.c_size_t(affinity_mask),
+            ):
+                raise ctypes.WinError()
+            print(
+                "Applied UI test process affinity "
+                f"pid={process.pid} mask=0x{affinity_mask:X}"
+            )
     assert process.stdout is not None
     for line in process.stdout:
         print(line, end="")

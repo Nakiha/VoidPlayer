@@ -3,6 +3,7 @@
 
 #include "renderer/color/color_reference.h"
 #include "renderer/render/presentation_snapshot.h"
+#include "windows/decode/d3d11_frame_snapshot.h"
 #include "windows/presentation/windows_d3d11_viewport_renderer.h"
 
 #include <DirectXPackedVector.h>
@@ -673,7 +674,8 @@ TEST_CASE("Windows D3D11 source overlay obeys parallel and split clipping",
 }
 
 TEST_CASE("Windows D3D11 viewport opens an independent decode-device snapshot",
-          "[windows_d3d11_viewport][windows_d3d11va][windows_cross_device]") {
+          "[windows_d3d11_viewport][windows_d3d11va][windows_cross_device]"
+          "[windows_cross_adapter]") {
   auto presentation_device = create_viewport_test_device();
   auto decode_device = create_viewport_test_device();
   WindowsD3D11ViewportRenderer renderer;
@@ -692,29 +694,37 @@ TEST_CASE("Windows D3D11 viewport opens an independent decode-device snapshot",
   source_desc.Width = 4;
   source_desc.Height = 4;
   source_desc.MipLevels = 1;
-  source_desc.ArraySize = 1;
+  source_desc.ArraySize = 2;
   source_desc.Format = DXGI_FORMAT_NV12;
   source_desc.SampleDesc.Count = 1;
   source_desc.Usage = D3D11_USAGE_DEFAULT;
   source_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-  source_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
   Microsoft::WRL::ComPtr<ID3D11Texture2D> source;
   REQUIRE(SUCCEEDED(decode_device.device->CreateTexture2D(
       &source_desc, nullptr, &source)));
   decode_device.context->UpdateSubresource(
-      source.Get(), 0, nullptr, gray.data(), 4, 24);
-  decode_device.context->Flush();
+      source.Get(), D3D11CalcSubresource(0, 1, 1), nullptr, gray.data(), 4, 24);
 
-  TextureFrame frame;
-  frame.width = 4;
-  frame.height = 4;
-  frame.color = {VIDEO_COLOR_RANGE_LIMITED,
-                 VIDEO_COLOR_MATRIX_BT709,
-                 VIDEO_COLOR_TRANSFER_SDR,
-                 VIDEO_COLOR_PRIMARIES_BT709};
-  auto first_frame_ref = std::make_shared<int>(1);
-  frame.storage = WindowsD3D11FrameStorage{
-      source.Get(), 0, false, 4, 4, first_frame_ref};
+  AVFrame source_frame = {};
+  source_frame.data[0] = reinterpret_cast<uint8_t*>(source.Get());
+  source_frame.data[1] = reinterpret_cast<uint8_t*>(static_cast<intptr_t>(1));
+  TextureFrame metadata;
+  metadata.width = 4;
+  metadata.height = 4;
+  metadata.color = {VIDEO_COLOR_RANGE_LIMITED,
+                    VIDEO_COLOR_MATRIX_BT709,
+                    VIDEO_COLOR_TRANSFER_SDR,
+                    VIDEO_COLOR_PRIMARIES_BT709};
+  std::shared_ptr<D3D11SnapshotPool> snapshot_pool;
+  auto completed_snapshot = snapshot_d3d11_hardware_frame(
+      &source_frame, metadata, nullptr, snapshot_pool);
+  REQUIRE(completed_snapshot.has_value());
+  const auto snapshot_stats = d3d11_snapshot_pool_stats(snapshot_pool);
+  REQUIRE(snapshot_stats.completion_wait_count == 1);
+  REQUIRE(snapshot_stats.completion_wait_timeout_count == 0);
+  REQUIRE(snapshot_stats.checked_out_count == 1);
+
+  TextureFrame frame = std::move(*completed_snapshot);
   auto draw = make_single_track_snapshot(std::move(frame));
   const auto presentation = build_snapshot(draw);
   const bool drew = renderer.draw(draw,

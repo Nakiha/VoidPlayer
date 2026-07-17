@@ -7,6 +7,9 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 
+#include <algorithm>
+#include <chrono>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -54,18 +57,6 @@ uint64_t estimate_texture_bytes(const D3D11_TEXTURE2D_DESC& desc) {
     }
 }
 
-bool submit_shared_copy(ID3D11DeviceContext* context) {
-    if (!context) {
-        return false;
-    }
-    // OpenSharedResource requires the producer to submit shared-texture
-    // updates with Flush. The presentation device then consumes the same
-    // allocation directly; a CPU-side event query here only serializes decode
-    // behind the GPU and is not required for visibility.
-    context->Flush();
-    return true;
-}
-
 struct D3D11SnapshotFrameRef {
     ~D3D11SnapshotFrameRef();
 
@@ -76,6 +67,92 @@ struct D3D11SnapshotFrameRef {
 } // namespace
 
 struct D3D11SnapshotPool {
+    bool wait_for_copy_completion(
+        ID3D11Device* device,
+        ID3D11DeviceContext* context) {
+        if (!device || !context) {
+            return false;
+        }
+
+        Microsoft::WRL::ComPtr<ID3D11Query> query;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (completion_query_device.Get() != device) {
+                completion_query.Reset();
+                completion_query_device.Reset();
+            }
+            if (!completion_query) {
+                D3D11_QUERY_DESC query_desc = {};
+                query_desc.Query = D3D11_QUERY_EVENT;
+                const HRESULT status =
+                    device->CreateQuery(&query_desc, &completion_query);
+                if (FAILED(status) || !completion_query) {
+                    spdlog::warn(
+                        "[D3D11FrameSnapshot] Could not create reusable GPU "
+                        "completion query: {:#x}",
+                        static_cast<unsigned long>(status));
+                    return false;
+                }
+                completion_query_device = device;
+            }
+            query = completion_query;
+        }
+
+        // Flush only submits a shared-resource copy; it may return before the
+        // GPU has written the NV12/P010 chroma plane. Keep readiness on the
+        // decode thread so presentation can continue to reproject its last
+        // complete cached frame while this copy is pending.
+        context->End(query.Get());
+        context->Flush();
+        const auto start = std::chrono::steady_clock::now();
+        bool warned = false;
+        HRESULT status = S_FALSE;
+        while ((status = context->GetData(
+                    query.Get(),
+                    nullptr,
+                    0,
+                    D3D11_ASYNC_GETDATA_DONOTFLUSH)) == S_FALSE) {
+            const auto elapsed = std::chrono::steady_clock::now() - start;
+            if (!warned && elapsed >= std::chrono::milliseconds(100)) {
+                warned = true;
+                spdlog::warn(
+                    "[D3D11FrameSnapshot] GPU snapshot copy is still pending "
+                    "after 100ms; retaining the previous complete presentation "
+                    "frame");
+            }
+            if (elapsed >= std::chrono::seconds(5)) {
+                std::lock_guard<std::mutex> lock(mutex);
+                ++completion_wait_timeout_count;
+                spdlog::error(
+                    "[D3D11FrameSnapshot] GPU snapshot copy did not complete "
+                    "within 5s");
+                return false;
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+
+        const auto elapsed_us = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - start).count());
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            ++completion_wait_count;
+            completion_wait_total_us += elapsed_us;
+            completion_wait_max_us =
+                std::max(completion_wait_max_us, elapsed_us);
+            if (elapsed_us > kInteractionFrameBudgetUs) {
+                ++completion_wait_over_budget_count;
+            }
+        }
+        if (FAILED(status)) {
+            spdlog::warn(
+                "[D3D11FrameSnapshot] GPU copy completion query failed: {:#x}",
+                static_cast<unsigned long>(status));
+            return false;
+        }
+        return true;
+    }
+
     Microsoft::WRL::ComPtr<ID3D11Texture2D> acquire(
         ID3D11Device* device,
         const D3D11_TEXTURE2D_DESC& desc) {
@@ -145,6 +222,12 @@ struct D3D11SnapshotPool {
         result.texture_bytes = estimate_texture_bytes(last_desc);
         result.created_count = created_count;
         result.reused_count = reused_count;
+        result.completion_wait_count = completion_wait_count;
+        result.completion_wait_total_us = completion_wait_total_us;
+        result.completion_wait_max_us = completion_wait_max_us;
+        result.completion_wait_over_budget_count =
+            completion_wait_over_budget_count;
+        result.completion_wait_timeout_count = completion_wait_timeout_count;
         result.checked_out_count = checked_out_count;
         result.available_count = available.size();
         result.width = static_cast<int>(last_desc.Width);
@@ -156,10 +239,18 @@ struct D3D11SnapshotPool {
     }
 
     static constexpr size_t kMaxAvailable = 1;
+    static constexpr uint64_t kInteractionFrameBudgetUs = 8333;
     mutable std::mutex mutex;
     std::vector<Microsoft::WRL::ComPtr<ID3D11Texture2D>> available;
+    Microsoft::WRL::ComPtr<ID3D11Device> completion_query_device;
+    Microsoft::WRL::ComPtr<ID3D11Query> completion_query;
     uint64_t created_count = 0;
     uint64_t reused_count = 0;
+    uint64_t completion_wait_count = 0;
+    uint64_t completion_wait_total_us = 0;
+    uint64_t completion_wait_max_us = 0;
+    uint64_t completion_wait_over_budget_count = 0;
+    uint64_t completion_wait_timeout_count = 0;
     size_t checked_out_count = 0;
     D3D11_TEXTURE2D_DESC last_desc = {};
 };
@@ -293,7 +384,7 @@ std::optional<TextureFrame> snapshot_d3d11_hardware_frame(
             static_cast<UINT>(array_index),
             source_desc.MipLevels),
         nullptr);
-    if (!submit_shared_copy(context.Get())) {
+    if (!snapshot_pool->wait_for_copy_completion(device.Get(), context.Get())) {
         snapshot_pool->discard();
         return std::nullopt;
     }

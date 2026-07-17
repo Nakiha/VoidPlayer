@@ -218,6 +218,12 @@ HardwareSnapshotPoolStats HardwareFrameConverter::snapshot_pool_stats() const {
     result.texture_bytes = stats.texture_bytes;
     result.created_count = stats.created_count;
     result.reused_count = stats.reused_count;
+    result.completion_wait_count = stats.completion_wait_count;
+    result.completion_wait_total_us = stats.completion_wait_total_us;
+    result.completion_wait_max_us = stats.completion_wait_max_us;
+    result.completion_wait_over_budget_count =
+        stats.completion_wait_over_budget_count;
+    result.completion_wait_timeout_count = stats.completion_wait_timeout_count;
     result.checked_out_count = stats.checked_out_count;
     result.available_count = stats.available_count;
     result.width = stats.width;

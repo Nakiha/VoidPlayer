@@ -21,6 +21,11 @@ struct HardwareSnapshotPoolStats {
     uint64_t texture_bytes = 0;
     uint64_t created_count = 0;
     uint64_t reused_count = 0;
+    uint64_t completion_wait_count = 0;
+    uint64_t completion_wait_total_us = 0;
+    uint64_t completion_wait_max_us = 0;
+    uint64_t completion_wait_over_budget_count = 0;
+    uint64_t completion_wait_timeout_count = 0;
     size_t checked_out_count = 0;
     size_t available_count = 0;
     int width = 0;

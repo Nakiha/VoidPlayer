@@ -728,14 +728,26 @@ TEST_CASE("TrackLifecycle compacts cached present decisions",
     decision.frames[0] = frame0;
     decision.frames[1] = frame1;
     decision.frames[2] = frame2;
+    decision.file_ids[0] = 10;
+    decision.file_ids[1] = 11;
+    decision.file_ids[2] = 12;
+    decision.track_generations[0] = 20;
+    decision.track_generations[1] = 21;
+    decision.track_generations[2] = 22;
 
     compact_present_decision_frames(decision, 1);
 
     REQUIRE(decision.frames[0]);
     REQUIRE(decision.frames[0]->pts_us == 1000);
+    REQUIRE(decision.file_ids[0] == 10);
+    REQUIRE(decision.track_generations[0] == 20);
     REQUIRE(decision.frames[1]);
     REQUIRE(decision.frames[1]->pts_us == 3000);
+    REQUIRE(decision.file_ids[1] == 12);
+    REQUIRE(decision.track_generations[1] == 22);
     REQUIRE_FALSE(decision.frames[2]);
+    REQUIRE(decision.file_ids[2] == -1);
+    REQUIRE(decision.track_generations[2] == 0);
     REQUIRE_FALSE(decision.frames[3]);
 }
 

@@ -1,0 +1,22 @@
+# Removing the active long track after the remaining short track reached EOF
+# must immediately rebuild the native target from the retained per-track frame.
+@WINDOW,1280,720
+
+0.0,SET_DECODE_MODE,preferHardware
+0.1,ADD_MEDIA,resources/video/h266_10s_1920x1080.mp4
+0.5,ADD_MEDIA,resources/video/mhw_x265_aq_qg16_4s_1920x1080.mkv
+2.0,ASSERT_TRACK_COUNT,2
+2.2,PLAY
+8.8,WAIT_PLAYING,3000
+8.9,ASSERT_POSITION_RANGE,4200000,8000000
+9.0,REMOVE_TRACK,0
+9.7,ASSERT_TRACK_COUNT,1
+9.8,WAIT_PAUSED,3000
+9.9,CAPTURE_VIEWPORT,remove_long_short_eof_retained
+10.0,ASSERT_CAPTURE_NOT_BLACK,remove_long_short_eof_retained,0.01,4.0
+10.1,SET_ZOOM,2.0
+10.6,CAPTURE_VIEWPORT,remove_long_short_eof_zoomed
+10.7,ASSERT_CAPTURE_NOT_BLACK,remove_long_short_eof_zoomed,0.01,4.0
+10.8,ASSERT_CAPTURE_CHANGED,remove_long_short_eof_retained,remove_long_short_eof_zoomed
+10.9,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,layoutRefreshNotReadyCount,0,20
+11.1,QUIT,0

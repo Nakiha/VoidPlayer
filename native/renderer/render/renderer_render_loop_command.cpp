@@ -306,11 +306,28 @@ void RendererRenderLoopCommandProcessor::run_body(
                         present_context, decision);
             }
             if (presentation_accepted) {
-                render_sink_->commit_presented(decision);
-                loop_driver_.commit_presented(decision);
+                bool committed = false;
                 {
                     std::lock_guard<std::mutex> lock(state_mutex_);
-                    present_history_.set(decision);
+                    // Presentation is submitted without holding state_mutex_.
+                    // A track can be removed and the retained history compacted
+                    // before the backend accepts this older decision. Revalidate
+                    // its file/generation identities inside the same state
+                    // transaction that advances all presentation cursors so a
+                    // stale pre-topology decision cannot overwrite the compacted
+                    // per-track anchor.
+                    track_controller_.filter_present_decision(decision);
+                    if (present_decision_has_frame(decision)) {
+                        render_sink_->commit_presented(decision);
+                        loop_driver_.commit_presented(decision);
+                        present_history_.set(decision);
+                        committed = true;
+                    }
+                }
+                if (!committed) {
+                    spdlog::info(
+                        "[TrackTopology] discarded accepted present decision "
+                        "invalidated by a concurrent track mutation");
                 }
             }
         } else if (playing_snapshot) {

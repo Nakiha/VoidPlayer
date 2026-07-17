@@ -46,12 +46,27 @@ class TrackManager with ChangeNotifier {
       tracks.length <= maxTracks,
       'TrackManager supports at most $maxTracks tracks.',
     );
-    _entries = tracks.take(maxTracks).map((t) => TrackEntry(t)).toList();
+    final uniqueTracks = <int, TrackInfo>{};
+    for (final track in tracks) {
+      if (uniqueTracks.containsKey(track.fileId) ||
+          uniqueTracks.length < maxTracks) {
+        uniqueTracks[track.fileId] = track;
+      }
+    }
+    _entries = uniqueTracks.values.map(TrackEntry.new).toList();
     notifyListeners();
   }
 
   /// Add a single track to the end of the display order.
   void addTrack(TrackInfo info) {
+    final existingIndex = _entries.indexWhere(
+      (entry) => entry.fileId == info.fileId,
+    );
+    if (existingIndex >= 0) {
+      _entries[existingIndex] = TrackEntry(info);
+      notifyListeners();
+      return;
+    }
     if (_entries.length >= maxTracks) return;
     _entries.add(TrackEntry(info));
     notifyListeners();

@@ -68,6 +68,43 @@ void main() {
     expect(orderOf(manager), [0, 1, 2, 3]);
   });
 
+  test('addTrack refreshes an existing file id instead of duplicating it', () {
+    final manager = TrackManager()..addTrack(track(1));
+
+    manager.addTrack(
+      const TrackInfo(
+        fileId: 1,
+        slot: 0,
+        path: 'replacement.mp4',
+        width: 3840,
+        height: 2160,
+      ),
+    );
+
+    expect(manager.count, 1);
+    expect(manager.entries.single.fileId, 1);
+    expect(manager.entries.single.path, 'replacement.mp4');
+  });
+
+  test('setTracks keeps file ids unique', () {
+    final manager = TrackManager();
+
+    manager.setTracks([
+      track(1),
+      const TrackInfo(
+        fileId: 1,
+        slot: 0,
+        path: 'replacement.mp4',
+        width: 3840,
+        height: 2160,
+      ),
+      track(2),
+    ]);
+
+    expect(orderOf(manager), [1, 2]);
+    expect(manager.entries.first.path, 'replacement.mp4');
+  });
+
   test('setTracks asserts when native returns too many tracks', () {
     final manager = TrackManager();
 

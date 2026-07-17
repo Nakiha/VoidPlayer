@@ -46,7 +46,8 @@ class MainWindowMediaCoordinator {
   final ValueChanged<int>? onDuplicateMediaSkipped;
   final ValueChanged<String>? onMediaLoadRejected;
   final SshRemoteMediaService sshRemoteMedia;
-  Future<void>? _loadInFlight;
+  Future<void>? _mediaMutationInFlight;
+  int _nextMediaMutationSerial = 1;
   bool _disposed = false;
 
   MainWindowMediaCoordinator({
@@ -103,26 +104,48 @@ class MainWindowMediaCoordinator {
   Future<void> loadMediaPaths(List<String> paths) {
     if (paths.isEmpty) return Future<void>.value();
     if (_disposed) return Future<void>.value();
+    final queuedPaths = List<String>.unmodifiable(paths);
 
-    final previous = _loadInFlight;
+    return _enqueueMediaMutation(
+      operation: 'loadMediaPaths',
+      task: () => _loadMediaPathsImpl(queuedPaths),
+    );
+  }
+
+  Future<void> _enqueueMediaMutation({
+    required String operation,
+    required Future<void> Function() task,
+  }) {
+    final serial = _nextMediaMutationSerial++;
+    final previous = _mediaMutationInFlight;
     late final Future<void> next;
     next =
         (previous == null
                 ? Future<void>.value()
                 : previous.catchError((Object error, StackTrace stack) {
                     log.warning(
-                      'previous media load failed before queued load',
+                      '[MediaMutation] previous operation failed before '
+                      'serial=$serial operation=$operation',
                       error,
                       stack,
                     );
                   }))
-            .then((_) => _loadMediaPathsImpl(paths))
+            .then<void>((_) async {
+              if (_disposed) return;
+              log.fine(
+                '[MediaMutation] begin serial=$serial operation=$operation',
+              );
+              await task();
+              log.fine(
+                '[MediaMutation] end serial=$serial operation=$operation',
+              );
+            })
             .whenComplete(() {
-              if (identical(_loadInFlight, next)) {
-                _loadInFlight = null;
+              if (identical(_mediaMutationInFlight, next)) {
+                _mediaMutationInFlight = null;
               }
             });
-    _loadInFlight = next;
+    _mediaMutationInFlight = next;
     return next;
   }
 
@@ -346,7 +369,15 @@ class MainWindowMediaCoordinator {
     }
   }
 
-  Future<void> removeTrack(int fileId) async {
+  Future<void> removeTrack(int fileId) {
+    if (_disposed) return Future<void>.value();
+    return _enqueueMediaMutation(
+      operation: 'removeTrack($fileId)',
+      task: () => _removeTrackImpl(fileId),
+    );
+  }
+
+  Future<void> _removeTrackImpl(int fileId) async {
     if (!_alive) return;
     try {
       trackManager.entries.firstWhere(

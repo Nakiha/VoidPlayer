@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/actions/action_registry.dart';
@@ -839,7 +841,167 @@ void main() {
       expect(args['height'], 80);
     },
   );
+
+  testWidgets(
+    'concurrent removals finish before loading a replacement player',
+    (tester) async {
+      const channel = MethodChannel('video_renderer');
+      const firstPath = 'https://media.test/mhw_first.mkv';
+      const secondPath = 'https://media.test/mhw_second.mkv';
+      const replacementPath = 'https://media.test/h266.mp4';
+      final nativeTracks = <Map<String, Object?>>[
+        _trackPayload(fileId: 1, slot: 0, path: firstPath),
+        _trackPayload(fileId: 2, slot: 1, path: secondPath),
+      ];
+      final calls = <String>[];
+      final firstRemoveStarted = Completer<void>();
+      final releaseRemovals = Completer<void>();
+      var createCount = 0;
+      var startedRemoveCount = 0;
+      var addTrackCount = 0;
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            switch (call.method) {
+              case 'createPlayer':
+                createCount += 1;
+                calls.add('createPlayer:$createCount');
+                if (createCount > 1) {
+                  nativeTracks
+                    ..clear()
+                    ..add(
+                      _trackPayload(fileId: 1, slot: 0, path: replacementPath),
+                    );
+                }
+                return {
+                  'playerId': createCount,
+                  'textureId': createCount,
+                  'tracks': nativeTracks
+                      .map((track) => Map<String, Object?>.from(track))
+                      .toList(),
+                };
+              case 'removeTrack':
+                final arguments = Map<dynamic, dynamic>.from(
+                  call.arguments as Map,
+                );
+                final fileId = arguments['fileId'] as int;
+                startedRemoveCount += 1;
+                calls.add('removeTrack:$fileId');
+                if (!firstRemoveStarted.isCompleted) {
+                  firstRemoveStarted.complete();
+                }
+                await releaseRemovals.future;
+                nativeTracks.removeWhere((track) => track['fileId'] == fileId);
+                return null;
+              case 'getTracks':
+                calls.add('getTracks');
+                return nativeTracks
+                    .map((track) => Map<String, Object?>.from(track))
+                    .toList();
+              case 'destroyPlayer':
+                calls.add('destroyPlayer');
+                nativeTracks.clear();
+                return null;
+              case 'addTrack':
+                addTrackCount += 1;
+                calls.add('addTrack');
+                return _trackPayload(
+                  fileId: 3,
+                  slot: nativeTracks.length,
+                  path: replacementPath,
+                );
+              case 'getLayout':
+                return <String, Object?>{};
+              default:
+                return null;
+            }
+          });
+      addTearDown(() {
+        if (!releaseRemovals.isCompleted) {
+          releaseRemovals.complete();
+        }
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final controller = MainWindowController(
+        actionRegistry: ActionRegistry(),
+        vsync: const TestVSync(),
+        startupOptions: const StartupOptions(),
+        mounted: () => true,
+        analysisGeneration: _FakeAnalysisGenerationService(),
+        analysisToolbarDataSource: _FakeAnalysisToolbarDataSource(),
+        appSettings: _FakeAppSettingsRepository(),
+        playbackPreferences: _FakePlaybackPreferences(),
+      );
+      addTearDown(controller.dispose);
+
+      final initial = await controller.player.createPlayer(const [
+        firstPath,
+        secondPath,
+      ]);
+      controller.stateStore.setPlayerIdentity(
+        playerId: initial.playerId,
+        textureId: initial.textureId,
+      );
+      controller.trackManager.setTracks(initial.tracks);
+
+      final removeFirst = controller.mediaCoordinator.removeTrack(1);
+      await firstRemoveStarted.future;
+      final removeSecond = controller.mediaCoordinator.removeTrack(2);
+      final loadReplacement = controller.mediaCoordinator.loadMediaPaths(const [
+        replacementPath,
+      ]);
+      await tester.pump();
+
+      expect(startedRemoveCount, 1);
+      expect(addTrackCount, 0);
+
+      releaseRemovals.complete();
+      var completed = false;
+      final operations = Future.wait([
+        removeFirst,
+        removeSecond,
+        loadReplacement,
+      ]).whenComplete(() => completed = true);
+      for (var i = 0; i < 200 && !completed; i++) {
+        await tester.pump(const Duration(milliseconds: 1));
+      }
+      expect(
+        completed,
+        isTrue,
+        reason: 'queued media mutations did not drain; calls=$calls',
+      );
+      await operations;
+
+      expect(createCount, 2);
+      expect(addTrackCount, 0);
+      expect(calls.where((call) => call.startsWith('removeTrack:')), const [
+        'removeTrack:1',
+        'removeTrack:2',
+      ]);
+      expect(controller.trackManager.entries, hasLength(1));
+      expect(controller.trackManager.entries.single.path, replacementPath);
+      expect(
+        controller.trackManager.entries.map((entry) => entry.fileId).toSet(),
+        hasLength(controller.trackManager.count),
+      );
+    },
+  );
 }
+
+Map<String, Object?> _trackPayload({
+  required int fileId,
+  required int slot,
+  required String path,
+}) => {
+  'fileId': fileId,
+  'slot': slot,
+  'path': path,
+  'width': 1920,
+  'height': 1080,
+  'durationUs': 4000000,
+};
 
 class _FakeQuickMarkRepository implements QuickMarkRepository {
   final List<QuickMark> loadedMarks;

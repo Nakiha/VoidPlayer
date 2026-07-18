@@ -576,6 +576,10 @@ void AddCompositorDiagnostics(EncodableMap& diagnostics,
   diagnostics[EncodableValue("windowsVideoTargetRetiredReleaseCount")] =
       EncodableValue(
           static_cast<int64_t>(state.video_target_retired_release_count));
+  diagnostics[EncodableValue(
+      "windowsVideoTargetRetirementCompositesRemaining")] =
+      EncodableValue(static_cast<int64_t>(
+          state.video_target_retirement_composites_remaining));
   diagnostics[EncodableValue("windowsVideoPresentRetryCount")] =
       EncodableValue(static_cast<int64_t>(state.video_present_retry_count));
   diagnostics[EncodableValue("windowsFlutterAcquireFailureCount")] =

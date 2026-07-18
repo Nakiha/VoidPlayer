@@ -114,7 +114,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `STEP_BACKWARD` | ← | 逐帧后退 |
 | `OPEN_FILE` | O | 打开文件 |
 | `ADD_MEDIA` | — | 按路径添加媒体 |
-| `REMOVE_TRACK` | — | 按 fileId 移除轨道 |
+| `REMOVE_TRACK` | fileId | 按稳定 fileId 移除轨道；不是显示 slot/index |
 | `TOGGLE_LAYOUT_MODE` | M | 切换布局模式 |
 | `SET_LAYOUT_MODE` | — | 设置布局模式（0=并排, 1=分屏） |
 | `SET_ZOOM` | — | 设置缩放比例 |

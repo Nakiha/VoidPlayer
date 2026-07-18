@@ -13,7 +13,7 @@
 2.8,SEEK_TO,0
 4.0,CAPTURE_VIEWPORT,hevc_full_soft,D:\Code\yorune\VoidPlayer\build\color_hevc_full_soft.png
 4.1,ASSERT_CAPTURE_NOT_BLACK,hevc_full_soft,0.01,4.0
-4.2,REMOVE_TRACK,1
+4.2,REMOVE_TRACK,0
 5.0,ASSERT_TRACK_COUNT,0
 5.1,SET_DECODE_MODE,preferHardware
 5.2,ADD_MEDIA,resources/video/mhw_hevc_fullrange_bt709_3s.mp4

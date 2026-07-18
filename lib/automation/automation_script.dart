@@ -224,7 +224,7 @@ ScriptInstruction? _parseInstruction(
       return ScriptAction(time, AddSshMedia(args[0]));
     case 'REMOVE_TRACK':
       if (args.isEmpty) {
-        log.warning('REMOVE_TRACK missing slot argument: $rawLine');
+        log.warning('REMOVE_TRACK missing fileId argument: $rawLine');
         return null;
       }
       return ScriptAction(time, RemoveTrackAction(int.parse(args[0])));

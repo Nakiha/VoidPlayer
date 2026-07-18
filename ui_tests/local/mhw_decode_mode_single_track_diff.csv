@@ -11,7 +11,7 @@
 2.8,SEEK_TO,0
 4.0,CAPTURE_VIEWPORT,mhw_soft,D:\Code\yorune\VoidPlayer\build\mhw_single_soft.png
 4.1,ASSERT_CAPTURE_NOT_BLACK,mhw_soft,0.01,4.0
-4.2,REMOVE_TRACK,1
+4.2,REMOVE_TRACK,0
 5.0,ASSERT_TRACK_COUNT,0
 5.1,SET_DECODE_MODE,preferHardware
 5.2,ADD_MEDIA,C:\Users\12967\Videos\Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本.mp4

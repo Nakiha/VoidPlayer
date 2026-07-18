@@ -1689,19 +1689,19 @@ void VideoRendererPlugin::HandleMethodCall(
   } else if (method == "getTracks") {
     result->Success(EncodableValue(TrackList(player_->tracks())));
   } else if (method == "addTrack") {
-    const int file_id =
+    const int slot =
         player_->add_track(ReadString(arguments, "path"),
                            ReadBool(arguments, "useHardwareDecode", true));
     const auto tracks = player_->tracks();
     const auto found = std::find_if(
         tracks.begin(), tracks.end(),
-        [file_id](const auto& track) { return track.file_id == file_id; });
-    if (file_id < 0 || found == tracks.end()) {
+        [slot](const auto& track) { return track.slot == slot; });
+    if (slot < 0 || found == tracks.end()) {
       result->Error("ADD_TRACK_FAILED", "native renderer rejected the track");
     } else {
       std::string policy_error;
       if (!RefreshPresentationPolicy("windows-add-track", policy_error)) {
-        player_->remove_track(file_id);
+        player_->remove_track(found->file_id);
         std::string restore_error;
         if (!RefreshPresentationPolicy(
                 "windows-add-track-rollback", restore_error)) {

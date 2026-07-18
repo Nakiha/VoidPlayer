@@ -148,10 +148,7 @@ void main() {
       await flush;
 
       expect(controller.resizeInvocationCount, 2);
-      expect(
-        controller.resizes,
-        const [Size(200, 150), Size(320, 240)],
-      );
+      expect(controller.resizes, const [Size(200, 150), Size(320, 240)]);
     },
   );
 

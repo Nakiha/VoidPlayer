@@ -180,6 +180,7 @@ class WindowsNativeCompositor final {
   DXGI_FORMAT video_target_format_ = DXGI_FORMAT_UNKNOWN;
   bool video_target_handoff_pending_ = false;
   uint64_t video_target_handoff_serial_ = 0;
+  uint64_t video_target_retirement_serial_ = 0;
   WindowsNativeCompositorOutputConfig requested_output_config_;
   WindowsNativeCompositorOutputConfig applied_output_config_;
   uint64_t requested_output_generation_ = 0;

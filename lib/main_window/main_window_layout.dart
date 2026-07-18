@@ -324,6 +324,12 @@ class MainWindowLayoutCoordinator {
     _debugViewportResizeReports++;
     final now = DateTime.now();
     final lastResizeLog = _lastViewportResizePacingLogAt;
+    final liveFollow = immediate || _state.nativeCompositorActive;
+    final resizeSchedule = immediate
+        ? 'immediate'
+        : liveFollow
+        ? 'live-follow'
+        : 'debounce';
     final shouldLogResize =
         _debugViewportResizeReports <= 8 ||
         lastResizeLog == null ||
@@ -335,13 +341,14 @@ class MainWindowLayoutCoordinator {
         'count=$_debugViewportResizeReports '
         'previous=${previousWidth}x$previousHeight next=${width}x$height '
         'dpr=${devicePixelRatio.toStringAsFixed(3)} '
-        'immediate=$immediate schedule=${immediate ? 'immediate' : 'debounce'} '
+        'immediate=$immediate '
+        'schedule=$resizeSchedule '
         'nativeActive=${_state.nativeCompositorActive} '
         'layoutDirty=$_layoutDirty resizeDirty=$_resizeDirty '
         'activeFlush=${_activeFlush != null}',
       );
     }
-    if (immediate || _state.nativeCompositorActive) {
+    if (liveFollow) {
       _resizeDebounceTimer = null;
       _markResizeDirty();
       return;

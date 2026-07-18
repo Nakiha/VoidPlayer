@@ -12,6 +12,7 @@
 #include <flutter/method_channel.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
@@ -569,6 +570,12 @@ void AddCompositorDiagnostics(EncodableMap& diagnostics,
   diagnostics[EncodableValue("windowsVideoTargetRetainedGeometrySyncCount")] =
       EncodableValue(static_cast<int64_t>(
           state.video_target_retained_geometry_sync_count));
+  diagnostics[EncodableValue("windowsVideoTargetRetiredCount")] =
+      EncodableValue(
+          static_cast<int64_t>(state.video_target_retired_count));
+  diagnostics[EncodableValue("windowsVideoTargetRetiredReleaseCount")] =
+      EncodableValue(
+          static_cast<int64_t>(state.video_target_retired_release_count));
   diagnostics[EncodableValue("windowsVideoPresentRetryCount")] =
       EncodableValue(static_cast<int64_t>(state.video_present_retry_count));
   diagnostics[EncodableValue("windowsFlutterAcquireFailureCount")] =
@@ -881,6 +888,7 @@ void VideoRendererPlugin::DestroyPlayer() {
   }
   video_target_width_ = 0;
   video_target_height_ = 0;
+  video_target_resize_count_ = 0;
   player_id_ = 0;
 }
 
@@ -1025,6 +1033,7 @@ bool VideoRendererPlugin::ApplyPresentationPolicy(
 bool VideoRendererPlugin::ResizeVideoTargets(int width,
                                              int height,
                                              std::string& error) {
+  const auto resize_started = std::chrono::steady_clock::now();
   error.clear();
   if (!compositor_ || !compositor_started_ || width <= 0 || height <= 0) {
     error = "Windows native compositor is unavailable";
@@ -1041,10 +1050,11 @@ bool VideoRendererPlugin::ResizeVideoTargets(int width,
           : DXGI_FORMAT_B8G8R8A8_UNORM;
   if (!compositor_->CreateVideoTargetRing(
           static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-          target_format, 6, textures)) {
+          target_format, 4, textures)) {
     error = compositor_->diagnostics().last_error;
     return false;
   }
+  const auto allocation_completed = std::chrono::steady_clock::now();
   if (player_ && player_->initialized() &&
       !player_->install_target_ring(
           reinterpret_cast<const void* const*>(textures.data()),
@@ -1052,8 +1062,31 @@ bool VideoRendererPlugin::ResizeVideoTargets(int width,
     error = player_->presentation_error();
     return false;
   }
+  const auto install_completed = std::chrono::steady_clock::now();
   video_target_width_ = width;
   video_target_height_ = height;
+  const uint64_t resize_count = ++video_target_resize_count_;
+  const auto allocation_us =
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          allocation_completed - resize_started)
+          .count();
+  const auto install_us =
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          install_completed - allocation_completed)
+          .count();
+  const auto total_us =
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          install_completed - resize_started)
+          .count();
+  if (resize_count <= 12 || resize_count % 120 == 0 || total_us > 8333) {
+    spdlog::info(
+        "[NativeResizePacing] runner targetResize={} target={}x{} format={} "
+        "ring=4 allocation_us={} install_us={} total_us={}",
+        resize_count, width, height,
+        target_format == DXGI_FORMAT_R16G16B16A16_FLOAT ? "rgba16f"
+                                                        : "bgra8",
+        allocation_us, install_us, total_us);
+  }
   return true;
 }
 
@@ -1649,13 +1682,24 @@ void VideoRendererPlugin::HandleMethodCall(
       result->Error("RESIZE_FAILED", error);
     } else {
       vr::WindowsFirstFrameActivationGate::Session presentation_session = 0;
+      bool native_viewport_active = false;
       {
         std::lock_guard<std::mutex> lock(presentation_state_mutex_);
         presentation_session = presentation_session_;
+        native_viewport_active =
+            first_frame_activation_gate_.active(presentation_session_);
       }
       (void)first_frame_activation_gate_.commit_initial_viewport(
           presentation_session);
-      player_->request_frame_refresh("windows-runner-resize");
+      if (!native_viewport_active) {
+        // Bootstrap remains synchronous so first-frame activation cannot open
+        // the native hole before a matching-size target is actually ready.
+        player_->request_frame_refresh("windows-runner-resize");
+      }
+      // An active renderer schedules its own forced preview redraw when the
+      // offscreen ring is installed. Do not submit a second interaction frame:
+      // the duplicate draw contends with the render loop and can present the
+      // same resize twice.
       result->Success();
     }
   } else if (method == "applyLayout") {

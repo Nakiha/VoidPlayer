@@ -44,6 +44,8 @@ struct WindowsNativeCompositorDiagnostics {
   uint64_t video_target_retained_reconfigure_count = 0;
   uint64_t video_target_retained_handoff_count = 0;
   uint64_t video_target_retained_geometry_sync_count = 0;
+  uint64_t video_target_retired_count = 0;
+  uint64_t video_target_retired_release_count = 0;
   uint64_t video_present_retry_count = 0;
   uint64_t video_publish_count = 0;
   uint64_t video_present_count = 0;
@@ -178,6 +180,7 @@ class WindowsNativeCompositor final {
   DXGI_FORMAT video_target_format_ = DXGI_FORMAT_UNKNOWN;
   bool video_target_handoff_pending_ = false;
   uint64_t video_target_handoff_serial_ = 0;
+  uint64_t video_target_retirement_serial_ = 0;
   WindowsNativeCompositorOutputConfig requested_output_config_;
   WindowsNativeCompositorOutputConfig applied_output_config_;
   uint64_t requested_output_generation_ = 0;

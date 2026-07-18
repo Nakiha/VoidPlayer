@@ -253,6 +253,7 @@ bool WindowsNativeCompositor::CreateVideoTargetRing(
   }
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
+    const bool retiring_current_ring = !video_targets_.empty();
     const bool retaining_displayed_target = video_target_ != nullptr;
     D3D11_TEXTURE2D_DESC retained_desc = {};
     if (retaining_displayed_target) {
@@ -268,6 +269,13 @@ bool WindowsNativeCompositor::CreateVideoTargetRing(
               (retired_video_targets_.size() - kMaxRetiredVideoTargets));
     }
     video_targets_ = std::move(targets);
+    if (retiring_current_ring) {
+      // A ring can be replaced before the first video target is displayed.
+      // Keep it alive until the first successful presentation from the new
+      // ring, but do not require a displayed-target geometry handoff merely
+      // to release those startup resources.
+      video_target_retirement_serial_ = 0;
+    }
     if (retaining_displayed_target) {
       video_target_handoff_pending_ = true;
       video_target_handoff_serial_ = 0;
@@ -298,6 +306,7 @@ void WindowsNativeCompositor::ClearVideoTargetRing() {
   video_target_format_ = DXGI_FORMAT_UNKNOWN;
   video_target_handoff_pending_ = false;
   video_target_handoff_serial_ = 0;
+  video_target_retirement_serial_ = 0;
   diagnostics_.video_target_format = "unavailable";
   ++diagnostics_.video_target_generation;
 }
@@ -329,6 +338,8 @@ bool WindowsNativeCompositor::PresentVideoTarget(ID3D11Texture2D* texture,
     }
     const bool starts_retained_handoff =
         video_target_handoff_pending_ && found != video_targets_.end();
+    const bool starts_retired_release =
+        !retired_video_targets_.empty() && found != video_targets_.end();
     video_target_ = texture;
     D3D11_TEXTURE2D_DESC presented_desc = {};
     texture->GetDesc(&presented_desc);
@@ -354,6 +365,9 @@ bool WindowsNativeCompositor::PresentVideoTarget(ID3D11Texture2D* texture,
       }
       video_target_handoff_pending_ = false;
       video_target_handoff_serial_ = serial;
+    }
+    if (starts_retired_release) {
+      video_target_retirement_serial_ = serial;
     }
     ++diagnostics_.video_publish_count;
   }
@@ -472,6 +486,7 @@ WindowsNativeCompositorDiagnostics WindowsNativeCompositor::diagnostics() const 
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
     result = diagnostics_;
+    result.video_target_retired_count = retired_video_targets_.size();
     result.flutter_publish_sample_count =
         diagnostics_.flutter_publish_count - flutter_publish_sample_baseline_;
   }
@@ -677,6 +692,9 @@ void WindowsNativeCompositor::ShutdownOnThread() {
     video_target_.Reset();
     video_targets_.clear();
     retired_video_targets_.clear();
+    video_target_handoff_pending_ = false;
+    video_target_handoff_serial_ = 0;
+    video_target_retirement_serial_ = 0;
   }
   completion_query_.Reset();
   constants_.Reset();
@@ -1178,9 +1196,11 @@ void WindowsNativeCompositor::CompleteVideoPresentation(uint64_t serial,
     return;
   }
   bool completed_retained_handoff = false;
+  bool completed_retired_release = false;
   uint64_t handoff_count = 0;
   uint64_t reconfigure_count = 0;
   uint64_t generation = 0;
+  size_t released_retired_targets = 0;
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (serial < video_completed_serial_) {
@@ -1191,24 +1211,37 @@ void WindowsNativeCompositor::CompleteVideoPresentation(uint64_t serial,
     if (success) {
       ++diagnostics_.video_present_count;
     }
-    if (video_target_handoff_serial_ != 0 &&
+    if (success && video_target_handoff_serial_ != 0 &&
         serial >= video_target_handoff_serial_) {
-      if (success) {
-        ++diagnostics_.video_target_retained_handoff_count;
-        completed_retained_handoff = true;
-        handoff_count = diagnostics_.video_target_retained_handoff_count;
-        reconfigure_count =
-            diagnostics_.video_target_retained_reconfigure_count;
-        generation = diagnostics_.video_target_generation;
-        video_target_handoff_serial_ = 0;
-      }
+      ++diagnostics_.video_target_retained_handoff_count;
+      completed_retained_handoff = true;
+      handoff_count = diagnostics_.video_target_retained_handoff_count;
+      reconfigure_count =
+          diagnostics_.video_target_retained_reconfigure_count;
+      generation = diagnostics_.video_target_generation;
+      video_target_handoff_serial_ = 0;
+    }
+    if (success && video_target_retirement_serial_ != 0 &&
+        serial >= video_target_retirement_serial_) {
+      released_retired_targets = retired_video_targets_.size();
+      diagnostics_.video_target_retired_release_count +=
+          released_retired_targets;
+      retired_video_targets_.clear();
+      video_target_retirement_serial_ = 0;
+      completed_retired_release = released_retired_targets > 0;
     }
   }
   if (completed_retained_handoff) {
     spdlog::info(
         "[WindowsCompositor] retained target handoff complete generation={} "
-        "reconfigures={} handoffs={}",
-        generation, reconfigure_count, handoff_count);
+        "reconfigures={} handoffs={} released_retired={}",
+        generation, reconfigure_count, handoff_count,
+        released_retired_targets);
+  } else if (completed_retired_release) {
+    spdlog::info(
+        "[WindowsCompositor] startup target retirement complete "
+        "released_retired={}",
+        released_retired_targets);
   }
   state_condition_.notify_all();
 }

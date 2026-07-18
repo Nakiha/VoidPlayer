@@ -221,15 +221,22 @@ class MainWindowMediaCoordinator {
       for (final path in uniquePaths) {
         if (!_alive) return;
         try {
-          final track = await controller.addTrack(
+          final previousFileIds = trackManager.entries
+              .map((entry) => entry.fileId)
+              .toSet();
+          final reportedTrack = await controller.addTrack(
             path,
             useHardwareDecode: playbackPreferences.useHardwareDecode,
           );
           if (!_alive) return;
-          trackManager.addTrack(track);
-          await _syncDefaultAudioPolicy([track]);
+          final addedTracks = await _acceptAddedTrack(
+            reportedTrack,
+            previousFileIds: previousFileIds,
+          );
           if (!_alive) return;
-          await _applyInitialPtsOffsets([track]);
+          await _syncDefaultAudioPolicy(addedTracks);
+          if (!_alive) return;
+          await _applyInitialPtsOffsets(addedTracks);
           if (!_alive) return;
           lifecycle.applyStartupLoopRangeIfReady();
         } catch (e) {
@@ -237,6 +244,39 @@ class MainWindowMediaCoordinator {
         }
       }
     }
+  }
+
+  Future<List<TrackInfo>> _acceptAddedTrack(
+    TrackInfo reportedTrack, {
+    required Set<int> previousFileIds,
+  }) async {
+    if (!previousFileIds.contains(reportedTrack.fileId)) {
+      trackManager.addTrack(reportedTrack);
+      return [reportedTrack];
+    }
+
+    log.severe(
+      '[MediaIdentity] addTrack returned existing fileId='
+      '${reportedTrack.fileId}; refreshing authoritative native tracks',
+    );
+    final refreshedTracks = await controller.getTracks();
+    if (!_alive) return const [];
+    final addedTracks = refreshedTracks
+        .where((track) => !previousFileIds.contains(track.fileId))
+        .toList(growable: false);
+    trackManager.reconcileTracks(refreshedTracks);
+    if (addedTracks.isEmpty) {
+      throw StateError(
+        'Native addTrack returned duplicate fileId ${reportedTrack.fileId} '
+        'without reporting a new track.',
+      );
+    }
+    log.warning(
+      '[MediaIdentity] recovered addTrack metadata from getTracks: '
+      'reported=${reportedTrack.fileId} '
+      'actual=${addedTracks.map((track) => track.fileId).join(",")}',
+    );
+    return addedTracks;
   }
 
   void _rejectTrackLimit({required int requestedCount}) {
@@ -396,7 +436,7 @@ class MainWindowMediaCoordinator {
         lifecycle.preparePlayerDestroyAfterLastTrackRemoved();
         lifecycle.resetAfterLastTrackRemoved();
       } else {
-        trackManager.setTracks(tracks);
+        trackManager.reconcileTracks(tracks);
         removeSyncOffset(fileId);
         if (wasAudible) {
           setAudibleTrackFileId(null);

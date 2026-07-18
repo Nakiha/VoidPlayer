@@ -42,18 +42,31 @@ class TrackManager with ChangeNotifier {
 
   /// Replace all tracks at once (after [createPlayer] or [getTracks]).
   void setTracks(List<TrackInfo> tracks) {
-    assert(
-      tracks.length <= maxTracks,
-      'TrackManager supports at most $maxTracks tracks.',
-    );
-    final uniqueTracks = <int, TrackInfo>{};
-    for (final track in tracks) {
-      if (uniqueTracks.containsKey(track.fileId) ||
-          uniqueTracks.length < maxTracks) {
-        uniqueTracks[track.fileId] = track;
+    final tracksByFileId = _validatedTracksByFileId(tracks);
+    _entries = tracksByFileId.values.map(TrackEntry.new).toList();
+    notifyListeners();
+  }
+
+  /// Refresh native metadata while preserving the current display order.
+  ///
+  /// Tracks no longer reported by native are removed. Newly reported tracks
+  /// are appended in native order.
+  void reconcileTracks(List<TrackInfo> tracks) {
+    final remaining = _validatedTracksByFileId(tracks);
+    final next = <TrackEntry>[];
+    for (final entry in _entries) {
+      final refreshed = remaining.remove(entry.fileId);
+      if (refreshed != null) {
+        next.add(TrackEntry(refreshed));
       }
     }
-    _entries = uniqueTracks.values.map(TrackEntry.new).toList();
+    for (final track in tracks) {
+      final added = remaining.remove(track.fileId);
+      if (added != null) {
+        next.add(TrackEntry(added));
+      }
+    }
+    _entries = next;
     notifyListeners();
   }
 
@@ -63,13 +76,31 @@ class TrackManager with ChangeNotifier {
       (entry) => entry.fileId == info.fileId,
     );
     if (existingIndex >= 0) {
-      _entries[existingIndex] = TrackEntry(info);
-      notifyListeners();
-      return;
+      throw StateError(
+        'Native returned duplicate track fileId ${info.fileId}.',
+      );
     }
     if (_entries.length >= maxTracks) return;
     _entries.add(TrackEntry(info));
     notifyListeners();
+  }
+
+  Map<int, TrackInfo> _validatedTracksByFileId(List<TrackInfo> tracks) {
+    if (tracks.length > maxTracks) {
+      throw StateError(
+        'Native returned ${tracks.length} tracks; maximum is $maxTracks.',
+      );
+    }
+    final tracksByFileId = <int, TrackInfo>{};
+    for (final track in tracks) {
+      if (tracksByFileId.containsKey(track.fileId)) {
+        throw StateError(
+          'Native returned duplicate track fileId ${track.fileId}.',
+        );
+      }
+      tracksByFileId[track.fileId] = track;
+    }
+    return tracksByFileId;
   }
 
   /// Remove a track by its [fileId].

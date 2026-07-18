@@ -12,6 +12,28 @@ void main() {
     await initLogging(['--log-level=flutter=OFF']);
   });
 
+  test('parses REMOVE_TRACK as a stable fileId', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_remove_track_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync('0.1,REMOVE_TRACK,7\n');
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(instructions, hasLength(1));
+    expect(
+      instructions.single,
+      isA<ScriptAction>().having(
+        (instruction) => instruction.action,
+        'action',
+        isA<RemoveTrackAction>().having((action) => action.fileId, 'fileId', 7),
+      ),
+    );
+  });
+
   test('parses and sorts release ui automation instructions', () {
     final file = File(
       '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_automation_script_test.csv',

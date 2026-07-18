@@ -988,6 +988,185 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'track removal preserves a display reorder made while native is pending',
+    (tester) async {
+      const channel = MethodChannel('video_renderer');
+      const firstPath = 'https://media.test/first.mp4';
+      const removedPath = 'https://media.test/removed.mp4';
+      const lastPath = 'https://media.test/last.mp4';
+      final nativeTracks = <Map<String, Object?>>[
+        _trackPayload(fileId: 0, slot: 0, path: firstPath),
+        _trackPayload(fileId: 1, slot: 1, path: removedPath),
+        _trackPayload(fileId: 2, slot: 2, path: lastPath),
+      ];
+      final removeStarted = Completer<void>();
+      final releaseRemove = Completer<void>();
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            switch (call.method) {
+              case 'createPlayer':
+                return {
+                  'playerId': 1,
+                  'textureId': 1,
+                  'tracks': nativeTracks
+                      .map((track) => Map<String, Object?>.from(track))
+                      .toList(),
+                };
+              case 'removeTrack':
+                removeStarted.complete();
+                await releaseRemove.future;
+                nativeTracks
+                  ..clear()
+                  ..addAll([
+                    _trackPayload(fileId: 0, slot: 0, path: firstPath),
+                    _trackPayload(fileId: 2, slot: 1, path: lastPath),
+                  ]);
+                return null;
+              case 'getTracks':
+                return nativeTracks
+                    .map((track) => Map<String, Object?>.from(track))
+                    .toList();
+              default:
+                return null;
+            }
+          });
+      addTearDown(() {
+        if (!releaseRemove.isCompleted) {
+          releaseRemove.complete();
+        }
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final controller = MainWindowController(
+        actionRegistry: ActionRegistry(),
+        vsync: const TestVSync(),
+        startupOptions: const StartupOptions(),
+        mounted: () => true,
+        analysisGeneration: _FakeAnalysisGenerationService(),
+        analysisToolbarDataSource: _FakeAnalysisToolbarDataSource(),
+        appSettings: _FakeAppSettingsRepository(),
+        playbackPreferences: _FakePlaybackPreferences(),
+      );
+      addTearDown(controller.dispose);
+
+      final initial = await controller.player.createPlayer(const [
+        firstPath,
+        removedPath,
+        lastPath,
+      ]);
+      controller.stateStore.setPlayerIdentity(
+        playerId: initial.playerId,
+        textureId: initial.textureId,
+      );
+      controller.trackManager.setTracks(initial.tracks);
+
+      final removal = controller.mediaCoordinator.removeTrack(1);
+      await removeStarted.future;
+      controller.trackManager.swapTracks(0, 2);
+      expect(controller.trackManager.entries.map((entry) => entry.fileId), [
+        2,
+        1,
+        0,
+      ]);
+
+      releaseRemove.complete();
+      var completed = false;
+      final operation = removal.whenComplete(() => completed = true);
+      for (var i = 0; i < 200 && !completed; i++) {
+        await tester.pump(const Duration(milliseconds: 1));
+      }
+      expect(completed, isTrue);
+      await operation;
+
+      expect(controller.trackManager.entries.map((entry) => entry.fileId), [
+        2,
+        0,
+      ]);
+      expect(controller.trackManager.entries.first.slot, 1);
+    },
+  );
+
+  testWidgets(
+    'duplicate addTrack response recovers from authoritative native tracks',
+    (tester) async {
+      const channel = MethodChannel('video_renderer');
+      const firstPath = 'https://media.test/first.mp4';
+      const existingPath = 'https://media.test/existing.mp4';
+      const replacementPath = 'https://media.test/replacement.mp4';
+      final nativeTracks = <Map<String, Object?>>[
+        _trackPayload(fileId: 0, slot: 0, path: firstPath),
+        _trackPayload(fileId: 2, slot: 1, path: existingPath),
+      ];
+      var getTracksCount = 0;
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            switch (call.method) {
+              case 'createPlayer':
+                return {
+                  'playerId': 1,
+                  'textureId': 1,
+                  'tracks': nativeTracks
+                      .map((track) => Map<String, Object?>.from(track))
+                      .toList(),
+                };
+              case 'addTrack':
+                nativeTracks.add(
+                  _trackPayload(fileId: 3, slot: 2, path: replacementPath),
+                );
+                return Map<String, Object?>.from(nativeTracks[1]);
+              case 'getTracks':
+                getTracksCount += 1;
+                return nativeTracks
+                    .map((track) => Map<String, Object?>.from(track))
+                    .toList();
+              default:
+                return null;
+            }
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final controller = MainWindowController(
+        actionRegistry: ActionRegistry(),
+        vsync: const TestVSync(),
+        startupOptions: const StartupOptions(),
+        mounted: () => true,
+        analysisGeneration: _FakeAnalysisGenerationService(),
+        analysisToolbarDataSource: _FakeAnalysisToolbarDataSource(),
+        appSettings: _FakeAppSettingsRepository(),
+        playbackPreferences: _FakePlaybackPreferences(),
+      );
+      addTearDown(controller.dispose);
+
+      final initial = await controller.player.createPlayer(const [
+        firstPath,
+        existingPath,
+      ]);
+      controller.stateStore.setPlayerIdentity(
+        playerId: initial.playerId,
+        textureId: initial.textureId,
+      );
+      controller.trackManager.setTracks(initial.tracks);
+
+      await controller.mediaCoordinator.loadMediaPaths(const [replacementPath]);
+      await tester.pump();
+
+      expect(getTracksCount, 1);
+      expect(controller.trackManager.entries.map((entry) => entry.fileId), [
+        0,
+        2,
+        3,
+      ]);
+      expect(controller.trackManager.entries.last.path, replacementPath);
+    },
+  );
 }
 
 Map<String, Object?> _trackPayload({

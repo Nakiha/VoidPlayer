@@ -68,51 +68,78 @@ void main() {
     expect(orderOf(manager), [0, 1, 2, 3]);
   });
 
-  test('addTrack refreshes an existing file id instead of duplicating it', () {
+  test('addTrack rejects a duplicate file id without changing state', () {
     final manager = TrackManager()..addTrack(track(1));
 
-    manager.addTrack(
-      const TrackInfo(
-        fileId: 1,
-        slot: 0,
-        path: 'replacement.mp4',
-        width: 3840,
-        height: 2160,
+    expect(
+      () => manager.addTrack(
+        const TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: 'replacement.mp4',
+          width: 3840,
+          height: 2160,
+        ),
       ),
+      throwsStateError,
     );
 
     expect(manager.count, 1);
     expect(manager.entries.single.fileId, 1);
-    expect(manager.entries.single.path, 'replacement.mp4');
+    expect(manager.entries.single.path, 'track_1.mp4');
   });
 
-  test('setTracks keeps file ids unique', () {
-    final manager = TrackManager();
+  test('setTracks rejects duplicate file ids without changing state', () {
+    final manager = TrackManager()..setTracks([track(0)]);
 
-    manager.setTracks([
-      track(1),
+    expect(
+      () => manager.setTracks([
+        track(1),
+        const TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: 'replacement.mp4',
+          width: 3840,
+          height: 2160,
+        ),
+        track(2),
+      ]),
+      throwsStateError,
+    );
+
+    expect(orderOf(manager), [0]);
+  });
+
+  test('reconcileTracks preserves display order and refreshes metadata', () {
+    final manager = TrackManager()
+      ..setTracks([track(0), track(1), track(2)])
+      ..swapTracks(0, 2);
+
+    manager.reconcileTracks([
+      track(0),
       const TrackInfo(
-        fileId: 1,
-        slot: 0,
-        path: 'replacement.mp4',
+        fileId: 2,
+        slot: 1,
+        path: 'refreshed.mp4',
         width: 3840,
         height: 2160,
       ),
-      track(2),
+      track(3),
     ]);
 
-    expect(orderOf(manager), [1, 2]);
-    expect(manager.entries.first.path, 'replacement.mp4');
+    expect(orderOf(manager), [2, 0, 3]);
+    expect(manager.entries.first.path, 'refreshed.mp4');
+    expect(manager.entries.first.slot, 1);
   });
 
-  test('setTracks asserts when native returns too many tracks', () {
+  test('setTracks rejects when native returns too many tracks', () {
     final manager = TrackManager();
 
     expect(
       () => manager.setTracks([
         for (var i = 0; i < TrackManager.maxTracks + 1; i++) track(i),
       ]),
-      throwsAssertionError,
+      throwsStateError,
     );
   });
 }

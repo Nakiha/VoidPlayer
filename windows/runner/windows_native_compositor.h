@@ -44,6 +44,8 @@ struct WindowsNativeCompositorDiagnostics {
   uint64_t video_target_retained_reconfigure_count = 0;
   uint64_t video_target_retained_handoff_count = 0;
   uint64_t video_target_retained_geometry_sync_count = 0;
+  uint64_t video_target_retired_count = 0;
+  uint64_t video_target_retired_release_count = 0;
   uint64_t video_present_retry_count = 0;
   uint64_t video_publish_count = 0;
   uint64_t video_present_count = 0;

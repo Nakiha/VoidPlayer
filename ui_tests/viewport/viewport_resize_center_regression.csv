@@ -12,6 +12,8 @@
 3.6,ASSERT_VIEW_OFFSET,150,125,1.0
 3.7,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetainedReconfigureCount,3
 3.72,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetainedHandoffCount,3
+3.74,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,windowsVideoTargetRetiredCount,0,0
+3.76,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetiredReleaseCount,12
 4.0,TOGGLE_MARKS_SIDEBAR
 4.5,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetainedReconfigureCount,4
 4.52,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetainedHandoffCount,4
@@ -26,7 +28,11 @@
 5.0,TOGGLE_MARKS_SIDEBAR
 5.4,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetainedReconfigureCount,5
 5.42,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetainedHandoffCount,5
-5.44,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetainedGeometrySyncCount,2
+# Live-follow may deliver the closing sidebar rect before ring installation,
+# so only the genuinely out-of-order opening handoff requires geometry sync.
+5.44,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetainedGeometrySyncCount,1
+5.46,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,windowsVideoTargetRetiredCount,0,0
+5.48,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetiredReleaseCount,20
 5.5,CAPTURE_VIEWPORT_REGION,windows_roi_sidebar_closed,80,50,320,180,96,build/windows_roi_sidebar_closed.png
 5.6,ASSERT_CAPTURE_NOT_BLACK,windows_roi_sidebar_closed,0.01,4.0
 5.8,QUIT,0

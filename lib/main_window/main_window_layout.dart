@@ -341,7 +341,7 @@ class MainWindowLayoutCoordinator {
         'activeFlush=${_activeFlush != null}',
       );
     }
-    if (immediate) {
+    if (immediate || _state.nativeCompositorActive) {
       _resizeDebounceTimer = null;
       _markResizeDirty();
       return;

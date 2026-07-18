@@ -74,6 +74,7 @@ class VideoRendererPlugin final : public flutter::Plugin {
   std::shared_ptr<vr::WindowsNativePlayer> player_;
   int video_target_width_ = 0;
   int video_target_height_ = 0;
+  uint64_t video_target_resize_count_ = 0;
   uint64_t layout_apply_count_ = 0;
   vr::WindowsDisplayResolver display_resolver_;
   vr::WindowsDisplayProbeResult display_probe_;

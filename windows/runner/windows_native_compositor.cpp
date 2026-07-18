@@ -472,6 +472,7 @@ WindowsNativeCompositorDiagnostics WindowsNativeCompositor::diagnostics() const 
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
     result = diagnostics_;
+    result.video_target_retired_count = retired_video_targets_.size();
     result.flutter_publish_sample_count =
         diagnostics_.flutter_publish_count - flutter_publish_sample_baseline_;
   }
@@ -1181,6 +1182,7 @@ void WindowsNativeCompositor::CompleteVideoPresentation(uint64_t serial,
   uint64_t handoff_count = 0;
   uint64_t reconfigure_count = 0;
   uint64_t generation = 0;
+  size_t released_retired_targets = 0;
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (serial < video_completed_serial_) {
@@ -1200,6 +1202,10 @@ void WindowsNativeCompositor::CompleteVideoPresentation(uint64_t serial,
         reconfigure_count =
             diagnostics_.video_target_retained_reconfigure_count;
         generation = diagnostics_.video_target_generation;
+        released_retired_targets = retired_video_targets_.size();
+        diagnostics_.video_target_retired_release_count +=
+            released_retired_targets;
+        retired_video_targets_.clear();
         video_target_handoff_serial_ = 0;
       }
     }
@@ -1207,8 +1213,9 @@ void WindowsNativeCompositor::CompleteVideoPresentation(uint64_t serial,
   if (completed_retained_handoff) {
     spdlog::info(
         "[WindowsCompositor] retained target handoff complete generation={} "
-        "reconfigures={} handoffs={}",
-        generation, reconfigure_count, handoff_count);
+        "reconfigures={} handoffs={} released_retired={}",
+        generation, reconfigure_count, handoff_count,
+        released_retired_targets);
   }
   state_condition_.notify_all();
 }

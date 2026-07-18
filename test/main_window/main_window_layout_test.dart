@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/app_log.dart';
@@ -79,12 +81,11 @@ void main() {
     },
   );
 
-  testWidgets('window resize debounces native compositor resize', (
+  testWidgets('inactive compositor window resize remains debounced', (
     tester,
   ) async {
     final stateStore = MainWindowStateStore()
       ..setPlayerIdentity(playerId: 1, textureId: 1)
-      ..setNativeCompositorActive(true)
       ..setLayout(const LayoutState());
     addTearDown(stateStore.dispose);
     final trackManager = TrackManager();
@@ -112,6 +113,47 @@ void main() {
     expect(controller.calls, const ['resize', 'getLayout']);
     expect(controller.resizes, const [Size(300, 220)]);
   });
+
+  test(
+    'native compositor resize keeps one request in flight and coalesces latest',
+    () async {
+      final stateStore = MainWindowStateStore()
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
+        ..setNativeCompositorActive(true)
+        ..setLayout(const LayoutState());
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager();
+      addTearDown(trackManager.dispose);
+      final controller = _BlockingResizeNativePlayerController();
+      final coordinator = MainWindowLayoutCoordinator(
+        vsync: const TestVSync(),
+        controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
+        mounted: () => true,
+      );
+      addTearDown(coordinator.dispose);
+      coordinator.viewportWidth = 100;
+      coordinator.viewportHeight = 100;
+
+      coordinator.onViewportResize(200, 150, 1);
+      final flush = coordinator.flushPendingLayout();
+      await controller.firstResizeStarted.future;
+
+      coordinator.onViewportResize(240, 180, 1);
+      coordinator.onViewportResize(320, 240, 1);
+      expect(controller.resizeInvocationCount, 1);
+
+      controller.allowFirstResize.complete();
+      await flush;
+
+      expect(controller.resizeInvocationCount, 2);
+      expect(
+        controller.resizes,
+        const [Size(200, 150), Size(320, 240)],
+      );
+    },
+  );
 
   test(
     'preempt viewport resize lets native resize rescale applied pending layout',
@@ -548,5 +590,22 @@ class _FakeNativePlayerController extends NativePlayerController {
     calls.add('getLayout');
     getLayoutCalls++;
     return nativeLayout;
+  }
+}
+
+class _BlockingResizeNativePlayerController
+    extends _FakeNativePlayerController {
+  final Completer<void> firstResizeStarted = Completer<void>();
+  final Completer<void> allowFirstResize = Completer<void>();
+  int resizeInvocationCount = 0;
+
+  @override
+  Future<void> resize(int width, int height) async {
+    resizeInvocationCount++;
+    if (resizeInvocationCount == 1) {
+      firstResizeStarted.complete();
+      await allowFirstResize.future;
+    }
+    await super.resize(width, height);
   }
 }

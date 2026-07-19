@@ -18,6 +18,7 @@ import 'package:void_player/analysis/ui/workspace/analysis_workspace_page.dart';
 import 'package:void_player/app_log.dart';
 import 'package:void_player/feedback/app_feedback.dart';
 import 'package:void_player/l10n/app_localizations.dart';
+import 'package:void_player/main_window/main_window_analysis_dock.dart';
 import 'package:void_player/main_window/main_window_deck.dart';
 import 'package:void_player/main_window/main_window_inspector.dart';
 import 'package:void_player/main_window/main_window_list_sidebar.dart';
@@ -137,7 +138,7 @@ void main() {
   );
 
   testWidgets(
-    'analysis workspace expands on demand and loads analysis lazily',
+    'analysis dock keeps the bottom timeline compact and preserves playback',
     (tester) async {
       final feedback = AppFeedbackController();
       addTearDown(feedback.dispose);
@@ -180,10 +181,13 @@ void main() {
       final analysisDeck = tester.getRect(find.byType(MainWindowDeck));
 
       expect(timelineDeck.height, timelineTrackRowHeight * 2);
-      expect(analysisDeck.height, kDefaultDeckHeight);
+      expect(analysisDeck.height, timelineDeck.height);
       expect(analysisViewport.height, lessThan(timelineViewport.height));
-      expect(analysisChrome.size, timelineChrome.size);
+      expect(analysisViewport.width, lessThan(timelineViewport.width));
+      expect(analysisChrome.height, timelineChrome.height);
+      expect(analysisChrome.width, lessThan(timelineChrome.width));
       expect(find.byType(AnalysisWorkspacePage), findsOneWidget);
+      expect(find.byKey(mainWindowAnalysisChartShelfKey), findsOneWidget);
     },
   );
 
@@ -221,7 +225,10 @@ void main() {
       );
 
       final analysisButton = tester.widget<TextButton>(
-        find.byKey(const ValueKey('main-window-deck-tab-analysis')),
+        find.descendant(
+          of: find.byKey(const ValueKey('main-window-deck-tab-analysis')),
+          matching: find.byType(TextButton),
+        ),
       );
       final colors = Theme.of(
         tester.element(find.byType(MainWindowDeck)),
@@ -246,6 +253,77 @@ void main() {
       );
     },
   );
+
+  testWidgets('analysis sidebar switches the focused track', (tester) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+    const tracks = [
+      TrackEntry(
+        TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: 'first.mp4',
+          width: 1920,
+          height: 1080,
+        ),
+      ),
+      TrackEntry(
+        TrackInfo(
+          fileId: 2,
+          slot: 1,
+          path: 'second.mp4',
+          width: 1280,
+          height: 720,
+        ),
+      ),
+    ];
+    const entries = [
+      AnalysisWorkspaceEntry(
+        fileId: 1,
+        path: 'first.mp4',
+        fileName: 'first.mp4',
+        hash: null,
+        generationStatus: null,
+      ),
+      AnalysisWorkspaceEntry(
+        fileId: 2,
+        path: 'second.mp4',
+        fileName: 'second.mp4',
+        hash: null,
+        generationStatus: null,
+      ),
+    ];
+
+    await tester.pumpWidget(
+      _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              tracks: tracks,
+              analysisEntries: entries,
+              deckTab: MainWindowDeckTab.analysis,
+            ),
+            handles: _handles(),
+            actions: _noop,
+          ),
+        ),
+      ),
+    );
+
+    final selector = find.byKey(mainWindowAnalysisTrackSelectorKey);
+    expect(selector, findsOneWidget);
+    expect(find.text('1. first.mp4'), findsWidgets);
+
+    await tester.tap(selector);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2. second.mp4').last);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<DropdownButton<int>>(selector).value, 1);
+    expect(find.text('2. second.mp4'), findsWidgets);
+  });
 
   testWidgets(
     'quality deck analyzes proxies, seeks samples, and requests metric marks',
@@ -316,7 +394,7 @@ void main() {
     },
   );
 
-  testWidgets('workspace resize and close expose bounded local actions', (
+  testWidgets('analysis shelf and close expose bounded local actions', (
     tester,
   ) async {
     final feedback = AppFeedbackController();
@@ -330,7 +408,6 @@ void main() {
         height: 1080,
       ),
     );
-    final heights = <double>[];
     final tabs = <MainWindowDeckTab>[];
 
     await tester.pumpWidget(
@@ -344,21 +421,15 @@ void main() {
               deckTab: MainWindowDeckTab.analysis,
             ),
             handles: _handles(),
-            actions: _actionsWithDeck(
-              onTabChanged: tabs.add,
-              onHeightChanged: heights.add,
-            ),
+            actions: _actionsWithDeck(onTabChanged: tabs.add),
           ),
         ),
       ),
     );
 
-    await tester.drag(
-      find.byKey(mainWindowDeckResizeHandleKey),
-      const Offset(0, -80),
-    );
-    expect(heights, isNotEmpty);
-    expect(heights.last, inInclusiveRange(kMinDeckHeight, kMaxDeckHeight));
+    expect(find.byKey(mainWindowAnalysisChartShelfKey), findsOneWidget);
+    expect(find.byKey(mainWindowDeckResizeHandleKey), findsOneWidget);
+    expect(tester.getSize(find.byType(MainWindowDeck)).height, 64);
 
     await tester.tap(find.byKey(mainWindowDeckCollapseButtonKey));
     expect(tabs, [MainWindowDeckTab.timeline]);
@@ -963,6 +1034,7 @@ MainWindowViewModel _model({
   bool deckCollapsed = false,
   MainWindowSelection? selection,
   AnalysisQualityDataSource? qualityDataSource,
+  List<AnalysisWorkspaceEntry> analysisEntries = const [],
 }) => MainWindowViewModel(
   session: MainWindowSessionVm.fromSession(const PlaybackSession.normal()),
   viewport: MainWindowViewportVm(
@@ -1029,7 +1101,7 @@ MainWindowViewModel _model({
     tab: deckTab,
     height: deckHeight,
     collapsed: deckCollapsed,
-    analysisEntries: ValueNotifier(const <AnalysisWorkspaceEntry>[]),
+    analysisEntries: ValueNotifier(analysisEntries),
     analysisTestHosts: AnalysisTestHostRegistry(),
     qualityDataSource:
         qualityDataSource ?? const NativeAnalysisQualityService(),

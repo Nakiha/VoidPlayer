@@ -18,11 +18,15 @@ const Key mainWindowQualityChartKey = ValueKey('main-window-quality-chart');
 class MainWindowQualityDeck extends StatefulWidget {
   final MainWindowViewModel model;
   final MainWindowViewActions actions;
+  final int? selectedFileId;
+  final bool showTrackSelector;
 
   const MainWindowQualityDeck({
     super.key,
     required this.model,
     required this.actions,
+    this.selectedFileId,
+    this.showTrackSelector = true,
   });
 
   @override
@@ -43,20 +47,30 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
   @override
   void initState() {
     super.initState();
-    _fileId = _initialFileId();
+    _fileId = widget.selectedFileId ?? _initialFileId();
   }
 
   @override
   void didUpdateWidget(covariant MainWindowQualityDeck oldWidget) {
     super.didUpdateWidget(oldWidget);
     final tracks = widget.model.media.tracks;
-    if (_fileId == null || !tracks.any((entry) => entry.fileId == _fileId)) {
-      _fileId = _initialFileId();
-      _report = null;
-      _selectedSample = null;
-      _error = null;
-      _notice = null;
+    if (widget.selectedFileId != null &&
+        widget.selectedFileId != oldWidget.selectedFileId) {
+      _fileId = widget.selectedFileId;
+      _resetReport();
+      return;
     }
+    if (_fileId == null || !tracks.any((entry) => entry.fileId == _fileId)) {
+      _fileId = widget.selectedFileId ?? _initialFileId();
+      _resetReport();
+    }
+  }
+
+  void _resetReport() {
+    _report = null;
+    _selectedSample = null;
+    _error = null;
+    _notice = null;
   }
 
   int? _initialFileId() {
@@ -164,44 +178,43 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
               height: 36,
               child: Row(
                 children: [
-                  SizedBox(
-                    width: 210,
-                    child: Row(
-                      children: [
-                        Text('Track', style: theme.textTheme.labelMedium),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: DropdownButton<int>(
-                            value: _fileId,
-                            isExpanded: true,
-                            isDense: true,
-                            items: [
-                              for (final track in tracks)
-                                DropdownMenuItem(
-                                  value: track.fileId,
-                                  child: Text(
-                                    track.fileName,
-                                    overflow: TextOverflow.ellipsis,
+                  if (widget.showTrackSelector) ...[
+                    SizedBox(
+                      width: 210,
+                      child: Row(
+                        children: [
+                          Text('Track', style: theme.textTheme.labelMedium),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButton<int>(
+                              value: _fileId,
+                              isExpanded: true,
+                              isDense: true,
+                              items: [
+                                for (final track in tracks)
+                                  DropdownMenuItem(
+                                    value: track.fileId,
+                                    child: Text(
+                                      track.fileName,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
-                                ),
-                            ],
-                            onChanged: _loading
-                                ? null
-                                : (fileId) {
-                                    setState(() {
-                                      _fileId = fileId;
-                                      _report = null;
-                                      _selectedSample = null;
-                                      _error = null;
-                                      _notice = null;
-                                    });
-                                  },
+                              ],
+                              onChanged: _loading
+                                  ? null
+                                  : (fileId) {
+                                      setState(() {
+                                        _fileId = fileId;
+                                        _resetReport();
+                                      });
+                                    },
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
+                    const SizedBox(width: 8),
+                  ],
                   FilledButton.icon(
                     key: mainWindowQualityAnalyzeButtonKey,
                     onPressed: tracks.isEmpty || _loading ? null : _analyze,

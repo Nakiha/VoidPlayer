@@ -1,5 +1,5 @@
-# The compact playback timeline expands into the on-demand analysis workspace,
-# then returns all unused space to the viewport when closed.
+# Analysis docks NAL units at the left and curves above the viewport while the
+# compact playback timeline remains available below.
 @WINDOW,1280,720
 
 0.3,ADD_MEDIA,resources/video/h264_9s_1920x1080.mp4
@@ -14,12 +14,13 @@
 3.4,ASSERT_MAIN_WINDOW_DECK_TAB,analysis
 3.5,ASSERT_ANALYSIS_CODEC,h264
 3.6,HOVER_CONTROLS_BAR_BUTTONS,12
-3.8,CAPTURE_VIEWPORT,deck_analysis
-3.9,ASSERT_CAPTURE_NOT_BLACK,deck_analysis,0.01,4.0
+3.8,CAPTURE_VIEWPORT,analysis_docked
+3.9,ASSERT_CAPTURE_NOT_BLACK,analysis_docked,0.01,4.0
+3.95,CAPTURE_FLUTTER,analysis_docked_flutter,build/analysis_docked_flutter.png
 
 4.0,DRAG_MAIN_WINDOW_DECK,-80,12
-4.4,CAPTURE_VIEWPORT,deck_resized
-4.5,ASSERT_CAPTURE_NOT_BLACK,deck_resized,0.01,4.0
+4.4,CAPTURE_VIEWPORT,analysis_shelf_resized
+4.5,ASSERT_CAPTURE_NOT_BLACK,analysis_shelf_resized,0.01,4.0
 4.7,CLICK_MAIN_WINDOW_DECK_TAB,timeline
 4.9,ASSERT_MAIN_WINDOW_DECK_TAB,timeline
 5.1,HOVER_CONTROLS_BAR_BUTTONS,12

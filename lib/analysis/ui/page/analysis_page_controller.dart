@@ -32,7 +32,7 @@ class AnalysisPageController extends ChangeNotifier {
   double _chartOffset = 0.0;
   double _frameSizeAxisZoom = 1.0;
   double _qpAxisZoom = 1.0;
-  double _topPanelFraction = 0.40;
+  double _topPanelFraction = 0.30;
 
   List<FrameInfo> _frames = [];
   List<FrameBucket> _frameBuckets = [];

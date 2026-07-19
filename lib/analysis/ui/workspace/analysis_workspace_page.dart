@@ -5,6 +5,7 @@ import '../../../l10n/app_localizations.dart';
 import '../../analysis_manager.dart';
 import '../analysis_ui_selection.dart';
 import '../page/analysis_page.dart';
+import '../page/analysis_page_state.dart';
 import '../testing/analysis_test_host.dart';
 import '../widgets/analysis_split_layout_controller.dart';
 import 'analysis_workspace_models.dart';
@@ -17,6 +18,8 @@ class AnalysisWorkspacePage extends StatefulWidget {
   final ValueChanged<AnalysisUiSelection?>? onSelectionChanged;
   final Map<int, AnalysisPlaybackPosition> currentPlaybackByFileId;
   final ValueChanged<AnalysisFrameSeekRequest>? onFrameSeekRequested;
+  final AnalysisWorkspaceContentBuilder? contentBuilder;
+  final AnalysisWorkspaceFallbackBuilder? fallbackBuilder;
 
   const AnalysisWorkspacePage({
     super.key,
@@ -25,6 +28,8 @@ class AnalysisWorkspacePage extends StatefulWidget {
     this.onSelectionChanged,
     this.currentPlaybackByFileId = const {},
     this.onFrameSeekRequested,
+    this.contentBuilder,
+    this.fallbackBuilder,
   });
 
   @override
@@ -111,10 +116,29 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   Widget build(BuildContext context) {
     final entries = _entries;
     if (entries.isEmpty) {
+      final fallbackBuilder = widget.fallbackBuilder;
+      if (fallbackBuilder != null) {
+        return fallbackBuilder(context, entries, 0, _selectEntry, null);
+      }
       return const Scaffold(body: SizedBox.shrink());
     }
     final selected = _clampIndex(_selected, entries.length);
     final modeToggleEnabled = entries.length > 1;
+    if (widget.contentBuilder != null) {
+      return Scaffold(
+        body: IndexedStack(
+          index: selected,
+          children: [
+            for (var index = 0; index < entries.length; index++)
+              _buildEntry(
+                entries[index],
+                dockActive: index == selected,
+                dockSelectedIndex: selected,
+              ),
+          ],
+        ),
+      );
+    }
 
     return Scaffold(
       body: _splitView
@@ -148,7 +172,12 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     );
   }
 
-  Widget _buildEntry(AnalysisWorkspaceEntry entry, {bool split = false}) {
+  Widget _buildEntry(
+    AnalysisWorkspaceEntry entry, {
+    bool split = false,
+    bool dockActive = true,
+    int? dockSelectedIndex,
+  }) {
     final hash = entry.hash;
     if (hash != null && hash.isNotEmpty) {
       return AnalysisPage(
@@ -161,11 +190,56 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         onSelectionChanged: widget.onSelectionChanged,
         currentPlaybackPosition: widget.currentPlaybackByFileId[entry.fileId],
         onFrameSeekRequested: widget.onFrameSeekRequested,
+        contentBuilder: widget.contentBuilder == null
+            ? null
+            : dockActive
+            ? (context, model, actions) => widget.contentBuilder!(
+                context,
+                entry,
+                _entries,
+                dockSelectedIndex ?? _selected,
+                _selectEntry,
+                model,
+                actions,
+              )
+            : (context, model, actions) => const SizedBox.shrink(),
       );
+    }
+    if (!dockActive) return const SizedBox.shrink();
+    final fallbackBuilder = widget.fallbackBuilder;
+    if (fallbackBuilder != null) {
+      return fallbackBuilder(context, _entries, _selected, _selectEntry, entry);
     }
     return _AnalysisGenerationPlaceholder(entry: entry);
   }
+
+  void _selectEntry(int index) {
+    if (index < 0 || index >= _entries.length || index == _selected) return;
+    widget.testHosts.selectFileId(_entries[index].fileId);
+    widget.onSelectionChanged?.call(null);
+    setState(() => _selected = index);
+  }
 }
+
+typedef AnalysisWorkspaceContentBuilder =
+    Widget Function(
+      BuildContext context,
+      AnalysisWorkspaceEntry entry,
+      List<AnalysisWorkspaceEntry> entries,
+      int selectedIndex,
+      ValueChanged<int> onSelected,
+      AnalysisPageViewModel model,
+      AnalysisPageActions actions,
+    );
+
+typedef AnalysisWorkspaceFallbackBuilder =
+    Widget Function(
+      BuildContext context,
+      List<AnalysisWorkspaceEntry> entries,
+      int selectedIndex,
+      ValueChanged<int> onSelected,
+      AnalysisWorkspaceEntry? entry,
+    );
 
 class _AnalysisGenerationPlaceholder extends StatelessWidget {
   final AnalysisWorkspaceEntry entry;

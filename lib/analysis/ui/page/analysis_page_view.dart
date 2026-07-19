@@ -28,57 +28,8 @@ class AnalysisPageView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l = AppLocalizations.of(context)!;
-    final topChart = model.selectedTab == 0
-        ? AnalysisReferencePyramidView(
-            frames: model.sortedFrames,
-            frameIndexBase: model.frameIndexBase,
-            totalFrames: model.totalFrameCount,
-            currentIdx: model.currentSortedFrameIdx,
-            selectedFrameIdx: model.selectedSortedFrameIdx,
-            pocToIndices: model.sortedPocToIndices,
-            useActualTemporalLayers: model.referencePyramidActualTemporalLayers,
-            onLayerModeChanged: actions.onReferencePyramidLayerModeChanged,
-            onFrameSelected: actions.onChartFrameSelected,
-            onFrameActivated: actions.onChartFrameActivated,
-            viewStart: model.chartOffset,
-            viewEnd: model.chartOffset + model.visibleFrameCount,
-            ptsOrder: model.ptsOrder,
-            onZoom: actions.onChartZoom,
-            onPan: actions.onChartPan,
-            l: l,
-          )
-        : AnalysisFrameTrendView(
-            frames: model.sortedFrames,
-            frameIndexBase: model.frameIndexBase,
-            totalFrames: model.totalFrameCount,
-            frameBuckets: model.frameBuckets,
-            frameBucketSize: model.frameBucketSize,
-            currentIdx: model.currentSortedFrameIdx,
-            selectedFrameIdx: model.selectedSortedFrameIdx,
-            viewStart: model.chartOffset,
-            viewEnd: model.chartOffset + model.visibleFrameCount,
-            frameSizeAxisZoom: model.frameSizeAxisZoom,
-            qpAxisZoom: model.qpAxisZoom,
-            ptsOrder: model.ptsOrder,
-            onZoom: actions.onChartZoom,
-            onAxisZoom: actions.onAxisZoom,
-            onPan: actions.onChartPan,
-            onFrameSelected: actions.onChartFrameSelected,
-            onFrameActivated: actions.onChartFrameActivated,
-            l: l,
-          );
-    final bottomPanel = AnalysisNaluBrowserView(
-      key: analysisNaluBrowserPanelKey,
-      nalus: model.nalus,
-      naluIndexBase: model.naluIndexBase,
-      totalNalus: model.totalNaluCount,
-      codec: model.codec,
-      selectedIdx: model.selectedNaluIdx,
-      onSelected: actions.onNaluSelected,
-      onWindowRequested: actions.onNaluWindowRequested,
-      filter: model.naluFilter,
-      onFilterChanged: actions.onNaluFilterChanged,
-    );
+    final topChart = AnalysisChartPanel(model: model, actions: actions);
+    final bottomPanel = AnalysisNaluPanel(model: model, actions: actions);
     return Scaffold(
       body: AxTreeRegion(
         label: 'Analysis window',
@@ -199,6 +150,89 @@ class AnalysisPageView extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class AnalysisChartPanel extends StatelessWidget {
+  final AnalysisPageViewModel model;
+  final AnalysisPageActions actions;
+
+  const AnalysisChartPanel({
+    super.key,
+    required this.model,
+    required this.actions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
+    if (model.selectedTab == 0) {
+      return AnalysisReferencePyramidView(
+        frames: model.sortedFrames,
+        frameIndexBase: model.frameIndexBase,
+        totalFrames: model.totalFrameCount,
+        currentIdx: model.currentSortedFrameIdx,
+        selectedFrameIdx: model.selectedSortedFrameIdx,
+        pocToIndices: model.sortedPocToIndices,
+        useActualTemporalLayers: model.referencePyramidActualTemporalLayers,
+        onLayerModeChanged: actions.onReferencePyramidLayerModeChanged,
+        onFrameSelected: actions.onChartFrameSelected,
+        onFrameActivated: actions.onChartFrameActivated,
+        viewStart: model.chartOffset,
+        viewEnd: model.chartOffset + model.visibleFrameCount,
+        ptsOrder: model.ptsOrder,
+        onZoom: actions.onChartZoom,
+        onPan: actions.onChartPan,
+        l: l,
+      );
+    }
+    return AnalysisFrameTrendView(
+      frames: model.sortedFrames,
+      frameIndexBase: model.frameIndexBase,
+      totalFrames: model.totalFrameCount,
+      frameBuckets: model.frameBuckets,
+      frameBucketSize: model.frameBucketSize,
+      currentIdx: model.currentSortedFrameIdx,
+      selectedFrameIdx: model.selectedSortedFrameIdx,
+      viewStart: model.chartOffset,
+      viewEnd: model.chartOffset + model.visibleFrameCount,
+      frameSizeAxisZoom: model.frameSizeAxisZoom,
+      qpAxisZoom: model.qpAxisZoom,
+      ptsOrder: model.ptsOrder,
+      onZoom: actions.onChartZoom,
+      onAxisZoom: actions.onAxisZoom,
+      onPan: actions.onChartPan,
+      onFrameSelected: actions.onChartFrameSelected,
+      onFrameActivated: actions.onChartFrameActivated,
+      l: l,
+    );
+  }
+}
+
+class AnalysisNaluPanel extends StatelessWidget {
+  final AnalysisPageViewModel model;
+  final AnalysisPageActions actions;
+
+  const AnalysisNaluPanel({
+    super.key,
+    required this.model,
+    required this.actions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnalysisNaluBrowserView(
+      key: analysisNaluBrowserPanelKey,
+      nalus: model.nalus,
+      naluIndexBase: model.naluIndexBase,
+      totalNalus: model.totalNaluCount,
+      codec: model.codec,
+      selectedIdx: model.selectedNaluIdx,
+      onSelected: actions.onNaluSelected,
+      onWindowRequested: actions.onNaluWindowRequested,
+      filter: model.naluFilter,
+      onFilterChanged: actions.onNaluFilterChanged,
     );
   }
 }

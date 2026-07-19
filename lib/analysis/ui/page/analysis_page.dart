@@ -6,7 +6,15 @@ import '../analysis_ui_selection.dart';
 import '../testing/analysis_test_host.dart';
 import '../widgets/analysis_split_layout_controller.dart';
 import 'analysis_page_controller.dart';
+import 'analysis_page_state.dart';
 import 'analysis_page_view.dart';
+
+typedef AnalysisPageContentBuilder =
+    Widget Function(
+      BuildContext context,
+      AnalysisPageViewModel model,
+      AnalysisPageActions actions,
+    );
 
 class AnalysisPage extends StatefulWidget {
   final int fileId;
@@ -17,6 +25,7 @@ class AnalysisPage extends StatefulWidget {
   final ValueChanged<AnalysisUiSelection?>? onSelectionChanged;
   final AnalysisPlaybackPosition? currentPlaybackPosition;
   final ValueChanged<AnalysisFrameSeekRequest>? onFrameSeekRequested;
+  final AnalysisPageContentBuilder? contentBuilder;
 
   const AnalysisPage({
     super.key,
@@ -28,6 +37,7 @@ class AnalysisPage extends StatefulWidget {
     this.onSelectionChanged,
     this.currentPlaybackPosition,
     this.onFrameSeekRequested,
+    this.contentBuilder,
   });
 
   @override
@@ -89,6 +99,14 @@ class AnalysisPageState extends State<AnalysisPage>
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, _) {
+        final contentBuilder = widget.contentBuilder;
+        if (contentBuilder != null) {
+          return contentBuilder(
+            context,
+            _controller.viewModel,
+            _controller.actions,
+          );
+        }
         return AnalysisPageView(
           model: _controller.viewModel,
           actions: _controller.actions,

@@ -485,6 +485,13 @@ class MainWindowTestHarness {
         normalized != 'quality') {
       throw ArgumentError.value(tabName, 'tabName', 'unsupported deck tab');
     }
+    if (normalized == 'timeline') {
+      _clickWidgetByKey(
+        mainWindowDeckCollapseButtonKey,
+        'CLICK_MAIN_WINDOW_DECK_TAB timeline',
+      );
+      return;
+    }
     _clickWidgetByKey(
       ValueKey('main-window-deck-tab-$normalized'),
       'CLICK_MAIN_WINDOW_DECK_TAB $normalized',
@@ -494,7 +501,7 @@ class MainWindowTestHarness {
   void toggleMainWindowDeckCollapsed() {
     _clickWidgetByKey(
       mainWindowDeckCollapseButtonKey,
-      'TOGGLE_MAIN_WINDOW_DECK_COLLAPSED',
+      'TOGGLE_MAIN_WINDOW_DECK_COLLAPSED (close workspace)',
     );
   }
 

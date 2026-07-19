@@ -135,6 +135,8 @@ class MainWindowScaffold extends StatelessWidget {
                         canOpenProfiler: capabilities.canOpenProfiler,
                         canRunAnalysis: media.tracks.isNotEmpty,
                         analysisEnabled: media.analysisEnabled,
+                        analysisWorkspaceActive:
+                            model.deck.tab != MainWindowDeckTab.timeline,
                         mediaInfoActive: overlays.mediaInfoVisible,
                         profilerActive: overlays.profilerVisible,
                         marksSidebarActive: overlays.marksSidebarVisible,

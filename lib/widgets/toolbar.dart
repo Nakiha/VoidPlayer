@@ -49,6 +49,7 @@ class AppToolBar extends StatelessWidget {
   final bool canOpenProfiler;
   final bool canRunAnalysis;
   final bool analysisEnabled;
+  final bool analysisWorkspaceActive;
   final bool mediaInfoActive;
   final bool profilerActive;
   final bool marksSidebarActive;
@@ -83,6 +84,7 @@ class AppToolBar extends StatelessWidget {
     this.canOpenProfiler = true,
     this.canRunAnalysis = true,
     this.analysisEnabled = false,
+    this.analysisWorkspaceActive = false,
     this.mediaInfoActive = false,
     this.profilerActive = false,
     this.marksSidebarActive = false,
@@ -145,6 +147,7 @@ class AppToolBar extends StatelessWidget {
           // Analysis button
           _AnalysisButton(
             enabled: canRunAnalysis && analysisEnabled,
+            active: analysisWorkspaceActive,
             tracks: tracks,
             dataSource: analysisDataSource,
             disabledTooltip: analysisDisabledTooltip,
@@ -527,6 +530,7 @@ class _SidebarToggleIconPainter extends CustomPainter {
 
 class _AnalysisButton extends StatefulWidget {
   final bool enabled;
+  final bool active;
   final List<TrackEntry> tracks;
   final AnalysisToolbarDataSource dataSource;
   final String? disabledTooltip;
@@ -534,6 +538,7 @@ class _AnalysisButton extends StatefulWidget {
 
   const _AnalysisButton({
     required this.enabled,
+    required this.active,
     required this.tracks,
     required this.dataSource,
     this.disabledTooltip,
@@ -597,9 +602,13 @@ class _AnalysisButtonState extends State<_AnalysisButton>
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    final tooltip = widget.enabled
+    final tooltip = widget.active
+        ? '${MaterialLocalizations.of(context).closeButtonTooltip} '
+              '${l.deckAnalysisTab}'
+        : widget.enabled
         ? l.analysisClickToAnalyze
         : widget.disabledTooltip ?? l.analysisClickToAnalyze;
+    final colors = Theme.of(context).colorScheme;
     return MouseRegion(
       onEnter: (_) {
         _hoveringButton = true;
@@ -613,28 +622,45 @@ class _AnalysisButtonState extends State<_AnalysisButton>
         link: _layerLink,
         child: Tooltip(
           message: tooltip,
-          child: SizedBox(
-            width: 32,
-            height: 32,
-            child: IconButton(
-              onPressed: !widget.enabled || _isWorking
-                  ? null
-                  : () => fireAndLog('run analysis', _handlePressed()),
-              icon: _isWorking
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(
-                      _isError ? Icons.error_outline : Icons.analytics_outlined,
-                      size: 18,
-                      color: _isError
-                          ? Theme.of(context).colorScheme.error
-                          : null,
-                    ),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          child: Semantics(
+            selected: widget.active,
+            child: SizedBox(
+              width: 32,
+              height: 32,
+              child: IconButton(
+                onPressed: !widget.enabled || (_isWorking && !widget.active)
+                    ? null
+                    : () => fireAndLog(
+                        'toggle analysis workspace',
+                        _handlePressed(),
+                      ),
+                style: IconButton.styleFrom(
+                  foregroundColor: widget.active
+                      ? colors.onPrimaryContainer
+                      : null,
+                  backgroundColor: widget.active
+                      ? colors.primaryContainer
+                      : Colors.transparent,
+                ),
+                icon: _isWorking && !widget.active
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        _isError
+                            ? Icons.error_outline
+                            : Icons.analytics_outlined,
+                        size: 18,
+                        color: _isError ? colors.error : null,
+                      ),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 32,
+                  height: 32,
+                ),
+              ),
             ),
           ),
         ),

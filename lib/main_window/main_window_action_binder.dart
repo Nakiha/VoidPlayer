@@ -80,6 +80,11 @@ extension MainWindowViewActionBinding on MainWindowController {
             'tracks=${trackManager.count}',
           );
           if (!_capabilities.canRunAnalysis) return Future<void>.value();
+          if (_state.deckTab != MainWindowDeckTab.timeline) {
+            stateStore.setDeckCollapsed(false);
+            stateStore.setDeckTab(MainWindowDeckTab.timeline);
+            return Future<void>.value();
+          }
           return _runUserAction(
             'run analysis',
             analysisCoordinator.enterAnalysis,

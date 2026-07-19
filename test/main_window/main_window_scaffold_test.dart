@@ -39,6 +39,7 @@ import 'package:void_player/viewport/display_geometry.dart';
 import 'package:void_player/viewport/viewport_display_state.dart';
 import 'package:void_player/widgets/analysis_overlay_controls.dart';
 import 'package:void_player/widgets/quick_mark_sidebar.dart';
+import 'package:void_player/widgets/timeline_area.dart';
 import 'package:void_player/widgets/viewport_panel.dart';
 
 void main() {
@@ -130,13 +131,13 @@ void main() {
       expect(find.byKey(handles.controlsBarKey), findsOneWidget);
       expect(find.byKey(handles.timelineSliderKey), findsOneWidget);
       expect(find.byKey(handles.loopRangeBarKey), findsOneWidget);
-      expect(find.text('Timeline'), findsOneWidget);
-      expect(find.text('Analysis'), findsOneWidget);
+      expect(find.text('Timeline'), findsNothing);
+      expect(find.text('Analysis'), findsNothing);
     },
   );
 
   testWidgets(
-    'deck tab switch keeps viewport and transport geometry stable and loads analysis lazily',
+    'analysis workspace expands on demand and loads analysis lazily',
     (tester) async {
       final feedback = AppFeedbackController();
       addTearDown(feedback.dispose);
@@ -178,15 +179,16 @@ void main() {
       final analysisChrome = tester.getRect(find.byType(PinnedPlaybackChrome));
       final analysisDeck = tester.getRect(find.byType(MainWindowDeck));
 
-      expect(analysisViewport, timelineViewport);
-      expect(analysisChrome, timelineChrome);
-      expect(analysisDeck, timelineDeck);
+      expect(timelineDeck.height, timelineTrackRowHeight * 2);
+      expect(analysisDeck.height, kDefaultDeckHeight);
+      expect(analysisViewport.height, lessThan(timelineViewport.height));
+      expect(analysisChrome.size, timelineChrome.size);
       expect(find.byType(AnalysisWorkspacePage), findsOneWidget);
     },
   );
 
   testWidgets(
-    'deck tabs expose a visible selected state without disabling it',
+    'analysis workspace exposes tool tabs and closes back to timeline',
     (tester) async {
       final feedback = AppFeedbackController();
       addTearDown(feedback.dispose);
@@ -234,9 +236,14 @@ void main() {
         find.byKey(const ValueKey('main-window-deck-tab-analysis')),
       );
       await tester.tap(
-        find.byKey(const ValueKey('main-window-deck-tab-timeline')),
+        find.byKey(const ValueKey('main-window-deck-tab-quality')),
       );
-      expect(selected, [MainWindowDeckTab.timeline]);
+      await tester.tap(find.byKey(mainWindowDeckCollapseButtonKey));
+      expect(selected, [MainWindowDeckTab.quality, MainWindowDeckTab.timeline]);
+      expect(
+        find.byKey(const ValueKey('main-window-deck-tab-timeline')),
+        findsNothing,
+      );
     },
   );
 
@@ -309,7 +316,7 @@ void main() {
     },
   );
 
-  testWidgets('deck resize and collapse expose bounded local actions', (
+  testWidgets('workspace resize and close expose bounded local actions', (
     tester,
   ) async {
     final feedback = AppFeedbackController();
@@ -324,18 +331,22 @@ void main() {
       ),
     );
     final heights = <double>[];
-    final collapsed = <bool>[];
+    final tabs = <MainWindowDeckTab>[];
 
     await tester.pumpWidget(
       _localized(
         AppFeedbackScope(
           controller: feedback,
           child: MainWindowScaffold(
-            model: _model(settingsVisible: false, tracks: const [mediaTrack]),
+            model: _model(
+              settingsVisible: false,
+              tracks: const [mediaTrack],
+              deckTab: MainWindowDeckTab.analysis,
+            ),
             handles: _handles(),
             actions: _actionsWithDeck(
+              onTabChanged: tabs.add,
               onHeightChanged: heights.add,
-              onCollapsedChanged: collapsed.add,
             ),
           ),
         ),
@@ -350,7 +361,49 @@ void main() {
     expect(heights.last, inInclusiveRange(kMinDeckHeight, kMaxDeckHeight));
 
     await tester.tap(find.byKey(mainWindowDeckCollapseButtonKey));
-    expect(collapsed, [true]);
+    expect(tabs, [MainWindowDeckTab.timeline]);
+  });
+
+  testWidgets('timeline height follows track count and caps visible rows', (
+    tester,
+  ) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+
+    TrackEntry track(int fileId) => TrackEntry(
+      TrackInfo(
+        fileId: fileId,
+        slot: fileId - 1,
+        path: 'track-$fileId.mp4',
+        width: 1920,
+        height: 1080,
+      ),
+    );
+
+    Widget build(List<TrackEntry> tracks) => _localized(
+      AppFeedbackScope(
+        controller: feedback,
+        child: MainWindowScaffold(
+          model: _model(settingsVisible: false, tracks: tracks),
+          handles: _handles(),
+          actions: _noop,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(build([track(1)]));
+    expect(
+      tester.getSize(find.byType(MainWindowDeck)).height,
+      timelineTrackRowHeight * 2,
+    );
+
+    await tester.pumpWidget(
+      build([for (var fileId = 1; fileId <= 6; fileId++) track(fileId)]),
+    );
+    expect(
+      tester.getSize(find.byType(MainWindowDeck)).height,
+      timelineTrackRowHeight * 5,
+    );
   });
 
   testWidgets('marks sidebar renders with list header actions', (tester) async {

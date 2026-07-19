@@ -34,7 +34,7 @@ REQUIRED_CMAKE_SOURCES = [
 
 REQUIRED_CMAKE_TARGETS = [
     "void_macos_native_player",
-    "target_sources(void_media_ffmpeg PRIVATE",
+    "void_video_decode_core",
     "macos/decode/videotoolbox_provider.cpp",
     "macos_metal_uploader_smoke",
     "macos_metal_color_reference_smoke",
@@ -209,6 +209,8 @@ def check_macos_platform_protection() -> list[str]:
         + _read("native/cmake/MacOSTests.cmake")
         + "\n"
         + _read("native/cmake/PortableTargets.cmake")
+        + "\n"
+        + _read("native/cmake/VideoDecodeCoreTarget.cmake")
     )
     for target in REQUIRED_CMAKE_TARGETS:
         if target not in cmake_text:

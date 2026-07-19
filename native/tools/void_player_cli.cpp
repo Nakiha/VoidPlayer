@@ -5,8 +5,12 @@
 #include "analysis/parsers/binary_types.h"
 #include "analysis/parsers/vac2_parser.h"
 #include "analysis/parsers/vachunk_parser.h"
+#include "analysis/quality/quality_video_analyzer.h"
 #include "common/win_utf8.h"
 #include "tools/analysis_overlay_gpu_benchmark.h"
+
+#include <spdlog/sinks/stdout_sinks.h>
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <chrono>
@@ -32,6 +36,13 @@
 #endif
 
 namespace {
+
+void configure_cli_logging() {
+    // Keep stdout reserved for human reports or machine-readable JSON/JSONL.
+    // Native diagnostics remain visible to callers through stderr.
+    spdlog::set_default_logger(
+        spdlog::stderr_logger_mt("void_player_cli"));
+}
 
 constexpr uint64_t kOverlayVachunkFeatureFlags =
     VACHUNK_FEATURE_CU_GEOMETRY |
@@ -60,6 +71,11 @@ struct CliOptions {
     uint32_t width = 1920;
     uint32_t height = 1080;
     uint32_t iterations = 120;
+    uint32_t sample_interval_ms = 1000;
+    uint32_t max_samples = 0;
+    uint32_t quality_decode_threads = 0;
+    uint32_t quality_cpu_workers = 0;
+    uint32_t quality_cpu_in_flight = 0;
     uint64_t generator_revision = 3;
     uint64_t max_cache_bytes = 0;
     std::string input;
@@ -68,6 +84,10 @@ struct CliOptions {
     std::string analyzer;
     std::string codec;
     std::string mode = "bitrate";
+    std::string quality_backend = "auto";
+    std::string quality_cpu_mode = "auto";
+    bool quality_summary_only = false;
+    bool quality_jsonl = false;
     bool with_grid = false;
 };
 
@@ -95,6 +115,215 @@ std::string json_escape(const std::string& value) {
         }
     }
     return out.str();
+}
+
+std::string distribution_json(
+    const vr::analysis::quality::DistributionSummary& summary) {
+    std::ostringstream out;
+    out << std::setprecision(10)
+        << "{"
+        << "\"available\":"
+        << (summary.count > 0 ? "true" : "false") << ","
+        << "\"count\":" << summary.count << ","
+        << "\"mean\":" << summary.mean << ","
+        << "\"p10\":" << summary.p10 << ","
+        << "\"p50\":" << summary.p50 << ","
+        << "\"p90\":" << summary.p90 << ","
+        << "\"p95\":" << summary.p95 << ","
+        << "\"max\":" << summary.maximum
+        << "}";
+    return out.str();
+}
+
+void write_quality_error_json(const std::string& code,
+                              const std::string& message) {
+    std::cout << "{"
+              << "\"type\":\"qualityError\","
+              << "\"schemaVersion\":"
+              << vr::analysis::quality::kQualityReportSchemaVersion << ","
+              << "\"schemaId\":\"quality-output-v4\","
+              << "\"ok\":false,"
+              << "\"code\":\"" << json_escape(code) << "\","
+              << "\"message\":\"" << json_escape(message) << "\""
+              << "}\n";
+}
+
+void write_metric_definitions_json(std::ostream& out) {
+    out << "{"
+        << "\"blockiness\":{"
+        << "\"kind\":\"proxy\","
+        << "\"range\":{\"min\":0,\"max\":1},"
+        << "\"direction\":\"higherIsWorse\","
+        << "\"unit\":\"normalizedScore\","
+        << "\"aggregationScope\":\"sampledFrames\","
+        << "\"experimental\":true,"
+        << "\"description\":\"block-boundary discontinuity proxy\""
+        << "},"
+        << "\"banding\":{"
+        << "\"kind\":\"proxy\","
+        << "\"range\":{\"min\":0,\"max\":1},"
+        << "\"direction\":\"higherIsWorse\","
+        << "\"unit\":\"normalizedScore\","
+        << "\"aggregationScope\":\"sampledFrames\","
+        << "\"experimental\":true,"
+        << "\"description\":\"quantized plateau and weak-contour proxy\""
+        << "},"
+        << "\"blur\":{"
+        << "\"kind\":\"proxy\","
+        << "\"range\":{\"min\":0,\"max\":1},"
+        << "\"direction\":\"higherIsWorse\","
+        << "\"unit\":\"normalizedScore\","
+        << "\"aggregationScope\":\"sampledFrames\","
+        << "\"experimental\":true,"
+        << "\"description\":\"edge loss after deterministic reblur\""
+        << "},"
+        << "\"noise\":{"
+        << "\"kind\":\"proxy\","
+        << "\"range\":{\"min\":0,\"max\":1},"
+        << "\"direction\":\"higherIsWorse\","
+        << "\"unit\":\"estimatedSigma8Bit/24\","
+        << "\"aggregationScope\":\"sampledFrames\","
+        << "\"experimental\":true,"
+        << "\"description\":\"low-texture clipped high-frequency residual\""
+        << "},"
+        << "\"flicker\":{"
+        << "\"kind\":\"temporalProxy\","
+        << "\"range\":{\"min\":0,\"max\":1},"
+        << "\"direction\":\"higherIsWorse\","
+        << "\"unit\":\"normalizedScore\","
+        << "\"aggregationScope\":\"decodedFrames\","
+        << "\"experimental\":true,"
+        << "\"sceneCutFiltered\":true,"
+        << "\"description\":\"three-frame luma second-difference proxy\""
+        << "}"
+        << "}";
+}
+
+void write_decoder_thread_types_json(std::ostream& out, int types) {
+    constexpr int kFrameThreading = 1;
+    constexpr int kSliceThreading = 2;
+    out << "[";
+    bool wrote = false;
+    if ((types & kFrameThreading) != 0) {
+        out << "\"frame\"";
+        wrote = true;
+    }
+    if ((types & kSliceThreading) != 0) {
+        if (wrote) {
+            out << ",";
+        }
+        out << "\"slice\"";
+    }
+    out << "]";
+}
+
+void write_execution_json(
+    std::ostream& out,
+    const vr::analysis::quality::QualityExecutionInfo& execution) {
+    out << "{"
+        << "\"requestedBackend\":\""
+        << json_escape(execution.requested_backend) << "\","
+        << "\"resolvedBackend\":\""
+        << json_escape(execution.resolved_backend) << "\","
+        << "\"cpuMode\":\""
+        << json_escape(execution.cpu_mode) << "\","
+        << "\"cpuDispatch\":\""
+        << json_escape(execution.cpu_dispatch) << "\","
+        << "\"decodeThreadsMode\":\""
+        << (execution.decode_threads_requested == 0
+                ? "auto"
+                : "explicit")
+        << "\","
+        << "\"decodeThreadsRequested\":";
+    if (execution.decode_threads_requested == 0) {
+        out << "null";
+    } else {
+        out << execution.decode_threads_requested;
+    }
+    out << ",\"decoderThreadCount\":"
+        << execution.decoder_thread_count
+        << ",\"decoderThreadTypes\":";
+    write_decoder_thread_types_json(
+        out, execution.decoder_thread_type);
+    out << ",\"cpuWorkers\":" << execution.cpu_workers
+        << ",\"cpuInFlight\":" << execution.cpu_in_flight
+        << ",\"cpuWorkerPoolActive\":"
+        << (execution.cpu_worker_pool_active
+                ? "true"
+                : "false")
+        << ",\"gpuAdapter\":";
+    if (execution.gpu_adapter.empty()) {
+        out << "null";
+    } else {
+        out << "\"" << json_escape(execution.gpu_adapter) << "\"";
+    }
+    out << ",\"gpuInFlight\":" << execution.gpu_in_flight
+        << ",\"scheduling\":\""
+        << json_escape(execution.scheduling) << "\""
+        << "}";
+}
+
+std::vector<std::string> quality_warnings(
+    const vr::analysis::quality::QualityReport& report) {
+    std::vector<std::string> warnings;
+    if (report.stream.average_qp.count == 0) {
+        warnings.emplace_back(
+            "average QP unavailable: decoder exported no usable encoding parameters");
+    }
+    if (report.unsupported_pixel_frames > 0) {
+        warnings.emplace_back(
+            std::to_string(report.unsupported_pixel_frames) +
+            " sampled frames used an unsupported pixel layout");
+    }
+    for (size_t index = 1; index < report.timeline.size(); ++index) {
+        if (report.timeline[index - 1].pts_us ==
+            report.timeline[index].pts_us) {
+            warnings.emplace_back(
+                "timeline contains duplicate ptsUs values; use sampleIndex as the unique key");
+            break;
+        }
+    }
+    return warnings;
+}
+
+void write_string_array_json(
+    std::ostream& out,
+    const std::vector<std::string>& values) {
+    out << "[";
+    for (size_t index = 0; index < values.size(); ++index) {
+        if (index != 0) {
+            out << ",";
+        }
+        out << "\"" << json_escape(values[index]) << "\"";
+    }
+    out << "]";
+}
+
+void write_quality_sample_json(
+    std::ostream& out,
+    const vr::analysis::quality::FrameQualitySample& sample) {
+    out << "{"
+        << "\"sampleIndex\":" << sample.sample_index << ","
+        << "\"decodedFrameIndex\":"
+        << sample.decoded_frame_index << ","
+        << "\"ptsUs\":" << sample.pts_us << ","
+        << "\"blockiness\":" << sample.blockiness << ","
+        << "\"banding\":" << sample.banding << ","
+        << "\"blur\":" << sample.blur << ","
+        << "\"noise\":" << sample.noise << ","
+        << "\"flicker\":";
+    if (sample.flicker >= 0.0) {
+        out << sample.flicker;
+    } else {
+        out << "null";
+    }
+    out << ",\"averageQp\":";
+    if (sample.average_qp >= 0.0) {
+        out << sample.average_qp;
+    } else {
+        out << "null";
+    }
+    out << "}";
 }
 
 std::string codec_name(uint16_t codec) {
@@ -228,13 +457,15 @@ void print_usage(std::ostream& out) {
         "  VoidPlayerCli benchmark-overlay-gpu <chunk.vck> --frame N [--width N] [--height N] [--iterations N] [--mode bitrate|qp] [--with-grid] [--json]\n\n"
         "  VoidPlayerCli generate-base --input <video> --cache-root <dir> --hash <hash> [--json]\n"
         "  VoidPlayerCli generate-overlay --input <video> --cache-root <dir> --hash <hash> --start-frame N --end-frame N [--codec h264|hevc|vvc] [--analyzer <exe>] [--json]\n\n"
+        "  VoidPlayerCli score-quality --input <video> [--backend auto|cpu|wgpu] [--cpu-mode auto|scalar] [--decode-threads N] [--cpu-workers N] [--cpu-in-flight N] [--sample-interval-ms N] [--max-samples N] [--json [--summary-only] | --jsonl]\n\n"
         "Examples:\n"
         "  VoidPlayerCli inspect \"%APPDATA%\\VoidPlayer\\cache\\<hash>\\base.vac\"\n"
         "  VoidPlayerCli chunk-frame \"overlay.vck\" --frame 128 --json\n"
         "  VoidPlayerCli benchmark-overlay \"overlay.vck\" --frame 0 --iterations 240 --with-grid --json\n"
         "  VoidPlayerCli benchmark-overlay-gpu \"overlay.vck\" --frame 0 --iterations 240 --with-grid --json\n"
         "  VoidPlayerCli generate-base --input input.mp4 --cache-root \"%APPDATA%\\VoidPlayer\\cache\" --hash <hash>\n"
-        "  VoidPlayerCli generate-overlay --input input.mp4 --cache-root \"%APPDATA%\\VoidPlayer\\cache\" --hash <hash> --start-frame 128 --end-frame 191\n";
+        "  VoidPlayerCli generate-overlay --input input.mp4 --cache-root \"%APPDATA%\\VoidPlayer\\cache\" --hash <hash> --start-frame 128 --end-frame 191\n"
+        "  VoidPlayerCli score-quality --input input.mp4 --backend cpu --max-samples 10 --json\n";
 }
 
 bool parse_args(const std::vector<std::string>& args, CliOptions& options) {
@@ -247,6 +478,10 @@ bool parse_args(const std::vector<std::string>& args, CliOptions& options) {
         const std::string& arg = args[i];
         if (arg == "--json") {
             options.json = true;
+        } else if (arg == "--jsonl") {
+            options.quality_jsonl = true;
+        } else if (arg == "--summary-only") {
+            options.quality_summary_only = true;
         } else if (arg == "--with-grid") {
             options.with_grid = true;
         } else if (arg == "--limit" && i + 1 < args.size()) {
@@ -265,6 +500,29 @@ bool parse_args(const std::vector<std::string>& args, CliOptions& options) {
             if (!parse_u32(args[++i], options.height)) return false;
         } else if (arg == "--iterations" && i + 1 < args.size()) {
             if (!parse_u32(args[++i], options.iterations)) return false;
+        } else if (arg == "--sample-interval-ms" && i + 1 < args.size()) {
+            if (!parse_u32(args[++i], options.sample_interval_ms)) return false;
+        } else if (arg == "--max-samples" && i + 1 < args.size()) {
+            if (!parse_u32(args[++i], options.max_samples)) return false;
+        } else if (arg == "--cpu-workers" && i + 1 < args.size()) {
+            if (!parse_u32(args[++i], options.quality_cpu_workers) ||
+                options.quality_cpu_workers == 0) {
+                return false;
+            }
+        } else if (arg == "--decode-threads" && i + 1 < args.size()) {
+            if (!parse_u32(args[++i], options.quality_decode_threads) ||
+                options.quality_decode_threads == 0) {
+                return false;
+            }
+        } else if (arg == "--cpu-in-flight" && i + 1 < args.size()) {
+            if (!parse_u32(args[++i], options.quality_cpu_in_flight) ||
+                options.quality_cpu_in_flight == 0) {
+                return false;
+            }
+        } else if (arg == "--backend" && i + 1 < args.size()) {
+            options.quality_backend = args[++i];
+        } else if (arg == "--cpu-mode" && i + 1 < args.size()) {
+            options.quality_cpu_mode = args[++i];
         } else if (arg == "--generator-revision" && i + 1 < args.size()) {
             if (!parse_u64(args[++i], options.generator_revision)) return false;
         } else if (arg == "--max-cache-bytes" && i + 1 < args.size()) {
@@ -1271,9 +1529,453 @@ int generate_overlay(const CliOptions& options) {
     return 0;
 }
 
+int score_quality(const CliOptions& options) {
+    const bool machine_output =
+        options.json || options.quality_jsonl;
+    auto fail = [&](int exit_code,
+                    const std::string& code,
+                    const std::string& message) {
+        if (machine_output) {
+            write_quality_error_json(code, message);
+        } else {
+            std::cerr << message << "\n";
+        }
+        return exit_code;
+    };
+    if (options.json && options.quality_jsonl) {
+        return fail(
+            1,
+            "invalid_arguments",
+            "score-quality --json and --jsonl are mutually exclusive");
+    }
+    if (options.quality_summary_only && !options.json) {
+        return fail(
+            1,
+            "invalid_arguments",
+            "score-quality --summary-only requires --json");
+    }
+    const std::string input =
+        !options.input.empty() ? options.input : options.path;
+    if (input.empty()) {
+        return fail(
+            1,
+            "missing_input",
+            "score-quality requires --input <video> or a video path");
+    }
+
+    vr::analysis::quality::QualityVideoAnalyzerOptions analyzer_options;
+    analyzer_options.sample_interval_us =
+        static_cast<int64_t>(options.sample_interval_ms) * 1000;
+    analyzer_options.max_samples = options.max_samples;
+    analyzer_options.decode_threads =
+        options.quality_decode_threads;
+    analyzer_options.cpu_workers = options.quality_cpu_workers;
+    analyzer_options.cpu_in_flight =
+        options.quality_cpu_in_flight;
+    if (options.quality_backend == "cpu") {
+        analyzer_options.backend =
+            vr::analysis::quality::QualityComputeBackend::Cpu;
+    } else if (options.quality_backend == "wgpu") {
+        analyzer_options.backend =
+            vr::analysis::quality::QualityComputeBackend::Wgpu;
+    } else if (options.quality_backend == "auto") {
+        analyzer_options.backend =
+            vr::analysis::quality::QualityComputeBackend::Auto;
+    } else {
+        return fail(
+            1,
+            "invalid_backend",
+            "score-quality --backend must be auto, cpu, or wgpu");
+    }
+    if (options.quality_cpu_mode == "auto") {
+        analyzer_options.cpu_mode =
+            vr::analysis::quality::QualityCpuMode::Auto;
+    } else if (options.quality_cpu_mode == "scalar") {
+        analyzer_options.cpu_mode =
+            vr::analysis::quality::QualityCpuMode::Scalar;
+    } else {
+        return fail(
+            1,
+            "invalid_cpu_mode",
+            "score-quality --cpu-mode must be auto or scalar");
+    }
+
+    vr::analysis::quality::QualityReport report;
+    std::string error;
+    const auto start = std::chrono::steady_clock::now();
+    if (!vr::analysis::quality::analyze_video_quality(
+            input, analyzer_options, report, error)) {
+        return fail(
+            2,
+            "analysis_failed",
+            "Quality analysis failed: " + error);
+    }
+    const double elapsed_ms =
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - start)
+            .count();
+
+    if (machine_output) {
+        const bool inline_timeline =
+            options.json && !options.quality_summary_only;
+        const bool jsonl_timeline = options.quality_jsonl;
+        const char* timeline_encoding =
+            inline_timeline
+                ? "inline"
+                : (jsonl_timeline ? "jsonl" : "omitted");
+        const std::vector<std::string> warnings =
+            quality_warnings(report);
+        std::cout << std::setprecision(10)
+                  << "{"
+                  << "\"type\":\"qualityReport\","
+                  << "\"schemaVersion\":" << report.schema_version << ","
+                  << "\"schemaId\":\"quality-output-v4\","
+                  << "\"metricVersion\":\""
+                  << json_escape(report.metric_version) << "\","
+                  << "\"ok\":true,"
+                  << "\"backend\":\""
+                  << json_escape(report.backend) << "\","
+                  << "\"backendDiagnostic\":\""
+                  << json_escape(report.backend_diagnostic) << "\","
+                  << "\"input\":\"" << json_escape(input) << "\","
+                  << "\"elapsedMs\":" << elapsed_ms << ","
+                  << "\"capabilities\":{"
+                  << "\"timelineIncluded\":"
+                  << (inline_timeline || jsonl_timeline
+                          ? "true"
+                          : "false")
+                  << ",\"timelineEncoding\":\""
+                  << timeline_encoding << "\","
+                  << "\"absoluteThresholdsCalibrated\":false,"
+                  << "\"crossMetricAggregationSupported\":false"
+                  << "},"
+                  << "\"warnings\":";
+        write_string_array_json(std::cout, warnings);
+        std::cout << ",\"execution\":";
+        write_execution_json(std::cout, report.execution);
+        std::cout << ",\"metricDefinitions\":";
+        write_metric_definitions_json(std::cout);
+        std::cout << ",\"timingSemantics\":{"
+                  << "\"elapsedMs\":\"end-to-end wall-clock duration\","
+                  << "\"metricDistributions\":\"per-task service time; parallel metric means must not be summed as frame wall time\","
+                  << "\"gpuLatency\":\"submission-to-collection latency that may overlap decoding\""
+                  << "},"
+                  << "\"video\":{"
+                  << "\"width\":" << report.width << ","
+                  << "\"height\":" << report.height << ","
+                  << "\"bitDepth\":" << report.bit_depth
+                  << "},"
+                  << "\"sampling\":{"
+                  << "\"intervalUs\":" << report.sample_interval_us << ","
+                  << "\"maxSamples\":";
+        if (report.max_samples > 0) {
+            std::cout << report.max_samples;
+        } else {
+            std::cout << "null";
+        }
+        std::cout << ",\"truncated\":"
+                  << (report.truncated ? "true" : "false") << ","
+                  << "\"sampledFrames\":" << report.timeline.size() << ","
+                  << "\"decodedFrames\":" << report.stream.decoded_frames << ","
+                  << "\"unsupportedPixelFrames\":"
+                  << report.unsupported_pixel_frames
+                  << "},"
+                  << "\"stream\":{"
+                  << "\"packetCount\":" << report.stream.packet_count << ","
+                  << "\"packetBytes\":" << report.stream.packet_bytes << ","
+                  << "\"keyframePackets\":"
+                  << report.stream.keyframe_packets << ","
+                  << "\"iFrames\":" << report.stream.i_frames << ","
+                  << "\"pFrames\":" << report.stream.p_frames << ","
+                  << "\"bFrames\":" << report.stream.b_frames << ","
+                  << "\"packetSizeBytes\":"
+                  << distribution_json(report.stream.packet_size_bytes) << ","
+                  << "\"averageQp\":"
+                  << distribution_json(report.stream.average_qp)
+                  << "},"
+                  << "\"metrics\":{"
+                  << "\"blockiness\":{"
+                  << "\"kind\":\"proxy\","
+                  << "\"distribution\":"
+                  << distribution_json(report.blockiness)
+                  << "},"
+                  << "\"banding\":{"
+                  << "\"kind\":\"proxy\","
+                  << "\"distribution\":"
+                  << distribution_json(report.banding)
+                  << "},"
+                  << "\"blur\":{"
+                  << "\"kind\":\"proxy\","
+                  << "\"distribution\":"
+                  << distribution_json(report.blur)
+                  << "},"
+                  << "\"noise\":{"
+                  << "\"kind\":\"proxy\","
+                  << "\"normalization\":\"estimatedSigma8Bit/24\","
+                  << "\"distribution\":"
+                  << distribution_json(report.noise)
+                  << "},"
+                  << "\"flicker\":{"
+                  << "\"kind\":\"temporalProxy\","
+                  << "\"sceneCutFiltered\":true,"
+                  << "\"distribution\":"
+                  << distribution_json(report.flicker)
+                  << "}"
+                  << "},"
+                  << "\"timingsMs\":{"
+                  << "\"blockiness\":"
+                  << distribution_json(report.timings.blockiness_ms) << ","
+                  << "\"banding\":"
+                  << distribution_json(report.timings.banding_ms) << ","
+                  << "\"blur\":"
+                  << distribution_json(report.timings.blur_ms) << ","
+                  << "\"noise\":"
+                  << distribution_json(report.timings.noise_ms) << ","
+                  << "\"temporal\":"
+                  << distribution_json(report.timings.temporal_ms) << ","
+                  << "\"gpuPack\":"
+                  << distribution_json(report.timings.gpu_pack_ms) << ","
+                  << "\"gpuSubmit\":"
+                  << distribution_json(report.timings.gpu_submit_ms) << ","
+                  << "\"gpuWait\":"
+                  << distribution_json(report.timings.gpu_wait_ms) << ","
+                  << "\"gpuSubmitWait\":"
+                  << distribution_json(
+                         report.timings.gpu_submit_wait_ms) << ","
+                  << "\"gpuReadback\":"
+                  << distribution_json(report.timings.gpu_readback_ms) << ","
+                  << "\"gpuTotal\":"
+                  << distribution_json(report.timings.gpu_total_ms) << ","
+                  << "\"gpuLatency\":"
+                  << distribution_json(report.timings.gpu_latency_ms)
+                  << "}";
+        if (inline_timeline) {
+            std::cout << ",\"timeline\":[";
+            for (size_t index = 0;
+                 index < report.timeline.size();
+                 ++index) {
+                if (index != 0) {
+                    std::cout << ",";
+                }
+                write_quality_sample_json(
+                    std::cout, report.timeline[index]);
+            }
+            std::cout << "]";
+        }
+        std::cout << "}\n";
+
+        if (jsonl_timeline) {
+            for (const auto& sample : report.timeline) {
+                std::cout << "{"
+                          << "\"type\":\"qualityFrameSample\","
+                          << "\"schemaVersion\":"
+                          << report.schema_version << ","
+                          << "\"schemaId\":\"quality-output-v4\","
+                          << "\"metricVersion\":\""
+                          << json_escape(report.metric_version) << "\","
+                          << "\"sample\":";
+                write_quality_sample_json(std::cout, sample);
+                std::cout << "}\n";
+            }
+        }
+        return 0;
+    }
+
+    if (options.json) {
+        std::cout << std::setprecision(10)
+                  << "{"
+                  << "\"type\":\"qualityReport\","
+                  << "\"schemaVersion\":" << report.schema_version << ","
+                  << "\"metricVersion\":\""
+                  << json_escape(report.metric_version) << "\","
+                  << "\"backend\":\""
+                  << json_escape(report.backend) << "\","
+                  << "\"backendDiagnostic\":\""
+                  << json_escape(report.backend_diagnostic) << "\","
+                  << "\"input\":\"" << json_escape(input) << "\","
+                  << "\"elapsedMs\":" << elapsed_ms << ","
+                  << "\"video\":{"
+                  << "\"width\":" << report.width << ","
+                  << "\"height\":" << report.height << ","
+                  << "\"bitDepth\":" << report.bit_depth
+                  << "},"
+                  << "\"sampling\":{"
+                  << "\"intervalUs\":" << report.sample_interval_us << ","
+                  << "\"maxSamples\":";
+        if (report.max_samples > 0) {
+            std::cout << report.max_samples;
+        } else {
+            std::cout << "null";
+        }
+        std::cout << ",\"truncated\":"
+                  << (report.truncated ? "true" : "false") << ","
+                  << "\"sampledFrames\":" << report.timeline.size() << ","
+                  << "\"decodedFrames\":" << report.stream.decoded_frames << ","
+                  << "\"unsupportedPixelFrames\":"
+                  << report.unsupported_pixel_frames
+                  << "},"
+                  << "\"stream\":{"
+                  << "\"packetCount\":" << report.stream.packet_count << ","
+                  << "\"packetBytes\":" << report.stream.packet_bytes << ","
+                  << "\"keyframePackets\":"
+                  << report.stream.keyframe_packets << ","
+                  << "\"iFrames\":" << report.stream.i_frames << ","
+                  << "\"pFrames\":" << report.stream.p_frames << ","
+                  << "\"bFrames\":" << report.stream.b_frames << ","
+                  << "\"packetSizeBytes\":"
+                  << distribution_json(report.stream.packet_size_bytes) << ","
+                  << "\"averageQp\":"
+                  << distribution_json(report.stream.average_qp)
+                  << "},"
+                  << "\"metrics\":{"
+                  << "\"blockiness\":{"
+                  << "\"kind\":\"proxy\","
+                  << "\"distribution\":"
+                  << distribution_json(report.blockiness)
+                  << "},"
+                  << "\"banding\":{"
+                  << "\"kind\":\"proxy\","
+                  << "\"distribution\":"
+                  << distribution_json(report.banding)
+                  << "},"
+                  << "\"blur\":{"
+                  << "\"kind\":\"proxy\","
+                  << "\"distribution\":"
+                  << distribution_json(report.blur)
+                  << "},"
+                  << "\"noise\":{"
+                  << "\"kind\":\"proxy\","
+                  << "\"normalization\":\"estimatedSigma8Bit/24\","
+                  << "\"distribution\":"
+                  << distribution_json(report.noise)
+                  << "},"
+                  << "\"flicker\":{"
+                  << "\"kind\":\"temporalProxy\","
+                  << "\"sceneCutFiltered\":true,"
+                  << "\"distribution\":"
+                  << distribution_json(report.flicker)
+                  << "}"
+                  << "},"
+                  << "\"timingsMs\":{"
+                  << "\"blockiness\":"
+                  << distribution_json(report.timings.blockiness_ms) << ","
+                  << "\"banding\":"
+                  << distribution_json(report.timings.banding_ms) << ","
+                  << "\"blur\":"
+                  << distribution_json(report.timings.blur_ms) << ","
+                  << "\"noise\":"
+                  << distribution_json(report.timings.noise_ms) << ","
+                  << "\"temporal\":"
+                  << distribution_json(report.timings.temporal_ms) << ","
+                  << "\"gpuPack\":"
+                  << distribution_json(report.timings.gpu_pack_ms) << ","
+                  << "\"gpuSubmit\":"
+                  << distribution_json(report.timings.gpu_submit_ms) << ","
+                  << "\"gpuWait\":"
+                  << distribution_json(report.timings.gpu_wait_ms) << ","
+                  << "\"gpuSubmitWait\":"
+                  << distribution_json(report.timings.gpu_submit_wait_ms) << ","
+                  << "\"gpuReadback\":"
+                  << distribution_json(report.timings.gpu_readback_ms) << ","
+                  << "\"gpuTotal\":"
+                  << distribution_json(report.timings.gpu_total_ms) << ","
+                  << "\"gpuLatency\":"
+                  << distribution_json(report.timings.gpu_latency_ms)
+                  << "},"
+                  << "\"timeline\":[";
+        for (size_t index = 0; index < report.timeline.size(); ++index) {
+            if (index != 0) {
+                std::cout << ",";
+            }
+            const auto& sample = report.timeline[index];
+            std::cout << "{"
+                      << "\"ptsUs\":" << sample.pts_us << ","
+                      << "\"blockiness\":" << sample.blockiness << ","
+                      << "\"banding\":" << sample.banding << ","
+                      << "\"blur\":" << sample.blur << ","
+                      << "\"noise\":" << sample.noise << ","
+                      << "\"flicker\":";
+            if (sample.flicker >= 0.0) {
+                std::cout << sample.flicker;
+            } else {
+                std::cout << "null";
+            }
+            std::cout << ","
+                      << "\"averageQp\":";
+            if (sample.average_qp >= 0.0) {
+                std::cout << sample.average_qp;
+            } else {
+                std::cout << "null";
+            }
+            std::cout << "}";
+        }
+        std::cout << "]}\n";
+    } else {
+        std::cout << std::fixed << std::setprecision(4)
+                  << "Quality report (" << report.metric_version << ", "
+                  << report.backend << ")\n"
+                  << "  video: " << report.width << "x" << report.height
+                  << " " << report.bit_depth << "-bit\n"
+                  << "  sampled/decoded: " << report.timeline.size() << "/"
+                  << report.stream.decoded_frames << "\n"
+                  << "  blockiness proxy mean/p95/max: "
+                  << report.blockiness.mean << "/"
+                  << report.blockiness.p95 << "/"
+                  << report.blockiness.maximum << "\n"
+                  << "  banding proxy mean/p95/max: "
+                  << report.banding.mean << "/"
+                  << report.banding.p95 << "/"
+                  << report.banding.maximum << "\n"
+                  << "  blur proxy mean/p95/max: "
+                  << report.blur.mean << "/"
+                  << report.blur.p95 << "/"
+                  << report.blur.maximum << "\n"
+                  << "  noise proxy mean/p95/max: "
+                  << report.noise.mean << "/"
+                  << report.noise.p95 << "/"
+                  << report.noise.maximum << "\n"
+                  << "  flicker proxy frames/mean/p95/max: "
+                  << report.flicker.count << "/"
+                  << report.flicker.mean << "/"
+                  << report.flicker.p95 << "/"
+                  << report.flicker.maximum << "\n"
+                  << "  metric CPU mean ms (block/band/blur/noise/temporal): "
+                  << report.timings.blockiness_ms.mean << "/"
+                  << report.timings.banding_ms.mean << "/"
+                  << report.timings.blur_ms.mean << "/"
+                  << report.timings.noise_ms.mean << "/"
+                  << report.timings.temporal_ms.mean << "\n"
+                  << "  fused GPU mean ms "
+                     "(pack/submit/wait/readback/active/latency): "
+                  << report.timings.gpu_pack_ms.mean << "/"
+                  << report.timings.gpu_submit_ms.mean << "/"
+                  << report.timings.gpu_wait_ms.mean << "/"
+                  << report.timings.gpu_readback_ms.mean << "/"
+                  << report.timings.gpu_total_ms.mean << "/"
+                  << report.timings.gpu_latency_ms.mean << "\n"
+                  << "  QP available frames/mean/p90: "
+                  << report.stream.average_qp.count << "/"
+                  << report.stream.average_qp.mean << "/"
+                  << report.stream.average_qp.p90 << "\n"
+                  << "  elapsed: " << elapsed_ms << " ms\n";
+    }
+    return 0;
+}
+
 int run_cli(const std::vector<std::string>& args) {
     CliOptions options;
+    const bool quality_machine_output_requested =
+        !args.empty() &&
+        args.front() == "score-quality" &&
+        (std::find(args.begin(), args.end(), "--json") != args.end() ||
+         std::find(args.begin(), args.end(), "--jsonl") != args.end());
     if (!parse_args(args, options)) {
+        if (quality_machine_output_requested) {
+            write_quality_error_json(
+                "invalid_arguments",
+                "failed to parse score-quality arguments");
+            return 1;
+        }
         print_usage(std::cerr);
         return 1;
     }
@@ -1283,6 +1985,7 @@ int run_cli(const std::vector<std::string>& args) {
     }
     if (options.command == "generate-base") return generate_base(options);
     if (options.command == "generate-overlay") return generate_overlay(options);
+    if (options.command == "score-quality") return score_quality(options);
     if (options.path.empty()) {
         std::cerr << "Missing cache file path\n";
         print_usage(std::cerr);
@@ -1326,6 +2029,7 @@ int run_cli(const std::vector<std::string>& args) {
 
 #ifdef _WIN32
 int wmain(int argc, wchar_t** argv) {
+    configure_cli_logging();
     std::vector<std::string> args;
     args.reserve(argc > 1 ? static_cast<size_t>(argc - 1) : 0);
     for (int i = 1; i < argc; ++i) {
@@ -1335,6 +2039,7 @@ int wmain(int argc, wchar_t** argv) {
 }
 #else
 int main(int argc, char** argv) {
+    configure_cli_logging();
     std::vector<std::string> args;
     args.reserve(argc > 1 ? static_cast<size_t>(argc - 1) : 0);
     for (int i = 1; i < argc; ++i) {

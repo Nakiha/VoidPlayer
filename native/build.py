@@ -33,10 +33,7 @@ def default_ffmpeg_candidates(script_dir: Path, platform_name: str) -> list[Path
         return [
             toolchain_root / "macos-arm64",
         ]
-    return [
-        toolchain_root / "macos-arm64",
-        toolchain_root / "windows-x64",
-    ]
+    return []
 
 
 def is_ffmpeg_root(path: Path) -> bool:
@@ -47,7 +44,7 @@ def resolve_ffmpeg_root(
     script_dir: Path,
     platform_name: str,
     explicit_root: str | None,
-) -> Path:
+) -> Path | None:
     candidates: list[Path] = []
 
     if explicit_root:
@@ -65,6 +62,9 @@ def resolve_ffmpeg_root(
         if is_ffmpeg_root(resolved):
             return resolved
 
+    if platform_name == "portable" and not candidates:
+        return None
+
     checked = "\n  - ".join(str(path.expanduser().resolve()) for path in candidates)
     raise FileNotFoundError(
         "FFmpeg headers were not found. Checked:\n"
@@ -81,7 +81,7 @@ def env_flag(name: str) -> bool:
 def configure(
     build_dir: Path,
     script_dir: Path,
-    ffmpeg_root: Path,
+    ffmpeg_root: Path | None,
     build_tests: bool = True,
     build_analysis_tests: bool = True,
     build_python: bool = True,
@@ -92,11 +92,12 @@ def configure(
         "-B", str(build_dir),
         "-S", str(script_dir),
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-        f"-DFFMPEG_ROOT={ffmpeg_root}",
         f"-DBUILD_TESTS={'ON' if build_tests else 'OFF'}",
         f"-DBUILD_ANALYSIS_TESTS={'ON' if build_analysis_tests else 'OFF'}",
         f"-DBUILD_PYTHON={'ON' if build_python else 'OFF'}",
     ]
+    if ffmpeg_root is not None:
+        cmake_args.append(f"-DFFMPEG_ROOT={ffmpeg_root}")
     if use_local_deps:
         cmake_args.append("-DVOID_USE_LOCAL_DEPS=ON")
 
@@ -111,13 +112,16 @@ def configure(
     subprocess.check_call(cmake_args)
 
 
-def build(build_dir: Path, build_type: str):
-    subprocess.check_call([
+def build(build_dir: Path, build_type: str, target: str | None = None):
+    command = [
         "cmake",
         "--build", str(build_dir),
         "--config", build_type,
         "--parallel",
-    ])
+    ]
+    if target:
+        command.extend(["--target", target])
+    subprocess.check_call(command)
 
 
 def test(build_dir: Path, build_type: str, script_dir: Path, skip_analysis_tests: bool = False):
@@ -161,6 +165,13 @@ def main():
                         help="Skip external analysis tool tests for lightweight GitHub CI")
     parser.add_argument("--use-local-deps", action="store_true",
                         help="Use native/_deps dependency sources instead of FetchContent downloads")
+    parser.add_argument(
+        "--cpu-server",
+        action="store_true",
+        help=(
+            "Build only the CPU/SIMD standalone CLI without tests or Python"
+        ),
+    )
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -180,14 +191,20 @@ def main():
             build_dir,
             script_dir,
             ffmpeg_root,
-            build_analysis_tests=not args.github,
+            build_tests=not args.cpu_server,
+            build_analysis_tests=not args.github and not args.cpu_server,
+            build_python=not args.cpu_server,
             use_local_deps=use_local_deps,
         )
 
         print(f"Building ({build_type})...", flush=True)
-        build(build_dir, build_type)
+        build(
+            build_dir,
+            build_type,
+            target="VoidPlayerCli" if args.cpu_server else None,
+        )
 
-    if not args.build_only:
+    if not args.build_only and not args.cpu_server:
         print("Running tests...", flush=True)
         test(build_dir, build_type, script_dir, skip_analysis_tests=args.github)
 

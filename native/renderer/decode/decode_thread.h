@@ -1,7 +1,6 @@
 #pragma once
-#include "media/ffmpeg_lifetime.h"
+#include "media/video_decode_session.h"
 #include "media/packet_queue.h"
-#include "renderer/decode/codec_loop.h"
 #include "renderer/buffer/track_buffer.h"
 #include "renderer/decode/decode_stage_perf.h"
 #include "renderer/decode/decoded_frame_publisher.h"
@@ -80,7 +79,7 @@ public:
 
     /// Returns true if the decoder was successfully initialized in the constructor.
     /// If false, start() will always fail — caller should not use this instance.
-    bool is_valid() const { return static_cast<bool>(codec_ctx_); }
+    bool is_valid() const { return decoder_.is_valid(); }
 
     /// Enable hardware decode using an explicit decode device strategy.
     /// Must be called before start(). On failure, falls back to software.
@@ -110,10 +109,17 @@ public:
     const DecodeStagePerfCounters& stage_perf_counters() const { return stage_perf_; }
     DecodeMemoryStats memory_stats() const;
 
-    bool is_hardware_decode_enabled() const { return hw_enabled_; }
-    AVCodecID codec_id() const { return codec_params_ ? codec_params_->codec_id : AV_CODEC_ID_NONE; }
+    bool is_hardware_decode_enabled() const {
+        return decoder_.hardware_enabled();
+    }
+    AVCodecID codec_id() const {
+        const auto* parameters = decoder_.codec_parameters();
+        return parameters ? parameters->codec_id : AV_CODEC_ID_NONE;
+    }
     std::string decoder_name() const;
-    void set_codec_open_for_test(CodecOpenFunction open_fn) { codec_open_for_test_ = open_fn; }
+    void set_codec_open_for_test(CodecOpenFunction open_fn) {
+        decoder_.set_codec_open_for_test(open_fn);
+    }
 
 private:
     struct DecodeLoopScratch;
@@ -129,14 +135,8 @@ private:
     DecodeLoopStepResult stop_decode_loop_with_error();
 
     /// Attempt to open codec. Returns true on success.
-    /// If hw_enabled_ is true and open fails, falls back to software.
+    /// If hardware decode is enabled and open fails, falls back to software.
     bool open_codec();
-
-    /// Recreate codec_ctx_ for the requested decoder and copy stream params.
-    bool reset_codec_context(const AVCodec* codec);
-
-    /// Preferred software fallback decoder. For AV1 this is libdav1d when available.
-    const AVCodec* preferred_software_decoder() const;
 
     /// Whether hardware frames are downloaded before being published.
     bool hardware_output_downloads_to_cpu() const;
@@ -205,22 +205,9 @@ private:
     TrackBuffer& output_buffer_;
     FrameConverter converter_;
 
-    AvCodecContextOwner codec_ctx_;
-    const AVCodec* codec_ = nullptr;
-    const AVCodecParameters* codec_params_;
+    VideoDecodeSession decoder_;
     AVRational time_base_;
     FrameTimestampNormalizer timestamp_normalizer_;
-    CodecOpenFunction codec_open_for_test_ = nullptr;
-
-    // Hardware decode state
-    void* native_device_ = nullptr;
-    DecodeDeviceMode decode_device_mode_ = DecodeDeviceMode::IndependentDevice;
-    AvBufferRefOwner hw_device_ctx_;   // Owned, from provider
-    bool hw_enabled_ = false;
-    HwDecodeType hw_type_ = HwDecodeType::None;
-    std::unique_ptr<HwDecodeProvider> hw_provider_;  // Holds mutex lifetime
-    AVPixelFormat hw_pix_fmt_ = AV_PIX_FMT_NONE;  // Per-instance, avoids global shared state
-    std::recursive_mutex* device_mutex_ = nullptr;  // Shared mutex for hw decode serialization
     bool hw_frames_ctx_logged_ = false;
     std::atomic<int> hw_frames_format_{AV_PIX_FMT_NONE};
     std::atomic<int> hw_frames_sw_format_{AV_PIX_FMT_NONE};

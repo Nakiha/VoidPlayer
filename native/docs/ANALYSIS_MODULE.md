@@ -125,6 +125,7 @@ ABI / lifecycle notes:
 
 - `test_analysis_parsers.cpp` — VAC2/VACHUNK parser 与 cache 测试
 - `test_analysis_generator.cpp` — VAC2 base 生成测试（覆盖 H.264/HEVC/VVC/AV1/VP9/MPEG2 样本）
+- `test_quality_metrics.cpp` — 实验性 CPU quality metrics 的确定性合成图案测试
 
 运行：`python dev.py test`
 
@@ -140,6 +141,113 @@ python dev.py analysis-benchmark h264 h265 h266
 报告默认写入 `build/analysis-benchmark/analysis_benchmark.json` 和
 `build/analysis-benchmark/analysis_benchmark.md`，包含每个样片的 base/chunk
 耗时、最终 cache 大小、视频大小占比、section 原始/压缩大小，以及 zstd 节省量。
+
+## 实验性无参考质量打分
+
+`quality_metrics_lib` 是不依赖 FFmpeg 的内部静态库。它消费显式的 luma plane
+描述，不读取窗口、swap chain 或 compositor 输出；`analysis_lib` 中的
+`quality_video_analyzer` 保留离线同步消费、抽样和 frame encoding
+parameter side-data/QP 汇总，但输入 open/probe/read/seek/interrupt 通过
+`media/MediaInputSession`、codec context/decoder fallback/send/receive 通过
+`media/VideoDecodeSession` 和播放器共用。`analysis_lib` 只链接独立的
+`void_video_decode_core`，不会反向依赖 renderer、Flutter 或平台 presentation。
+当前 CPU reference 明确不使用 `libswscale`。
+
+当前输出 `schemaVersion` 为 `4`，指标算法版本仍为
+`metricVersion: quality-demo-v3`。输出结构升级不改变指标数值，提供：
+
+- packet size、frame type 和可用 QP 的分布统计；
+- `blockiness` proxy；
+- `banding` proxy；
+- 基于重模糊前后边缘变化损失的 `blur` proxy；
+- 基于低纹理块、截断高频残差并按 8-bit `sigma / 24` 归一化的 `noise` proxy；
+- 基于连续三帧 tile luma 二阶变化、带切镜过滤的 `flicker` temporal proxy；
+- 抽样帧空间指标时间线，以及全解码帧计算的 flicker 分布。
+- 每项 CPU 指标的毫秒耗时分布；schema 中保留的 GPU timing 字段在当前
+  CPU-only build 中标记为不可用。
+
+这些分数都标记为实验性 `proxy`：`banding` 当前不等同于 CAMBI，
+`blur` 和 `noise` 仍会受画面内容影响，`flicker` 会过滤明显切镜但不能消除所有运动
+和灯光变化干扰。当前没有融合成总质量分。
+命令行入口：
+
+```bash
+VoidPlayerCli score-quality --input input.mp4 --json
+VoidPlayerCli score-quality --input input.mp4 --backend cpu --json
+VoidPlayerCli score-quality --input input.mp4 --backend cpu --cpu-mode scalar --json
+VoidPlayerCli score-quality --input input.mp4 --backend cpu --decode-threads 32 --cpu-workers 96 --cpu-in-flight 48 --json
+VoidPlayerCli score-quality --input input.mp4 --sample-interval-ms 500 --max-samples 10 --json
+VoidPlayerCli score-quality --input input.mp4 --json --summary-only
+VoidPlayerCli score-quality --input input.mp4 --jsonl
+```
+
+`--json` 输出一个完整 report；`--json --summary-only` 省略 timeline，适合直接交给
+Agent 或存储批量摘要；`--jsonl` 首行输出不含内联 timeline 的 report，后续每行输出一个
+`qualityFrameSample`，适合长视频流式摄取。机器输出失败时返回非零退出码，并在 stdout
+输出 `qualityError` JSON envelope。CLI 的 native diagnostics 固定写入 stderr，因此
+stdout 在 `--json` 下是单个 JSON 对象，在 `--jsonl` 下是纯 JSON Lines。
+
+schema v4 保留 v3 的 `metrics`、`stream`、`timingsMs` 和 `timeline` 读取路径，同时增加：
+
+- `metricDefinitions`：每项指标的范围、方向、单位、实验状态和简述；
+- `execution`：请求/实际 backend、CPU dispatch、decode threads、worker 和队列深度；
+- `capabilities`：timeline 编码方式，以及是否支持绝对阈值或跨指标融合；
+- `sampling.maxSamples` / `sampling.truncated`：区分完整分析与因
+  `--max-samples` 提前停止的 packet/frame/QP/flicker 前缀统计；
+- `warnings`：QP 缺失、unsupported layout、重复 PTS 等可操作提示；
+- distribution 的 `available`，避免把 `count=0` 的零值误当真实观测；
+- timeline 的 `sampleIndex` 和 `decodedFrameIndex`，其中 `sampleIndex` 是唯一键；
+- `timingSemantics`，明确并行 metric task 时间不能相加作为帧墙钟时间。
+
+正式 JSON Schema：
+[quality-output-v4.schema.json](quality-output-v4.schema.json)。
+
+`--backend auto` 是 CLI 默认值。当前 main 构建只启用 CPU/SIMD quality backend：
+`auto` 会在 `backendDiagnostic` 中记录 GPU backend 未编译并确定性回退 CPU；
+显式 `--backend wgpu` fail closed，不静默回退。这个选项和 schema 中的 GPU timing
+字段只作为后续独立 compute backend 的兼容边界，不代表播放器恢复或依赖 WGPU
+presentation。
+
+CPU 路径保留 scalar 实现作为 SIMD parity oracle 和所有格式的 fallback；x86/x64
+构建会额外编译独立 AVX2 translation unit，并在运行时检查 CPU/OS
+能力后分发。当前 SIMD kernels 覆盖 packed 8-bit、9–16 bit 和 P010 luma 的
+blockiness、banding、blur 和 noise，支持 FFmpeg 常见的 padded positive stride；
+交错/偏移采样和非 x86 架构仍走 scalar。整个 CLI 不使用全局 `-mavx2`，因此旧 x86 server 不会因非法指令
+启动失败；`--cpu-mode scalar` 可强制基准路径，`backendDiagnostic` 会记录实际 dispatch。
+
+CPU analyzer 使用长期 worker pool。解码线程按显示顺序计算很轻的 temporal signature；
+每个抽样帧只拷贝一次可见 luma，再把四个空间指标作为独立任务投递。队列允许多个帧
+同时在途，完成后稳定按 PTS 归并，因此可以同时利用 FFmpeg frame/slice decode threading
+和指标线程。`--decode-threads`、`--cpu-workers`、`--cpu-in-flight` 可显式调优；
+未指定时 decode 使用 FFmpeg auto、worker 使用全部逻辑 CPU，在途帧数按 worker 数
+自动推导并限制为最多 64 帧。高核数 server 可按 workload 在 decode 与 metric 间分配
+核心，例如 128 逻辑核先从 `--decode-threads 32 --cpu-workers 96 --cpu-in-flight 48`
+开始 A/B。队列有界，内存不会随视频长度增长。
+
+Linux CPU server 构建不依赖 Rust/wgpu，使用系统 FFmpeg development package 的
+`pkg-config` metadata：
+
+```bash
+# Ubuntu/Debian build dependencies
+sudo apt-get install cmake g++ pkg-config \
+  libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
+
+python3 native/build.py --cpu-server
+build/native/standalone/portable/VoidPlayerCli \
+  score-quality --input input.mp4 --backend cpu --json
+```
+
+也可以设置 `FFMPEG_ROOT` 使用自带的 FFmpeg SDK。所有平台的 `--backend auto`
+都会明确记录 wgpu 未编译并回退 CPU；显式 `--backend wgpu` 仍 fail closed。
+
+未来如果增加 GPU quality compute，应作为独立、可复用的 analysis session 接在
+quality backend seam 后面，并沿用 main 的平台设备边界；不能恢复已移除的 WGPU
+播放器合成路径。共享 decode session 已复用 Windows D3D11VA 与 macOS
+VideoToolbox provider 的 capability seam；本版 quality CLI 仍请求软件输出，以锁定
+CPU luma 的算法 parity。硬解 hwdownload 或 decoded surface 到 compute texture 的
+zero-copy 输入仍是后续优化，不能把“共用解码器”误报成已经消除 GPU/CPU 拷贝。
+
+该入口目前仅用于离线基准和指标校准，尚未写入 VAC2/VACHUNK、FFI 或 GUI。
 
 Overlay heatmap renderer 成本可用独立 benchmark 覆盖：
 

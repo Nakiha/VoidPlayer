@@ -10,6 +10,7 @@ target_include_directories(video_renderer_core SYSTEM PUBLIC
 )
 
 target_link_libraries(video_renderer_core PUBLIC
+    void_video_decode_core
     spdlog::spdlog_header_only
     ${AVCODEC_LIBRARY}
     ${AVFORMAT_LIBRARY}

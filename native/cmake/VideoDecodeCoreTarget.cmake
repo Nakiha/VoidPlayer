@@ -2,8 +2,11 @@ include_guard(GLOBAL)
 
 set(_VOID_VIDEO_DECODE_CORE_SOURCES
     "${VOID_NATIVE_DIR}/media/ffmpeg_lifetime.cpp"
+    "${VOID_NATIVE_DIR}/media/media_input_session.cpp"
+    "${VOID_NATIVE_DIR}/media/private_cdn_flv_demuxer.cpp"
     "${VOID_NATIVE_DIR}/media/video_decode_session.cpp"
     "${VOID_NATIVE_DIR}/renderer/decode/codec_loop.cpp"
+    "${VOID_NATIVE_DIR}/renderer/decode/frame_color_metadata.cpp"
     "${VOID_NATIVE_DIR}/renderer/decode/hw/hw_decode_provider.cpp"
 )
 
@@ -29,6 +32,7 @@ target_include_directories(void_video_decode_core SYSTEM PUBLIC
 target_link_libraries(void_video_decode_core PUBLIC
     spdlog::spdlog_header_only
     ${AVCODEC_LIBRARY}
+    ${AVFORMAT_LIBRARY}
     ${AVUTIL_LIBRARY}
     ${SWRESAMPLE_LIBRARY}
 )

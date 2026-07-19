@@ -30,6 +30,7 @@ add_executable(video_renderer_tests
     renderer/test_seek_coordinator.cpp
     renderer/test_bidi_ring_buffer.cpp
     renderer/test_track_buffer.cpp
+    media/test_media_input_session.cpp
     media/test_demux_thread.cpp
     decode/test_av_frame_lifetime.cpp
     decode/test_codec_loop.cpp

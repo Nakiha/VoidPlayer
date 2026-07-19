@@ -4,6 +4,7 @@
 
 ```text
 File
+  -> MediaInputSession
   -> DemuxThread
   -> PacketQueue
   -> DecodeThread
@@ -14,17 +15,30 @@ File
 
 解码管线本身是平台中立的；平台差异由 hardware decode provider 和 `FrameConverter` 输出的 storage kind 表达。
 
+## MediaInputSession
+
+头文件：`media/media_input_session.h`
+
+播放与离线 CLI 共用的同步、无播放语义输入层，负责：
+
+- `avformat_open_input`、stream probe、best-stream 与 owned codec-parameter snapshot；
+- 标准 libavformat 和 private CDN FLV 的统一 `read_packet` / `seek` / `flush`；
+- stream time base、frame rate、颜色、SAR、duration 和 audio metadata；
+- open timeout 与调用方 cancellation/interrupt。
+
+它不创建线程，不持有 `PacketQueue`、`SeekController`、loop 或 playback clock。
+
 ## DemuxThread
 
 头文件：`media/demux_thread.h`
 
 职责：
 
-- 打开媒体输入并发现 video/audio stream；
+- 作为 `MediaInputSession` 的实时播放 adapter；
 - 按 `DemuxStreamKind` 将 `AVPacket` 分发到已注册的 `PacketQueue`；
 - audio route 当前只选择第一个 audio stream；
 - 保持 packet 原始 stream time base，frame 输出时转成微秒；
-- 轮询 `SeekController`，执行 `av_seek_frame` 后 flush packet queue；
+- 轮询 `SeekController`，调用共享输入 session seek 后 flush packet queue；
 - EOF 后等待 seek，而不是让线程立即失去复用机会。
 
 ## DecodeThread

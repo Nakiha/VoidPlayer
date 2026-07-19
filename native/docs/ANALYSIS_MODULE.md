@@ -146,9 +146,10 @@ python dev.py analysis-benchmark h264 h265 h266
 
 `quality_metrics_lib` 是不依赖 FFmpeg 的内部静态库。它消费显式的 luma plane
 描述，不读取窗口、swap chain 或 compositor 输出；`analysis_lib` 中的
-`quality_video_analyzer` 保留离线顺序 demux、抽样和 frame encoding
-parameter side-data/QP 汇总，但 codec context、decoder fallback 与 send/receive
-通过 `media/VideoDecodeSession` 和播放器共用。`analysis_lib` 只链接独立的
+`quality_video_analyzer` 保留离线同步消费、抽样和 frame encoding
+parameter side-data/QP 汇总，但输入 open/probe/read/seek/interrupt 通过
+`media/MediaInputSession`、codec context/decoder fallback/send/receive 通过
+`media/VideoDecodeSession` 和播放器共用。`analysis_lib` 只链接独立的
 `void_video_decode_core`，不会反向依赖 renderer、Flutter 或平台 presentation。
 当前 CPU reference 明确不使用 `libswscale`。
 

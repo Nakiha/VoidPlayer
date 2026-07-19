@@ -1,6 +1,6 @@
 #pragma once
 
-#include "media/demux_thread.h"
+#include "media/media_input_session.h"
 #include <cstdint>
 #include <string>
 #include <vector>

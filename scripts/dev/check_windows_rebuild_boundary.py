@@ -59,6 +59,7 @@ REQUIRED_TOKENS = {
         "windows/presentation/windows_presentation_backend.cpp",
     ],
     "native/cmake/VideoDecodeCoreTarget.cmake": [
+        "media/media_input_session.cpp",
         "media/video_decode_session.cpp",
         "windows/decode/d3d11va_provider.cpp",
         "d3d11 dxgi",

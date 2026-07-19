@@ -1,5 +1,6 @@
 #include "analysis/quality/quality_video_analyzer.h"
 #include "analysis/quality/quality_wgpu_backend.h"
+#include "media/media_input_session.h"
 #include "media/video_decode_session.h"
 
 #include <algorithm>
@@ -360,7 +361,7 @@ bool analyze_video_quality(const std::string& video_path,
         cpu_mode_name(options.cpu_mode);
     error.clear();
 
-    AVFormatContext* format_context = nullptr;
+    MediaInputSession input_session;
     VideoDecodeSession decoder_session;
     AVPacket* packet = nullptr;
     AVFrame* frame = nullptr;
@@ -368,31 +369,33 @@ bool analyze_video_quality(const std::string& video_path,
         av_frame_free(&frame);
         av_packet_free(&packet);
         decoder_session.close();
-        avformat_close_input(&format_context);
+        input_session.close();
     };
 
-    int result = avformat_open_input(
-        &format_context, video_path.c_str(), nullptr, nullptr);
-    if (result < 0) {
-        error = "avformat_open_input failed: " + ffmpeg_error(result);
-        cleanup();
-        return false;
-    }
-    result = avformat_find_stream_info(format_context, nullptr);
-    if (result < 0) {
-        error = "avformat_find_stream_info failed: " + ffmpeg_error(result);
+    MediaInputOpenOptions input_options;
+    if (!input_session.open(video_path, input_options, error)) {
         cleanup();
         return false;
     }
 
-    const int stream_index = av_find_best_stream(
-        format_context, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+    int result = 0;
+    const int stream_index =
+        input_session.best_stream_index(AVMEDIA_TYPE_VIDEO);
     if (stream_index < 0) {
         error = "video stream not found: " + ffmpeg_error(stream_index);
         cleanup();
         return false;
     }
-    AVStream* stream = format_context->streams[stream_index];
+    AVCodecParameters* codec_parameters =
+        input_session.codec_parameters(stream_index);
+    const AVRational stream_time_base =
+        input_session.time_base_for_stream(stream_index);
+    if (!codec_parameters || stream_time_base.num <= 0 ||
+        stream_time_base.den <= 0) {
+        error = "video stream metadata is incomplete";
+        cleanup();
+        return false;
+    }
     VideoDecodeSessionOptions decode_options;
     decode_options.export_side_data =
         AV_CODEC_EXPORT_DATA_VIDEO_ENC_PARAMS;
@@ -404,7 +407,7 @@ bool analyze_video_quality(const std::string& video_path,
                   static_cast<uint32_t>(
                       std::numeric_limits<int>::max())));
     if (!decoder_session.initialize(
-            stream->codecpar, decode_options, error) ||
+            codec_parameters, decode_options, error) ||
         !decoder_session.open(error)) {
         cleanup();
         return false;
@@ -451,8 +454,8 @@ bool analyze_video_quality(const std::string& video_path,
     bool quality_backend_failed = false;
     bool cpu_backend_failed = false;
     uint64_t accepted_samples = 0;
-    const AVRational frame_rate = av_guess_frame_rate(
-        format_context, stream, nullptr);
+    const AVRational frame_rate =
+        input_session.frame_rate_for_stream(stream_index);
     const uint32_t cpu_worker_count =
         resolve_cpu_workers(options.cpu_workers);
     const uint32_t cpu_in_flight =
@@ -473,7 +476,9 @@ bool analyze_video_quality(const std::string& video_path,
     report.execution.scheduling =
         "bounded-multi-frame-four-metric-tasks";
     const std::string decode_diagnostic =
-        std::string("decodeCore=shared-native; decodeThreads=") +
+        std::string("inputCore=shared-native; inputBackend=") +
+        input_session.backend_name() +
+        "; decodeCore=shared-native; decodeThreads=" +
         (options.decode_threads == 0
              ? "auto"
              : std::to_string(options.decode_threads)) +
@@ -723,7 +728,10 @@ bool analyze_video_quality(const std::string& video_path,
         }
 
         const int64_t pts_us = frame_pts_us(
-            decoded, stream->time_base, decoded_index, frame_rate);
+            decoded,
+            stream_time_base,
+            decoded_index,
+            frame_rate);
         LumaPlaneView luma;
         const bool supported_luma = make_luma_view(decoded, luma);
         double flicker = -1.0;
@@ -922,7 +930,9 @@ bool analyze_video_quality(const std::string& video_path,
         return true;
     };
 
-    while (!stop && av_read_frame(format_context, packet) >= 0) {
+    int read_result = 0;
+    while (!stop &&
+           (read_result = input_session.read_packet(packet)) >= 0) {
         if (packet->stream_index == stream_index) {
             ++report.stream.packet_count;
             report.stream.packet_bytes +=
@@ -954,6 +964,12 @@ bool analyze_video_quality(const std::string& video_path,
         if (decode_failed) {
             break;
         }
+    }
+    if (!stop && !decode_failed &&
+        read_result < 0 && read_result != AVERROR_EOF) {
+        error = "input packet read failed: " +
+                ffmpeg_error(read_result);
+        decode_failed = true;
     }
 
     if (!stop && !decode_failed) {

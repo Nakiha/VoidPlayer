@@ -36,10 +36,6 @@ add_library(analysis_lib STATIC
 )
 void_apply_native_compile_options(analysis_lib)
 
-target_sources(analysis_lib PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../media/private_cdn_flv_demuxer.cpp
-)
-
 target_include_directories(analysis_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
 )

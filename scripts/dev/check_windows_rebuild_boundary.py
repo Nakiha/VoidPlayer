@@ -29,6 +29,9 @@ REMOVED_PATHS = [
 ]
 
 REQUIRED_TOKENS = {
+    "windows/CMakeLists.txt": [
+        "VideoDecodeCoreTarget.cmake",
+    ],
     "windows/runner/video_renderer_plugin.cpp": [
         "WindowsNativePlayer",
         "install_target_ring",
@@ -51,10 +54,15 @@ REQUIRED_TOKENS = {
     "native/cmake/NativeSourcesWindows.cmake": [
         "analysis_overlay_renderer_portable",
         "windows/decode/d3d11_frame_snapshot.cpp",
-        "windows/decode/d3d11va_provider.cpp",
         "windows/player/native_player.cpp",
         "windows/presentation/windows_d3d11_target_ring.cpp",
         "windows/presentation/windows_presentation_backend.cpp",
+    ],
+    "native/cmake/VideoDecodeCoreTarget.cmake": [
+        "media/media_input_session.cpp",
+        "media/video_decode_session.cpp",
+        "windows/decode/d3d11va_provider.cpp",
+        "d3d11 dxgi",
     ],
     "windows/runner/windows_native_compositor.cpp": [
         "FlutterDesktopViewAcquireLatestSurface",

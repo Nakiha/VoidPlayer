@@ -1,0 +1,435 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voidplayer.local/schemas/quality-output-v4.schema.json",
+  "title": "VoidPlayer quality CLI output v4",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/report"
+    },
+    {
+      "$ref": "#/$defs/frameRecord"
+    },
+    {
+      "$ref": "#/$defs/error"
+    }
+  ],
+  "$defs": {
+    "distribution": {
+      "type": "object",
+      "required": [
+        "available",
+        "count",
+        "mean",
+        "p10",
+        "p50",
+        "p90",
+        "p95",
+        "max"
+      ],
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mean": {
+          "type": "number"
+        },
+        "p10": {
+          "type": "number"
+        },
+        "p50": {
+          "type": "number"
+        },
+        "p90": {
+          "type": "number"
+        },
+        "p95": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": true
+    },
+    "sample": {
+      "type": "object",
+      "required": [
+        "sampleIndex",
+        "decodedFrameIndex",
+        "ptsUs",
+        "blockiness",
+        "banding",
+        "blur",
+        "noise",
+        "flicker",
+        "averageQp"
+      ],
+      "properties": {
+        "sampleIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "decodedFrameIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ptsUs": {
+          "type": "integer"
+        },
+        "blockiness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "banding": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "blur": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "noise": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "flicker": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "averageQp": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "execution": {
+      "type": "object",
+      "required": [
+        "requestedBackend",
+        "resolvedBackend",
+        "cpuMode",
+        "cpuDispatch",
+        "decodeThreadsMode",
+        "decodeThreadsRequested",
+        "decoderThreadCount",
+        "decoderThreadTypes",
+        "cpuWorkers",
+        "cpuInFlight",
+        "cpuWorkerPoolActive",
+        "gpuAdapter",
+        "gpuInFlight",
+        "scheduling"
+      ],
+      "properties": {
+        "requestedBackend": {
+          "enum": [
+            "auto",
+            "cpu",
+            "wgpu"
+          ]
+        },
+        "resolvedBackend": {
+          "type": "string"
+        },
+        "cpuMode": {
+          "enum": [
+            "auto",
+            "scalar"
+          ]
+        },
+        "cpuDispatch": {
+          "type": "string"
+        },
+        "decodeThreadsMode": {
+          "enum": [
+            "auto",
+            "explicit"
+          ]
+        },
+        "decodeThreadsRequested": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "decoderThreadCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "decoderThreadTypes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "frame",
+              "slice"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "cpuWorkers": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cpuInFlight": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cpuWorkerPoolActive": {
+          "type": "boolean"
+        },
+        "gpuAdapter": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "gpuInFlight": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scheduling": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "report": {
+      "type": "object",
+      "required": [
+        "type",
+        "schemaVersion",
+        "metricVersion",
+        "ok",
+        "backend",
+        "input",
+        "elapsedMs",
+        "capabilities",
+        "warnings",
+        "execution",
+        "metricDefinitions",
+        "timingSemantics",
+        "video",
+        "sampling",
+        "stream",
+        "metrics",
+        "timingsMs"
+      ],
+      "properties": {
+        "type": {
+          "const": "qualityReport"
+        },
+        "schemaVersion": {
+          "const": 4
+        },
+        "metricVersion": {
+          "type": "string"
+        },
+        "ok": {
+          "const": true
+        },
+        "backend": {
+          "type": "string"
+        },
+        "backendDiagnostic": {
+          "type": "string"
+        },
+        "input": {
+          "type": "string"
+        },
+        "elapsedMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "capabilities": {
+          "type": "object",
+          "required": [
+            "timelineIncluded",
+            "timelineEncoding",
+            "absoluteThresholdsCalibrated",
+            "crossMetricAggregationSupported"
+          ],
+          "properties": {
+            "timelineIncluded": {
+              "type": "boolean"
+            },
+            "timelineEncoding": {
+              "enum": [
+                "inline",
+                "jsonl",
+                "omitted"
+              ]
+            },
+            "absoluteThresholdsCalibrated": {
+              "type": "boolean"
+            },
+            "crossMetricAggregationSupported": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "execution": {
+          "$ref": "#/$defs/execution"
+        },
+        "metricDefinitions": {
+          "type": "object",
+          "required": [
+            "blockiness",
+            "banding",
+            "blur",
+            "noise",
+            "flicker"
+          ]
+        },
+        "video": {
+          "type": "object",
+          "required": [
+            "width",
+            "height",
+            "bitDepth"
+          ]
+        },
+        "sampling": {
+          "type": "object",
+          "required": [
+            "intervalUs",
+            "maxSamples",
+            "truncated",
+            "sampledFrames",
+            "decodedFrames",
+            "unsupportedPixelFrames"
+          ],
+          "properties": {
+            "maxSamples": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        },
+        "stream": {
+          "type": "object",
+          "required": [
+            "packetCount",
+            "packetBytes",
+            "keyframePackets",
+            "iFrames",
+            "pFrames",
+            "bFrames",
+            "packetSizeBytes",
+            "averageQp"
+          ],
+          "properties": {
+            "packetSizeBytes": {
+              "$ref": "#/$defs/distribution"
+            },
+            "averageQp": {
+              "$ref": "#/$defs/distribution"
+            }
+          },
+          "additionalProperties": true
+        },
+        "metrics": {
+          "type": "object",
+          "required": [
+            "blockiness",
+            "banding",
+            "blur",
+            "noise",
+            "flicker"
+          ]
+        },
+        "timingsMs": {
+          "type": "object"
+        },
+        "timeline": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sample"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "frameRecord": {
+      "type": "object",
+      "required": [
+        "type",
+        "schemaVersion",
+        "metricVersion",
+        "sample"
+      ],
+      "properties": {
+        "type": {
+          "const": "qualityFrameSample"
+        },
+        "schemaVersion": {
+          "const": 4
+        },
+        "metricVersion": {
+          "type": "string"
+        },
+        "sample": {
+          "$ref": "#/$defs/sample"
+        }
+      },
+      "additionalProperties": true
+    },
+    "error": {
+      "type": "object",
+      "required": [
+        "type",
+        "schemaVersion",
+        "ok",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "type": {
+          "const": "qualityError"
+        },
+        "schemaVersion": {
+          "const": 4
+        },
+        "ok": {
+          "const": false
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

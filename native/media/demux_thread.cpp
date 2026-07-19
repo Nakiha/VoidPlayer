@@ -1,28 +1,10 @@
 #include "media/demux_thread.h"
 
-#include "renderer/decode/frame_color_metadata.h"
-
-#include "media/private_cdn_flv_demuxer.h"
 #include "media/source_packet_identity.h"
 #include <spdlog/spdlog.h>
 #include <chrono>
 
 namespace vr {
-
-namespace {
-int64_t steady_clock_ns() {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-}
-
-void fill_codec_names(DemuxStats& stats, AVCodecID codec_id) {
-    stats.codec_name = avcodec_get_name(codec_id);
-    const AVCodecDescriptor* descriptor = avcodec_descriptor_get(codec_id);
-    if (descriptor && descriptor->long_name) {
-        stats.codec_long_name = descriptor->long_name;
-    }
-}
-}
 
 DemuxThread::DemuxThread(const std::string& file_path,
                          SeekController& seek_controller)
@@ -56,11 +38,7 @@ bool DemuxThread::open() {
     auto fail_open = [this]() {
         std::unique_lock<std::mutex> lock(lifecycle_mutex_);
         running_.store(false, std::memory_order_release);
-        open_deadline_ns_.store(0, std::memory_order_release);
-        fmt_ctx_.reset();
-        if (private_flv_demuxer_) {
-            private_flv_demuxer_.reset();
-        }
+        input_.close();
         opening_ = false;
         lock.unlock();
         lifecycle_cv_.notify_all();
@@ -70,7 +48,7 @@ bool DemuxThread::open() {
     {
         std::lock_guard<std::mutex> lock(lifecycle_mutex_);
         if (running_.load(std::memory_order_acquire) || opening_ ||
-            thread_.joinable() || fmt_ctx_ || private_flv_demuxer_) {
+            thread_.joinable() || input_.is_open()) {
             return false;
         }
 
@@ -80,116 +58,31 @@ bool DemuxThread::open() {
         }
         opening_ = true;
         running_.store(true, std::memory_order_release);
-        open_deadline_ns_.store(
-            steady_clock_ns() + std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::seconds(15)).count(),
-            std::memory_order_release);
     }
 
-    if (PrivateCdnFlvDemuxer::probe(file_path_)) {
-        auto demuxer = std::make_unique<PrivateCdnFlvDemuxer>();
-        if (!demuxer->open(file_path_)) {
-            spdlog::error("[DemuxThread] Private CDN FLV probe matched but open failed: {}", file_path_);
-            return fail_open();
-        }
-        private_flv_demuxer_ = std::move(demuxer);
-        stats_ = private_flv_demuxer_->stats();
-        open_deadline_ns_.store(0, std::memory_order_release);
-        spdlog::info("[DemuxThread] Using private CDN FLV demuxer for {}", file_path_);
-    } else {
-        fmt_ctx_ = AvFormatContextOwner::allocate();
-        if (!fmt_ctx_) {
-            spdlog::error("[DemuxThread] Failed to allocate format context: {}", file_path_);
-            return fail_open();
-        }
-        fmt_ctx_->interrupt_callback.callback = &DemuxThread::interrupt_callback;
-        fmt_ctx_->interrupt_callback.opaque = this;
-
-        // Open format context on the calling thread so stats are available immediately.
-        // Install the interrupt callback before open/find_stream_info so stop() or an
-        // open timeout can break blocked probes.
-        int ret = avformat_open_input(fmt_ctx_.mutable_address(), file_path_.c_str(), nullptr, nullptr);
-        if (ret < 0) {
-            spdlog::error("[DemuxThread] Failed to open input: {}", file_path_);
-            return fail_open();
-        }
-        ret = avformat_find_stream_info(fmt_ctx_.get(), nullptr);
-        if (ret < 0) {
-            spdlog::error("[DemuxThread] Failed to find stream info");
-            return fail_open();
-        }
-        open_deadline_ns_.store(0, std::memory_order_release);
-        if (!running_.load(std::memory_order_acquire)) {
-            spdlog::info("[DemuxThread] Open cancelled during probe: {}", file_path_);
-            return fail_open();
-        }
-
-        // Locate the first video stream. Audio is discovered now too, but it is
-        // only routed when an audio output queue is registered by the owner.
-        stats_.video_stream_index = -1;
-        stats_.audio_stream_index = -1;
-        for (unsigned int i = 0; i < fmt_ctx_->nb_streams; ++i) {
-            AVCodecParameters* codecpar = fmt_ctx_->streams[i]->codecpar;
-            if (stats_.video_stream_index < 0 &&
-                codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-                stats_.video_stream_index = static_cast<int>(i);
-            } else if (stats_.audio_stream_index < 0 &&
-                       codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-                stats_.audio_stream_index = static_cast<int>(i);
-            }
-        }
-
-        if (stats_.video_stream_index >= 0) {
-            AVStream* stream = fmt_ctx_->streams[stats_.video_stream_index];
-            if (!stats_.set_video_codec_params(stream->codecpar)) {
-                spdlog::error("[DemuxThread] Failed to copy video codec parameters");
-                return fail_open();
-            }
-            stats_.time_base = stream->time_base;
-            stats_.width = stream->codecpar->width;
-            stats_.height = stream->codecpar->height;
-            stats_.color = color_info_from_av_codec_parameters(stream->codecpar);
-            fill_codec_names(stats_, stream->codecpar->codec_id);
-            if (stream->start_time != AV_NOPTS_VALUE) {
-                stats_.start_time_us = av_rescale_q(
-                    stream->start_time, stream->time_base, {1, 1000000});
-            } else if (fmt_ctx_->start_time != AV_NOPTS_VALUE) {
-                stats_.start_time_us = av_rescale_q(
-                    fmt_ctx_->start_time, {1, AV_TIME_BASE}, {1, 1000000});
-            }
-            stats_.bit_rate = stream->codecpar->bit_rate > 0
-                ? stream->codecpar->bit_rate
-                : fmt_ctx_->bit_rate;
-            // Extract Sample Aspect Ratio for correct display aspect ratio
-            if (stream->codecpar->sample_aspect_ratio.num > 0 &&
-                stream->codecpar->sample_aspect_ratio.den > 0) {
-                stats_.sar_num = stream->codecpar->sample_aspect_ratio.num;
-                stats_.sar_den = stream->codecpar->sample_aspect_ratio.den;
-            }
-        }
-
-        if (fmt_ctx_->duration != AV_NOPTS_VALUE) {
-            stats_.duration_us = av_rescale_q(fmt_ctx_->duration, {1, AV_TIME_BASE}, {1, 1000000});
-        }
-        if (fmt_ctx_->iformat) {
-            if (fmt_ctx_->iformat->long_name) {
-                stats_.format_name = fmt_ctx_->iformat->long_name;
-            } else if (fmt_ctx_->iformat->name) {
-                stats_.format_name = fmt_ctx_->iformat->name;
-            }
-        }
-
-        if (stats_.audio_stream_index >= 0) {
-            AVStream* audio_stream = fmt_ctx_->streams[stats_.audio_stream_index];
-            if (stats_.set_audio_codec_params(audio_stream->codecpar)) {
-                stats_.audio_time_base = audio_stream->time_base;
-                stats_.sample_rate = audio_stream->codecpar->sample_rate;
-                stats_.channels = audio_stream->codecpar->ch_layout.nb_channels;
-            } else {
-                spdlog::warn("[DemuxThread] Failed to copy audio codec parameters; disabling audio stream");
-                stats_.audio_stream_index = -1;
-            }
-        }
+    MediaInputOpenOptions input_options;
+    input_options.interrupt_requested = [this]() {
+        return !running_.load(std::memory_order_acquire);
+    };
+    std::string input_error;
+    if (!input_.open(file_path_, input_options, input_error)) {
+        spdlog::error(
+            "[DemuxThread] Failed to open input {}: {}",
+            file_path_,
+            input_error);
+        return fail_open();
+    }
+    stats_ = input_.stats();
+    if (!running_.load(std::memory_order_acquire)) {
+        spdlog::info(
+            "[DemuxThread] Open cancelled during probe: {}",
+            file_path_);
+        return fail_open();
+    }
+    if (input_.uses_private_demuxer()) {
+        spdlog::info(
+            "[DemuxThread] Using private CDN FLV demuxer for {}",
+            file_path_);
     }
 
     if (output_routes_.empty()) {
@@ -215,13 +108,9 @@ bool DemuxThread::open() {
 
     {
         std::unique_lock<std::mutex> lock(lifecycle_mutex_);
-        open_deadline_ns_.store(0, std::memory_order_release);
         if (!running_.load(std::memory_order_acquire)) {
             spdlog::info("[DemuxThread] Open cancelled before demux thread start: {}", file_path_);
-            fmt_ctx_.reset();
-            if (private_flv_demuxer_) {
-                private_flv_demuxer_.reset();
-            }
+            input_.close();
             opening_ = false;
             lock.unlock();
             lifecycle_cv_.notify_all();
@@ -236,24 +125,11 @@ bool DemuxThread::open() {
 bool DemuxThread::start_thread() {
     std::lock_guard<std::mutex> lock(lifecycle_mutex_);
     if (opening_ || !running_.load(std::memory_order_acquire) ||
-        thread_.joinable() || (!fmt_ctx_ && !private_flv_demuxer_)) {
+        thread_.joinable() || !input_.is_open()) {
         return false;
     }
     thread_ = std::thread(&DemuxThread::run, this);
     return true;
-}
-
-int DemuxThread::interrupt_callback(void* opaque) {
-    auto* self = static_cast<DemuxThread*>(opaque);
-    if (!self) return 0;
-    if (!self->running_.load(std::memory_order_acquire)) {
-        return 1;
-    }
-    const int64_t deadline = self->open_deadline_ns_.load(std::memory_order_acquire);
-    if (deadline > 0 && steady_clock_ns() > deadline) {
-        return 1;
-    }
-    return 0;
 }
 
 void DemuxThread::stop() {
@@ -261,7 +137,6 @@ void DemuxThread::stop() {
     {
         std::unique_lock<std::mutex> lock(lifecycle_mutex_);
         running_.store(false, std::memory_order_release);
-        open_deadline_ns_.store(0, std::memory_order_release);
         abort_outputs();
         lifecycle_cv_.wait(lock, [this] { return !opening_; });
     }
@@ -272,13 +147,9 @@ void DemuxThread::stop() {
     }
     {
         std::lock_guard<std::mutex> lock(lifecycle_mutex_);
-        if (fmt_ctx_) {
+        if (input_.is_open()) {
             spdlog::info("[DemuxThread] stop() closing input: {}", file_path_);
-            fmt_ctx_.reset();
-        }
-        if (private_flv_demuxer_) {
-            spdlog::info("[DemuxThread] stop() closing private CDN FLV demuxer: {}", file_path_);
-            private_flv_demuxer_.reset();
+            input_.close();
         }
     }
     spdlog::info("[DemuxThread] stop() end for {}", file_path_);
@@ -360,14 +231,7 @@ int DemuxThread::stream_index_for_kind(DemuxStreamKind kind) const {
 }
 
 AVRational DemuxThread::time_base_for_stream(int stream_index) const {
-    if (private_flv_demuxer_) {
-        return private_flv_demuxer_->time_base_for_stream(stream_index);
-    }
-    if (!fmt_ctx_ || stream_index < 0 ||
-        stream_index >= static_cast<int>(fmt_ctx_->nb_streams)) {
-        return AVRational{0, 1};
-    }
-    return fmt_ctx_->streams[stream_index]->time_base;
+    return input_.time_base_for_stream(stream_index);
 }
 
 void DemuxThread::run() {
@@ -407,20 +271,17 @@ void DemuxThread::run() {
                 req.target_pts_us,
                 {1, 1000000},
                 time_base_for_stream(seek_stream_idx));
-            int seek_ret = private_flv_demuxer_
-                ? private_flv_demuxer_->seek(seek_stream_idx, target_tb)
-                : av_seek_frame(fmt_ctx_.get(), seek_stream_idx, target_tb, AVSEEK_FLAG_BACKWARD);
+            int seek_ret = input_.seek(
+                seek_stream_idx,
+                target_tb,
+                AVSEEK_FLAG_BACKWARD);
             if (seek_ret < 0) {
                 spdlog::error("[DemuxThread] av_seek_frame FAILED: target={:.3f}s, ret={:#x}",
                              req.target_pts_us / 1e6, static_cast<unsigned>(seek_ret));
             } else {
                 // Clear demuxer EOF/read-ahead state so av_read_frame() starts
                 // producing packets again after seeks from end-of-file.
-                if (private_flv_demuxer_) {
-                    private_flv_demuxer_->flush();
-                } else {
-                    avformat_flush(fmt_ctx_.get());
-                }
+                input_.flush();
                 spdlog::info("[DemuxThread] av_seek_frame OK: target={:.3f}s", req.target_pts_us / 1e6);
             }
 
@@ -450,9 +311,7 @@ void DemuxThread::run() {
             forced_read_error_for_test_.exchange(0, std::memory_order_acq_rel);
         int ret = forced_read_error != 0
             ? forced_read_error
-            : (private_flv_demuxer_
-                ? private_flv_demuxer_->read_packet(pkt)
-                : av_read_frame(fmt_ctx_.get(), pkt));
+            : input_.read_packet(pkt);
         if (ret < 0) {
             if (ret == AVERROR_EOF) {
                 spdlog::info("[DemuxThread] EOF reached after {} packets, waiting for seek",

@@ -74,7 +74,10 @@ if(NOT BUILD_ANALYSIS AND BUILD_ANALYSIS_TESTS)
     set(BUILD_ANALYSIS_TESTS OFF CACHE BOOL "" FORCE)
 endif()
 if(BUILD_TESTS)
-    set(CATCH2_LOCAL_DIR "${VOID_LOCAL_DEPS_DIR}/catch2-src")
+    set(CATCH2_LOCAL_CANDIDATES
+        "${VOID_LOCAL_DEPS_DIR}/catch2-src"
+        "${VOID_NATIVE_DIR}/../build/windows/x64/_deps/catch2-src")
+    void_first_existing_path(CATCH2_LOCAL_DIR ${CATCH2_LOCAL_CANDIDATES})
     if(VOID_USE_LOCAL_DEPS AND EXISTS "${CATCH2_LOCAL_DIR}/CMakeLists.txt")
         message(STATUS "Using local Catch2 from: ${CATCH2_LOCAL_DIR}")
         add_subdirectory("${CATCH2_LOCAL_DIR}" "${CMAKE_BINARY_DIR}/_deps/catch2-build")

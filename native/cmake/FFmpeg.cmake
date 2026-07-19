@@ -10,8 +10,10 @@ endif()
 
 if(WIN32)
     set(_VOID_DEFAULT_FFMPEG_ROOT "${VOID_NATIVE_DIR}/../.toolchains/ffmpeg/windows-x64")
-else()
+elseif(APPLE)
     set(_VOID_DEFAULT_FFMPEG_ROOT "${VOID_NATIVE_DIR}/../.toolchains/ffmpeg/macos-arm64")
+else()
+    set(_VOID_DEFAULT_FFMPEG_ROOT "")
 endif()
 
 if(DEFINED ENV{VOIDPLAYER_FFMPEG_ROOT} AND
@@ -22,25 +24,12 @@ elseif(DEFINED ENV{FFMPEG_ROOT} AND NOT "$ENV{FFMPEG_ROOT}" STREQUAL "")
 endif()
 
 set(FFMPEG_ROOT "${_VOID_DEFAULT_FFMPEG_ROOT}" CACHE PATH "FFmpeg root directory")
-set(FFMPEG_INCLUDE_DIR "${FFMPEG_ROOT}/include")
-set(FFMPEG_LIB_DIR "${FFMPEG_ROOT}/lib")
-set(FFMPEG_BIN_DIR "${FFMPEG_ROOT}/bin")
 set(FFMPEG_RUNTIME_DLL_PATTERNS
     "avcodec-*.dll"
     "avformat-*.dll"
     "avutil-*.dll"
     "swresample-*.dll"
 )
-
-if(NOT EXISTS "${FFMPEG_INCLUDE_DIR}/libavcodec/avcodec.h")
-    if(VOID_FFMPEG_REQUIRED)
-        message(FATAL_ERROR "FFmpeg headers not found at ${FFMPEG_INCLUDE_DIR}")
-    else()
-        message(WARNING "FFmpeg headers not found at ${FFMPEG_INCLUDE_DIR} - video renderer will not be built")
-        set(FFMPEG_FOUND FALSE)
-        return()
-    endif()
-endif()
 
 foreach(_VOID_FFMPEG_LIBRARY_CACHE
         AVCODEC_LIBRARY
@@ -51,11 +40,54 @@ foreach(_VOID_FFMPEG_LIBRARY_CACHE
     unset(${_VOID_FFMPEG_LIBRARY_CACHE} CACHE)
 endforeach()
 
-find_library(AVCODEC_LIBRARY avcodec PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
-find_library(AVFORMAT_LIBRARY avformat PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
-find_library(AVUTIL_LIBRARY avutil PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
-find_library(SWRESAMPLE_LIBRARY swresample PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
-find_library(SWSCALE_LIBRARY swscale PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH)
+if(FFMPEG_ROOT)
+    set(FFMPEG_INCLUDE_DIR "${FFMPEG_ROOT}/include")
+    set(FFMPEG_LIB_DIR "${FFMPEG_ROOT}/lib")
+    set(FFMPEG_BIN_DIR "${FFMPEG_ROOT}/bin")
+
+    if(NOT EXISTS "${FFMPEG_INCLUDE_DIR}/libavcodec/avcodec.h")
+        if(VOID_FFMPEG_REQUIRED)
+            message(FATAL_ERROR "FFmpeg headers not found at ${FFMPEG_INCLUDE_DIR}")
+        else()
+            message(WARNING "FFmpeg headers not found at ${FFMPEG_INCLUDE_DIR} - video renderer will not be built")
+            set(FFMPEG_FOUND FALSE)
+            return()
+        endif()
+    endif()
+
+    find_library(AVCODEC_LIBRARY avcodec PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
+    find_library(AVFORMAT_LIBRARY avformat PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
+    find_library(AVUTIL_LIBRARY avutil PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
+    find_library(SWRESAMPLE_LIBRARY swresample PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
+    find_library(SWSCALE_LIBRARY swscale PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH)
+else()
+    find_package(PkgConfig QUIET)
+    if(NOT PkgConfig_FOUND)
+        message(FATAL_ERROR
+            "FFmpeg root was not provided and pkg-config is unavailable. "
+            "Install FFmpeg development packages or set FFMPEG_ROOT.")
+    endif()
+    pkg_check_modules(VOID_AVCODEC REQUIRED IMPORTED_TARGET libavcodec)
+    pkg_check_modules(VOID_AVFORMAT REQUIRED IMPORTED_TARGET libavformat)
+    pkg_check_modules(VOID_AVUTIL REQUIRED IMPORTED_TARGET libavutil)
+    pkg_check_modules(VOID_SWRESAMPLE REQUIRED IMPORTED_TARGET libswresample)
+    pkg_check_modules(VOID_SWSCALE QUIET IMPORTED_TARGET libswscale)
+    set(AVCODEC_LIBRARY PkgConfig::VOID_AVCODEC)
+    set(AVFORMAT_LIBRARY PkgConfig::VOID_AVFORMAT)
+    set(AVUTIL_LIBRARY PkgConfig::VOID_AVUTIL)
+    set(SWRESAMPLE_LIBRARY PkgConfig::VOID_SWRESAMPLE)
+    if(VOID_SWSCALE_FOUND)
+        set(SWSCALE_LIBRARY PkgConfig::VOID_SWSCALE)
+    endif()
+    set(FFMPEG_INCLUDE_DIR
+        ${VOID_AVCODEC_INCLUDE_DIRS}
+        ${VOID_AVFORMAT_INCLUDE_DIRS}
+        ${VOID_AVUTIL_INCLUDE_DIRS}
+        ${VOID_SWRESAMPLE_INCLUDE_DIRS})
+    list(REMOVE_DUPLICATES FFMPEG_INCLUDE_DIR)
+    set(FFMPEG_ROOT "system")
+    set(FFMPEG_BIN_DIR "")
+endif()
 
 set(FFMPEG_FOUND TRUE)
 message(STATUS "FFmpeg: avcodec=${AVCODEC_LIBRARY}, avformat=${AVFORMAT_LIBRARY}")

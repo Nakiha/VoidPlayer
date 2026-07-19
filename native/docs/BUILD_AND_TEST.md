@@ -41,7 +41,8 @@ python3.12 dev.py gate windows-rebuild-boundary
 ```
 
 Native 子目录仍可直接使用 CMake/presets，但日常开发应通过顶层 `dev.py` 保持平台产物和依赖检查一致。
-`native/build.py` 是 `dev.py` 的 standalone CMake helper，不作为常规用户入口记录。
+`native/build.py` 是 `dev.py` 的 standalone CMake helper；Linux CPU server CLI 是例外，
+可直接使用 `python3 native/build.py --cpu-server`。
 
 ## 构建产物目录
 
@@ -71,7 +72,8 @@ Source ownership is split under `native/cmake/`:
 | 目标 | 平台 | 说明 |
 | --- | --- | --- |
 | `void_player_portable_core` | all | 平台中立基础类型、layout、presentation contracts |
-| `void_media_ffmpeg` | all | FFmpeg demux/decode support |
+| `void_video_decode_core` | all | GUI/CLI 共用 codec context、hardware provider、fallback 与 guarded send/receive |
+| `void_media_ffmpeg` | all | playback demux、audio、seek/decode orchestration；链接 `void_video_decode_core` |
 | `void_renderer_portable_driver` | macOS/native smokes | shared renderer driver object target |
 | `void_macos_native_player` | macOS | macOS native bridge + Metal presentation backend |
 | `macos_native_abi_smoke` | macOS | macOS C ABI layout/status/lifetime contract smoke |
@@ -88,6 +90,33 @@ Source ownership is split under `native/cmake/`:
 | `BUILD_PYTHON` | `ON` | 构建 pybind11 Python binding；找不到依赖时自动关闭 |
 | `BUILD_TESTS` | `ON` | 构建 CTest targets |
 | `BUILD_ANALYSIS` | `ON` | 构建 analysis cache/overlay/CLI；关闭时 renderer 使用 no-op overlay stub |
+
+## Linux CPU server CLI
+
+Linux standalone quality CLI 不要求 Flutter、Rust、Cargo、Vulkan 或窗口系统。默认从
+`pkg-config` 查找 `libavcodec`、`libavformat`、`libavutil` 和 `libswresample`：
+
+```bash
+sudo apt-get install cmake g++ pkg-config \
+  libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
+python3 native/build.py --cpu-server
+```
+
+`--cpu-server` 只构建 `VoidPlayerCli`，并关闭 tests 和 Python。x86/x64
+会把 packed 8–16 bit/P010 空间指标的 AVX2 kernels 编成独立 object 并运行时分发，scalar
+baseline 始终保留；ARM64
+目前使用 scalar，后续可在同一 dispatch 边界增加 NEON。
+
+高核数 CPU server 可让 FFmpeg 解码和质量任务池重叠：
+
+```bash
+build/native/standalone/portable/VoidPlayerCli score-quality \
+  --input input.mp4 --backend cpu \
+  --decode-threads 32 --cpu-workers 96 --cpu-in-flight 48 --json
+```
+
+三个参数不传时分别使用 FFmpeg auto、全部逻辑 CPU、自动有界队列；显式值适合按
+codec、分辨率和 NUMA 拓扑做吞吐 A/B。
 
 ## Test Matrix
 

@@ -276,6 +276,15 @@ extension MainWindowViewActionBinding on MainWindowController {
         onHeightChanged: stateStore.setDeckHeight,
         onCollapsedChanged: stateStore.setDeckCollapsed,
         onAnalysisSelectionChanged: stateStore.setAnalysisSelection,
+        onAnalysisFrameSeekRequested: (request) {
+          if (!_capabilities.canSeek) return;
+          final timelinePtsUs =
+              request.trackPtsUs + (_state.syncOffsets[request.fileId] ?? 0);
+          _boostNativeCompositorFlutterInteraction(
+            reason: 'analysis-frame-seek',
+          );
+          playbackCoordinator.seekTo(timelinePtsUs);
+        },
       ),
       analysisOverlay: MainWindowAnalysisOverlayActions(
         onTypeChanged: (type) {

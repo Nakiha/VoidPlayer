@@ -19,6 +19,7 @@ class AnalysisReferencePyramidView extends StatefulWidget {
   final bool useActualTemporalLayers;
   final ValueChanged<bool> onLayerModeChanged;
   final ValueChanged<int?> onFrameSelected;
+  final ValueChanged<int> onFrameActivated;
   final double viewStart;
   final double viewEnd;
   final bool ptsOrder;
@@ -36,6 +37,7 @@ class AnalysisReferencePyramidView extends StatefulWidget {
     required this.useActualTemporalLayers,
     required this.onLayerModeChanged,
     required this.onFrameSelected,
+    required this.onFrameActivated,
     required this.viewStart,
     required this.viewEnd,
     required this.ptsOrder,
@@ -294,6 +296,17 @@ class _AnalysisReferencePyramidViewState
                                 ? null
                                 : frameIdx,
                           );
+                        },
+                        onDoubleTapDown: (details) {
+                          final box =
+                              chartContext.findRenderObject() as RenderBox;
+                          final frameIdx = _frameIndexAtChartPosition(
+                            details.localPosition,
+                            box.size,
+                          );
+                          if (frameIdx != null) {
+                            widget.onFrameActivated(frameIdx);
+                          }
                         },
                         child: CustomPaint(
                           painter: _RefPyramidPainter(

@@ -51,6 +51,7 @@ class MainWindowDeckVm {
   final bool collapsed;
   final ValueListenable<List<AnalysisWorkspaceEntry>> analysisEntries;
   final AnalysisTestHostRegistry analysisTestHosts;
+  final Map<int, AnalysisPlaybackPosition> analysisPlaybackByFileId;
 
   const MainWindowDeckVm({
     required this.tab,
@@ -58,6 +59,7 @@ class MainWindowDeckVm {
     required this.collapsed,
     required this.analysisEntries,
     required this.analysisTestHosts,
+    this.analysisPlaybackByFileId = const {},
   });
 }
 
@@ -246,12 +248,14 @@ class MainWindowDeckActions {
   final ValueChanged<double> onHeightChanged;
   final ValueChanged<bool> onCollapsedChanged;
   final ValueChanged<AnalysisUiSelection?>? onAnalysisSelectionChanged;
+  final ValueChanged<AnalysisFrameSeekRequest>? onAnalysisFrameSeekRequested;
 
   const MainWindowDeckActions({
     required this.onTabChanged,
     required this.onHeightChanged,
     required this.onCollapsedChanged,
     this.onAnalysisSelectionChanged,
+    this.onAnalysisFrameSeekRequested,
   });
 }
 

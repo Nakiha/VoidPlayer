@@ -59,6 +59,7 @@ class MainWindowViewModelFactory {
     required ValueListenable<List<AnalysisWorkspaceEntry>> analysisEntries,
     required AnalysisTestHostRegistry analysisTestHosts,
     required AnalysisUiSelection? analysisSelection,
+    required Map<int, QuickMarkAnchor> presentedFrameAnchors,
     required bool marksSidebarVisible,
     required double marksSidebarWidth,
     required bool fullScreen,
@@ -147,6 +148,14 @@ class MainWindowViewModelFactory {
         collapsed: deckCollapsed,
         analysisEntries: analysisEntries,
         analysisTestHosts: analysisTestHosts,
+        analysisPlaybackByFileId: {
+          for (final entry in presentedFrameAnchors.entries)
+            entry.key: AnalysisPlaybackPosition(
+              ptsUs: entry.value.ptsUs,
+              dtsUs: entry.value.dtsUs,
+              analysisFrameIndex: entry.value.analysisFrameIndex,
+            ),
+        },
       ),
       selection: selection,
       overlays: MainWindowOverlayVm(

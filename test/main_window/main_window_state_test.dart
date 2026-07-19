@@ -170,6 +170,38 @@ void main() {
     expect(store.value.presentedFrameAnchors, isEmpty);
   });
 
+  testWidgets('analysis deck polls presented analysis frame anchors', (
+    tester,
+  ) async {
+    final fixture = _PlaybackFixture();
+    try {
+      await fixture.controller.createPlayer(
+        ['clip.mp4'],
+        width: 1920,
+        height: 1080,
+      );
+      fixture.store
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
+        ..setDeckTab(MainWindowDeckTab.analysis);
+      fixture.api.presentedFrameTiming = const PresentedFrameTiming(
+        ptsUs: 1000000,
+        dtsUs: 1000000,
+        analysisFrameIndex: 17,
+      );
+
+      fixture.coordinator.startPolling();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(fixture.api.calls, contains('getPlaybackSnapshot:true'));
+      expect(
+        fixture.store.value.presentedFrameAnchors[1]?.analysisFrameIndex,
+        17,
+      );
+    } finally {
+      fixture.dispose();
+    }
+  });
+
   testWidgets('pending seek suppresses stale presented frame anchors', (
     tester,
   ) async {

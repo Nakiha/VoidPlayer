@@ -15,6 +15,8 @@ class AnalysisPage extends StatefulWidget {
   final bool pollSummary;
   final AnalysisSplitLayoutController? splitLayoutController;
   final ValueChanged<AnalysisUiSelection?>? onSelectionChanged;
+  final AnalysisPlaybackPosition? currentPlaybackPosition;
+  final ValueChanged<AnalysisFrameSeekRequest>? onFrameSeekRequested;
 
   const AnalysisPage({
     super.key,
@@ -24,6 +26,8 @@ class AnalysisPage extends StatefulWidget {
     this.pollSummary = true,
     this.splitLayoutController,
     this.onSelectionChanged,
+    this.currentPlaybackPosition,
+    this.onFrameSeekRequested,
   });
 
   @override
@@ -66,6 +70,9 @@ class AnalysisPageState extends State<AnalysisPage>
     } else if (oldWidget.onSelectionChanged != widget.onSelectionChanged) {
       _publishSelection();
     }
+    if (oldWidget.currentPlaybackPosition != widget.currentPlaybackPosition) {
+      _controller.setPlaybackPosition(widget.currentPlaybackPosition);
+    }
   }
 
   @override
@@ -95,8 +102,10 @@ class AnalysisPageState extends State<AnalysisPage>
     final controller = AnalysisPageController(
       hash: widget.hash,
       pollSummary: widget.pollSummary,
+      onFrameActivated: _onFrameActivated,
     );
     controller.start();
+    controller.setPlaybackPosition(widget.currentPlaybackPosition);
     return controller;
   }
 
@@ -146,6 +155,25 @@ class AnalysisPageState extends State<AnalysisPage>
     );
   }
 
+  void _onFrameActivated(int frameIndex) {
+    final callback = widget.onFrameSeekRequested;
+    if (callback == null) return;
+    final offset = frameIndex - _controller.frameIndexBase;
+    if (offset < 0 || offset >= _controller.frames.length) return;
+    final ptsUs = analysisFramePtsUs(
+      _controller.frames[offset],
+      _controller.summary,
+    );
+    if (ptsUs == null) return;
+    callback(
+      AnalysisFrameSeekRequest(
+        fileId: widget.fileId,
+        frameIndex: frameIndex,
+        trackPtsUs: ptsUs,
+      ),
+    );
+  }
+
   @override
   void updateAnalysisTestState(VoidCallback update) {
     update();
@@ -175,6 +203,9 @@ class AnalysisPageState extends State<AnalysisPage>
 
   @override
   int? get selectedAnalysisNaluIdx => _controller.selectedNaluIdx;
+
+  @override
+  int get currentAnalysisFrameIdx => _controller.currentFrameIdx;
 
   @override
   double get analysisChartOffset => _controller.chartOffset;
@@ -224,5 +255,12 @@ class AnalysisPageState extends State<AnalysisPage>
   @override
   void selectAnalysisNaluForTest(int naluIdx) {
     _controller.selectNaluForTest(naluIdx);
+  }
+
+  @override
+  void activateAnalysisFrameForTest(int frameIdx) {
+    final sortedPosition = _controller.sortedPositionForFrameIdx(frameIdx);
+    if (sortedPosition == null) return;
+    _controller.activateChartFrame(sortedPosition);
   }
 }

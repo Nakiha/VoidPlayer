@@ -39,6 +39,7 @@ class AnalysisPageView extends StatelessWidget {
             useActualTemporalLayers: model.referencePyramidActualTemporalLayers,
             onLayerModeChanged: actions.onReferencePyramidLayerModeChanged,
             onFrameSelected: actions.onChartFrameSelected,
+            onFrameActivated: actions.onChartFrameActivated,
             viewStart: model.chartOffset,
             viewEnd: model.chartOffset + model.visibleFrameCount,
             ptsOrder: model.ptsOrder,
@@ -63,6 +64,7 @@ class AnalysisPageView extends StatelessWidget {
             onAxisZoom: actions.onAxisZoom,
             onPan: actions.onChartPan,
             onFrameSelected: actions.onChartFrameSelected,
+            onFrameActivated: actions.onChartFrameActivated,
             l: l,
           );
     final bottomPanel = AnalysisNaluBrowserView(

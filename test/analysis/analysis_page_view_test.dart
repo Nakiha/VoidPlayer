@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/analysis/analysis_ffi.dart';
 import 'package:void_player/analysis/nalu_types.dart';
+import 'package:void_player/analysis/ui/charts/analysis_frame_trend.dart';
 import 'package:void_player/analysis/ui/page/analysis_page_state.dart';
 import 'package:void_player/analysis/ui/page/analysis_page_view.dart';
 import 'package:void_player/l10n/app_localizations.dart';
@@ -35,6 +36,66 @@ void main() {
     await tester.pump();
     expect(find.byKey(analysisNaluBrowserPanelKey), findsOneWidget);
     expect(find.byKey(analysisNaluDetailPanelKey), findsNothing);
+  });
+
+  testWidgets('frame trend double click activates a frame', (tester) async {
+    int? activated;
+    final frames = List.generate(
+      10,
+      (index) => FrameInfo(
+        poc: index,
+        temporalId: 0,
+        sliceType: 1,
+        nalType: 1,
+        avgQp: 20,
+        numRefL0: 0,
+        numRefL1: 0,
+        refPocsL0: const [],
+        refPocsL1: const [],
+        pts: index * 3000,
+        dts: index * 3000,
+        packetSize: 100 + index,
+        keyframe: index == 0 ? 1 : 0,
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Builder(
+          builder: (context) => SizedBox(
+            width: 800,
+            height: 300,
+            child: AnalysisFrameTrendView(
+              frames: frames,
+              totalFrames: frames.length,
+              currentIdx: 2,
+              selectedFrameIdx: null,
+              viewStart: 0,
+              viewEnd: 10,
+              frameSizeAxisZoom: 1,
+              qpAxisZoom: 1,
+              ptsOrder: true,
+              onZoom: _ignoreDouble,
+              onAxisZoom: _ignoreAxisZoom,
+              onPan: _ignoreDouble,
+              onFrameSelected: _ignoreNullableInt,
+              onFrameActivated: (index) => activated = index,
+              l: AppLocalizations.of(context)!,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final position = tester.getCenter(find.byType(AnalysisFrameTrendView));
+    await tester.tapAt(position);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(position);
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(activated, isNotNull);
+    expect(activated, inInclusiveRange(0, 9));
   });
 }
 
@@ -77,6 +138,7 @@ const AnalysisPageActions _actions = AnalysisPageActions(
   onChartPan: _ignoreDouble,
   onAxisZoom: _ignoreAxisZoom,
   onChartFrameSelected: _ignoreNullableInt,
+  onChartFrameActivated: _ignoreInt,
   onNaluSelected: _ignoreNullableInt,
   onNaluWindowRequested: _ignoreWindow,
   onChartWindowSetForTest: _ignoreChartWindow,

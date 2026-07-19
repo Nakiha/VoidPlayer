@@ -72,6 +72,7 @@ class AnalysisPageActions {
   final void Function(AnalysisFrameTrendAxis axis, double scrollDelta)
   onAxisZoom;
   final ValueChanged<int?> onChartFrameSelected;
+  final ValueChanged<int> onChartFrameActivated;
   final ValueChanged<int?> onNaluSelected;
   final void Function(int start, int count) onNaluWindowRequested;
   final void Function(double offset, double visibleFrameCount)
@@ -88,6 +89,7 @@ class AnalysisPageActions {
     required this.onChartPan,
     required this.onAxisZoom,
     required this.onChartFrameSelected,
+    required this.onChartFrameActivated,
     required this.onNaluSelected,
     required this.onNaluWindowRequested,
     required this.onChartWindowSetForTest,

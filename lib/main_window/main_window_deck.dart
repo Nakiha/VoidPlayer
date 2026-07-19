@@ -108,6 +108,10 @@ class _MainWindowDeckState extends State<MainWindowDeck> {
                       testHosts: widget.model.deck.analysisTestHosts,
                       onSelectionChanged:
                           widget.actions.deck.onAnalysisSelectionChanged,
+                      currentPlaybackByFileId:
+                          widget.model.deck.analysisPlaybackByFileId,
+                      onFrameSeekRequested:
+                          widget.actions.deck.onAnalysisFrameSeekRequested,
                     )
                   else
                     const SizedBox.shrink(),

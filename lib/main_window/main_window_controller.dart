@@ -346,6 +346,7 @@ class MainWindowController {
       analysisEntries: analysisCoordinator.entries,
       analysisTestHosts: analysisTestHosts,
       analysisSelection: _state.analysisSelection,
+      presentedFrameAnchors: _state.presentedFrameAnchors,
       marksSidebarVisible: _marksSidebarVisible,
       marksSidebarWidth: _marksSidebarWidth,
       fullScreen: _fullScreen,

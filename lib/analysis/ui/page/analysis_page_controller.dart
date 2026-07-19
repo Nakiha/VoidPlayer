@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../../analysis/analysis_cache.dart';
 import '../../../analysis/analysis_ffi.dart';
 import '../../../analysis/nalu_types.dart';
+import '../analysis_ui_selection.dart';
 import 'analysis_page_state.dart';
 
 class AnalysisPageController extends ChangeNotifier {
@@ -16,6 +17,7 @@ class AnalysisPageController extends ChangeNotifier {
 
   final String hash;
   final bool pollSummary;
+  final ValueChanged<int>? onFrameActivated;
 
   int _selectedTab = 0;
   bool _ptsOrder = true;
@@ -24,6 +26,7 @@ class AnalysisPageController extends ChangeNotifier {
   String _naluFilter = '';
   double _naluBrowserWidth = 300;
   int? _selectedFrameIdx;
+  int? _playbackFrameIdx;
 
   double _visibleFrameCount = 10;
   double _chartOffset = 0.0;
@@ -45,7 +48,11 @@ class AnalysisPageController extends ChangeNotifier {
   AnalysisSession? _session;
   Timer? _pollTimer;
 
-  AnalysisPageController({required this.hash, this.pollSummary = true});
+  AnalysisPageController({
+    required this.hash,
+    this.pollSummary = true,
+    this.onFrameActivated,
+  });
 
   AnalysisPageViewModel get viewModel {
     return AnalysisPageViewModel(
@@ -89,6 +96,7 @@ class AnalysisPageController extends ChangeNotifier {
       onChartPan: chartPan,
       onAxisZoom: frameTrendAxisZoom,
       onChartFrameSelected: selectChartFrame,
+      onChartFrameActivated: activateChartFrame,
       onNaluSelected: selectNalu,
       onNaluWindowRequested: requestNaluWindow,
       onChartWindowSetForTest: setChartWindowForTest,
@@ -105,6 +113,8 @@ class AnalysisPageController extends ChangeNotifier {
   AnalysisSummary? get summary => _summary;
   AnalysisCodec get codec => analysisCodecFromValue(_summary?.codec ?? 0);
   int? get selectedFrameIdx => _selectedFrameIdx;
+  int get currentFrameIdx =>
+      _playbackFrameIdx ?? _summary?.currentFrameIdx ?? -1;
   int? get selectedNaluIdx => _selectedNaluIdx;
   double get chartOffset => _chartOffset;
   double get visibleFrameCount => _visibleFrameCount;
@@ -121,8 +131,7 @@ class AnalysisPageController extends ChangeNotifier {
       : sortedPositionForFrameIdx(_selectedFrameIdx!);
 
   int get currentSortedFrameIdx {
-    final idx = _summary?.currentFrameIdx ?? -1;
-    return sortedPositionForFrameIdx(idx) ?? -1;
+    return sortedPositionForFrameIdx(currentFrameIdx) ?? -1;
   }
 
   void start() {
@@ -217,6 +226,35 @@ class AnalysisPageController extends ChangeNotifier {
       sortedIdx != null ? _originalFrameIdxAtSortedPosition(sortedIdx) : null,
     );
     notifyListeners();
+  }
+
+  void activateChartFrame(int sortedIdx) {
+    final frameIdx = _originalFrameIdxAtSortedPosition(sortedIdx);
+    if (frameIdx == null) return;
+    _selectFrame(frameIdx);
+    notifyListeners();
+    onFrameActivated?.call(frameIdx);
+  }
+
+  void setPlaybackFrameIndex(int? frameIdx) {
+    final next = frameIdx != null && frameIdx >= 0 ? frameIdx : null;
+    if (_playbackFrameIdx == next) return;
+    _playbackFrameIdx = next;
+    if (next != null) {
+      _ensureFrameWindowForIndex(next);
+    }
+    notifyListeners();
+  }
+
+  void setPlaybackPosition(AnalysisPlaybackPosition? position) {
+    var frameIdx = position?.analysisFrameIndex;
+    if (position != null && (frameIdx == null || frameIdx < 0)) {
+      frameIdx = _session?.frameIndexForTimestamp(
+        ptsUs: position.ptsUs,
+        dtsUs: position.dtsUs,
+      );
+    }
+    setPlaybackFrameIndex(frameIdx);
   }
 
   void selectNalu(int? naluIdx) {

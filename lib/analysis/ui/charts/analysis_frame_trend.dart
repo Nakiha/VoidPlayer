@@ -30,6 +30,7 @@ class AnalysisFrameTrendView extends StatefulWidget {
   onAxisZoom;
   final ValueChanged<double> onPan;
   final ValueChanged<int?> onFrameSelected;
+  final ValueChanged<int> onFrameActivated;
   final AppLocalizations l;
   const AnalysisFrameTrendView({
     super.key,
@@ -49,6 +50,7 @@ class AnalysisFrameTrendView extends StatefulWidget {
     required this.onAxisZoom,
     required this.onPan,
     required this.onFrameSelected,
+    required this.onFrameActivated,
     required this.l,
   }) : totalFrames = totalFrames ?? frames.length;
 
@@ -203,24 +205,22 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
                     behavior: HitTestBehavior.opaque,
                     excludeFromSemantics: true,
                     onTapUp: (details) {
-                      final box = chartContext.findRenderObject() as RenderBox;
-                      final localX = box
-                          .globalToLocal(details.globalPosition)
-                          .dx;
-                      final chartW = box.size.width - _frameTrendLabelW;
-                      if (chartW <= 0 || localX < _frameTrendLabelW) {
+                      final idx = _frameIndexAtPosition(
+                        chartContext,
+                        details.globalPosition,
+                      );
+                      if (idx == null) {
                         w.onFrameSelected(null);
                         return;
                       }
-                      final span = w.viewEnd - w.viewStart;
-                      final idx =
-                          (w.viewStart +
-                                  ((localX - _frameTrendLabelW) / chartW) *
-                                      span)
-                              .round()
-                              .clamp(0, w.totalFrames - 1)
-                              .toInt();
                       w.onFrameSelected(w.selectedFrameIdx == idx ? null : idx);
+                    },
+                    onDoubleTapDown: (details) {
+                      final idx = _frameIndexAtPosition(
+                        chartContext,
+                        details.globalPosition,
+                      );
+                      if (idx != null) w.onFrameActivated(idx);
                     },
                     onPanUpdate: (details) {
                       final box = chartContext.findRenderObject() as RenderBox;
@@ -267,6 +267,20 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
         ),
       ],
     );
+  }
+
+  int? _frameIndexAtPosition(BuildContext context, Offset globalPosition) {
+    final box = context.findRenderObject() as RenderBox;
+    final localX = box.globalToLocal(globalPosition).dx;
+    final chartW = box.size.width - _frameTrendLabelW;
+    if (chartW <= 0 || localX < _frameTrendLabelW || widget.totalFrames <= 0) {
+      return null;
+    }
+    final span = widget.viewEnd - widget.viewStart;
+    return (widget.viewStart + ((localX - _frameTrendLabelW) / chartW) * span)
+        .round()
+        .clamp(0, widget.totalFrames - 1)
+        .toInt();
   }
 }
 

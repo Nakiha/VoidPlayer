@@ -13,6 +13,7 @@ abstract class AnalysisTestHost {
   AnalysisCodec get analysisCodec;
   int? get selectedAnalysisFrameIdx;
   int? get selectedAnalysisNaluIdx;
+  int get currentAnalysisFrameIdx;
   double get analysisChartOffset;
   double get analysisVisibleFrameCount;
   int get analysisSelectedTab;
@@ -28,6 +29,7 @@ abstract class AnalysisTestHost {
   void setAnalysisReferencePyramidLayerModeForTest(bool useActual);
   void setAnalysisChartWindowForTest(double offset, double visibleFrameCount);
   void selectAnalysisNaluForTest(int naluIdx);
+  void activateAnalysisFrameForTest(int frameIdx);
 }
 
 class AnalysisTestHostRegistry extends ChangeNotifier {

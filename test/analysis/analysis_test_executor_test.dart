@@ -89,6 +89,9 @@ class _FakeAnalysisTestHost implements AnalysisTestHost {
   int? get selectedAnalysisNaluIdx => null;
 
   @override
+  int get currentAnalysisFrameIdx => -1;
+
+  @override
   double get analysisChartOffset => 0;
 
   @override
@@ -138,4 +141,7 @@ class _FakeAnalysisTestHost implements AnalysisTestHost {
 
   @override
   void selectAnalysisNaluForTest(int naluIdx) {}
+
+  @override
+  void activateAnalysisFrameForTest(int frameIdx) {}
 }

@@ -15,12 +15,16 @@ class AnalysisWorkspacePage extends StatefulWidget {
   final ValueListenable<List<AnalysisWorkspaceEntry>> entries;
   final AnalysisTestHostRegistry testHosts;
   final ValueChanged<AnalysisUiSelection?>? onSelectionChanged;
+  final Map<int, AnalysisPlaybackPosition> currentPlaybackByFileId;
+  final ValueChanged<AnalysisFrameSeekRequest>? onFrameSeekRequested;
 
   const AnalysisWorkspacePage({
     super.key,
     required this.entries,
     required this.testHosts,
     this.onSelectionChanged,
+    this.currentPlaybackByFileId = const {},
+    this.onFrameSeekRequested,
   });
 
   @override
@@ -155,6 +159,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         pollSummary: false,
         splitLayoutController: split ? _splitLayout : null,
         onSelectionChanged: widget.onSelectionChanged,
+        currentPlaybackPosition: widget.currentPlaybackByFileId[entry.fileId],
+        onFrameSeekRequested: widget.onFrameSeekRequested,
       );
     }
     return _AnalysisGenerationPlaceholder(entry: entry);

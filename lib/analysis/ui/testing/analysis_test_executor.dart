@@ -24,6 +24,8 @@ enum AnalysisTestCommandType {
   setChartWindow,
   selectNalu,
   assertDetailVisible,
+  activateFrame,
+  assertCurrentFrame,
 }
 
 class AnalysisTestCommand {
@@ -84,6 +86,9 @@ AnalysisTestCommand? tryParseAnalysisTestCommand(
     'SELECT_ANALYSIS_NALU' => AnalysisTestCommandType.selectNalu,
     'ASSERT_ANALYSIS_DETAIL_VISIBLE' =>
       AnalysisTestCommandType.assertDetailVisible,
+    'ACTIVATE_ANALYSIS_FRAME' => AnalysisTestCommandType.activateFrame,
+    'ASSERT_ANALYSIS_CURRENT_FRAME' =>
+      AnalysisTestCommandType.assertCurrentFrame,
     _ => null,
   };
   return type == null ? null : AnalysisTestCommand(type, args);
@@ -207,6 +212,31 @@ class AnalysisTestExecutor {
             'Expected selected NALU detail, got selected=$index '
             'window=[${host.analysisNaluIndexBase}, '
             '${host.analysisNaluIndexBase + host.analysisNalus.length})',
+          );
+        }
+      case AnalysisTestCommandType.activateFrame:
+        final frameIdx = command.intArg(0);
+        final total =
+            host.analysisSummary?.frameCount ?? host.analysisFrames.length;
+        if (frameIdx < 0 || frameIdx >= total) {
+          throw AssertionError(
+            'Analysis frame $frameIdx out of range; frames=$total',
+          );
+        }
+        if (host.sortedPositionForFrameIdx(frameIdx) == null) {
+          throw AssertionError(
+            'Analysis frame $frameIdx is not in the loaded chart window',
+          );
+        }
+        host.updateAnalysisTestState(
+          () => host.activateAnalysisFrameForTest(frameIdx),
+        );
+      case AnalysisTestCommandType.assertCurrentFrame:
+        final expected = command.intArg(0);
+        if (host.currentAnalysisFrameIdx != expected) {
+          throw AssertionError(
+            'Expected analysis current frame $expected, got '
+            '${host.currentAnalysisFrameIdx}',
           );
         }
     }

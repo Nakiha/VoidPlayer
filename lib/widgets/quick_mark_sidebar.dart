@@ -16,6 +16,7 @@ class QuickMarkSidebar extends StatefulWidget {
   final MainWindowMarksActions actions;
   final double width;
   final VoidCallback onClose;
+  final bool showInspector;
 
   const QuickMarkSidebar({
     super.key,
@@ -23,6 +24,7 @@ class QuickMarkSidebar extends StatefulWidget {
     required this.actions,
     required this.width,
     required this.onClose,
+    this.showInspector = true,
   });
 
   @override
@@ -170,7 +172,7 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
                         },
                       ),
               ),
-              if (selected != null && !selectionActive)
+              if (widget.showInspector && selected != null && !selectionActive)
                 _QuickMarkInspector(
                   mark: selected,
                   trackLabel: _trackLabel(selected.fileId),

@@ -59,6 +59,7 @@ class MainWindowViewModelFactory {
     required ValueListenable<List<AnalysisWorkspaceEntry>> analysisEntries,
     required AnalysisTestHostRegistry analysisTestHosts,
     required AnalysisUiSelection? analysisSelection,
+    required int? selectedTrackFileId,
     required Map<int, QuickMarkAnchor> presentedFrameAnchors,
     required bool marksSidebarVisible,
     required double marksSidebarWidth,
@@ -66,9 +67,16 @@ class MainWindowViewModelFactory {
     required bool fullScreenControlsVisible,
   }) {
     QuickMark? selectedMark;
+    TrackInfo? selectedTrack;
     for (final mark in markView.allMarks) {
       if (mark.id == markView.selectedMarkId) {
         selectedMark = mark;
+        break;
+      }
+    }
+    for (final entry in tracks) {
+      if (entry.fileId == selectedTrackFileId) {
+        selectedTrack = entry.info;
         break;
       }
     }
@@ -76,6 +84,8 @@ class MainWindowViewModelFactory {
         ? MainWindowQuickMarkSelection(selectedMark)
         : analysisSelection != null
         ? MainWindowAnalysisSelection(analysisSelection)
+        : selectedTrack != null
+        ? MainWindowTrackSelection(selectedTrack)
         : const MainWindowNoSelection();
     return MainWindowViewModel(
       session: MainWindowSessionVm.fromSession(session),

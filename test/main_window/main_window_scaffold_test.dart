@@ -19,6 +19,7 @@ import 'package:void_player/feedback/app_feedback.dart';
 import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/main_window/main_window_deck.dart';
 import 'package:void_player/main_window/main_window_inspector.dart';
+import 'package:void_player/main_window/main_window_list_sidebar.dart';
 import 'package:void_player/main_window/main_window_media_sections.dart';
 import 'package:void_player/main_window/main_window_overlays.dart';
 import 'package:void_player/main_window/main_window_scaffold.dart';
@@ -115,12 +116,12 @@ void main() {
       final chromeRect = tester.getRect(find.byType(PinnedPlaybackChrome));
       final deckRect = tester.getRect(find.byType(MainWindowDeck));
       final stripRect = tester.getRect(find.byKey(analysisOverlayStripKey));
-      final sidebarRect = tester.getRect(find.byType(QuickMarkSidebar));
+      final sidebarRect = tester.getRect(find.byKey(mainWindowListSidebarKey));
 
       expect(stripRect.top, greaterThanOrEqualTo(viewportRect.bottom));
       expect(chromeRect.top, greaterThanOrEqualTo(viewportRect.bottom));
       expect(deckRect.top, greaterThanOrEqualTo(chromeRect.bottom));
-      expect(stripRect.right, lessThanOrEqualTo(sidebarRect.left));
+      expect(sidebarRect.right, lessThanOrEqualTo(stripRect.left));
       expect(sidebarRect.top, lessThanOrEqualTo(viewportRect.top));
       expect(sidebarRect.bottom, greaterThanOrEqualTo(stripRect.bottom));
       expect(find.byKey(handles.analysisOverlayButtonKey), findsOneWidget);
@@ -303,6 +304,103 @@ void main() {
     expect(find.byTooltip('Select all marks'), findsOneWidget);
     expect(find.byTooltip('Cancel mark selection'), findsOneWidget);
     expect(find.byTooltip('Delete selected marks'), findsOneWidget);
+    final sidebarRect = tester.getRect(find.byKey(mainWindowListSidebarKey));
+    final viewportRect = tester.getRect(find.byType(ViewportPanel));
+    expect(sidebarRect.right, lessThanOrEqualTo(viewportRect.left));
+    expect(find.byKey(mainWindowInspectorKey), findsNothing);
+  });
+
+  testWidgets('track list selects a track from the left sidebar', (
+    tester,
+  ) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+    final selected = <int?>[];
+    const track = TrackEntry(
+      TrackInfo(
+        fileId: 17,
+        slot: 0,
+        path: r'C:\media\sample.mp4',
+        width: 1920,
+        height: 1080,
+        codecName: 'h264',
+      ),
+    );
+
+    await tester.pumpWidget(
+      _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              marksSidebarVisible: true,
+              tracks: const [track],
+            ),
+            handles: _handles(),
+            actions: _noopWithListActions(selected.add),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(mainWindowListTracksTabKey));
+    await tester.pump();
+    final row = find.byKey(const ValueKey('main-window-track-row-17'));
+    expect(
+      find.descendant(of: row, matching: find.text('sample.mp4')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: row, matching: find.text('1920 × 1080 · H264')),
+      findsOneWidget,
+    );
+
+    await tester.tap(row);
+    expect(selected, [17]);
+  });
+
+  testWidgets('track selection opens metadata in the right inspector', (
+    tester,
+  ) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+    const track = TrackInfo(
+      fileId: 17,
+      slot: 0,
+      path: r'C:\media\sample.mp4',
+      width: 1920,
+      height: 1080,
+      durationUs: 62500000,
+      bitRate: 4800000,
+      formatName: 'mov,mp4',
+      codecName: 'h264',
+      decoderName: 'd3d11va',
+    );
+
+    await tester.pumpWidget(
+      _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              tracks: const [TrackEntry(track)],
+              selection: const MainWindowTrackSelection(track),
+            ),
+            handles: _handles(),
+            actions: _noop,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(mainWindowInspectorKey), findsOneWidget);
+    expect(find.text('Track properties'), findsOneWidget);
+    expect(find.text('sample.mp4'), findsWidgets);
+    expect(find.text('mov,mp4'), findsOneWidget);
+    expect(find.text('4.80 Mbps'), findsOneWidget);
+    expect(find.byKey(mainWindowListSidebarKey), findsNothing);
   });
 
   testWidgets('analysis selection opens the shared right inspector', (
@@ -464,7 +562,7 @@ void main() {
       expect(reported.top, (viewportRect.top * devicePixelRatio).round());
       expect(reported.width, (viewportRect.width * devicePixelRatio).round());
       expect(reported.height, (viewportRect.height * devicePixelRatio).round());
-      expect(viewportRect.right, lessThanOrEqualTo(sidebarRect.left));
+      expect(sidebarRect.right, lessThanOrEqualTo(viewportRect.left));
       expect(viewportRect.bottom, lessThanOrEqualTo(timelineRect.top));
     },
   );
@@ -697,10 +795,10 @@ void main() {
     );
 
     final sidebar = find.byType(QuickMarkSidebar);
-    final splitterX = tester.getTopLeft(sidebar).dx - 4;
+    final splitterX = tester.getTopRight(sidebar).dx + 4;
     final splitterY = tester.getCenter(sidebar).dy;
     final gesture = await tester.startGesture(Offset(splitterX, splitterY));
-    await gesture.moveBy(const Offset(-24, 0));
+    await gesture.moveBy(const Offset(24, 0));
     await gesture.up();
     await tester.pump();
 
@@ -739,7 +837,7 @@ MainWindowViewModel _model({
   MainWindowDeckTab deckTab = MainWindowDeckTab.timeline,
   double deckHeight = kDefaultDeckHeight,
   bool deckCollapsed = false,
-  MainWindowSelection selection = const MainWindowNoSelection(),
+  MainWindowSelection? selection,
 }) => MainWindowViewModel(
   session: MainWindowSessionVm.fromSession(const PlaybackSession.normal()),
   viewport: MainWindowViewportVm(
@@ -809,7 +907,8 @@ MainWindowViewModel _model({
     analysisEntries: ValueNotifier(const <AnalysisWorkspaceEntry>[]),
     analysisTestHosts: AnalysisTestHostRegistry(),
   ),
-  selection: selection,
+  selection:
+      selection ?? _selectionForQuickMark(selectedQuickMarkId, quickMarks),
   overlays: MainWindowOverlayVm(
     dragging: false,
     mediaInfoVisible: false,
@@ -822,6 +921,19 @@ MainWindowViewModel _model({
     fullScreenControlsVisible: false,
   ),
 );
+
+MainWindowSelection _selectionForQuickMark(
+  int? selectedQuickMarkId,
+  List<QuickMark> quickMarks,
+) {
+  if (selectedQuickMarkId == null) return const MainWindowNoSelection();
+  for (final mark in quickMarks) {
+    if (mark.id == selectedQuickMarkId) {
+      return MainWindowQuickMarkSelection(mark);
+    }
+  }
+  return const MainWindowNoSelection();
+}
 
 QuickMark _quickMark(int id, Rect rect, {int ptsUs = 0}) {
   return QuickMark(
@@ -992,6 +1104,20 @@ MainWindowViewActions _noopWithMarkActions({
       onMarkDeleted: onMarkDeleted ?? _noop.marks.onMarkDeleted,
       onFocusVisibleMark: _noop.marks.onFocusVisibleMark,
     ),
+    mediaTimeline: _noop.mediaTimeline,
+    deck: _noop.deck,
+    analysisOverlay: _noop.analysisOverlay,
+    overlays: _noop.overlays,
+  );
+}
+
+MainWindowViewActions _noopWithListActions(ValueChanged<int?> onTrackSelected) {
+  return MainWindowViewActions(
+    drop: _noop.drop,
+    toolbar: _noop.toolbar,
+    viewport: _noop.viewport,
+    marks: _noop.marks,
+    lists: MainWindowListActions(onTrackSelected: onTrackSelected),
     mediaTimeline: _noop.mediaTimeline,
     deck: _noop.deck,
     analysisOverlay: _noop.analysisOverlay,

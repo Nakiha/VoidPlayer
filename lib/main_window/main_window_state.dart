@@ -58,6 +58,7 @@ class MainWindowStateModel {
   final QuickMark? quickMarkDraft;
   final int? selectedQuickMarkId;
   final AnalysisUiSelection? analysisSelection;
+  final int? selectedTrackFileId;
 
   const MainWindowStateModel({
     this.playerId,
@@ -98,6 +99,7 @@ class MainWindowStateModel {
     this.quickMarkDraft,
     this.selectedQuickMarkId,
     this.analysisSelection,
+    this.selectedTrackFileId,
   });
 
   MainWindowStateModel copyWith({
@@ -139,6 +141,7 @@ class MainWindowStateModel {
     Object? quickMarkDraft = _mainWindowStateUnset,
     Object? selectedQuickMarkId = _mainWindowStateUnset,
     Object? analysisSelection = _mainWindowStateUnset,
+    Object? selectedTrackFileId = _mainWindowStateUnset,
   }) {
     return MainWindowStateModel(
       playerId: playerId == _mainWindowStateUnset
@@ -203,6 +206,9 @@ class MainWindowStateModel {
       analysisSelection: analysisSelection == _mainWindowStateUnset
           ? this.analysisSelection
           : analysisSelection as AnalysisUiSelection?,
+      selectedTrackFileId: selectedTrackFileId == _mainWindowStateUnset
+          ? this.selectedTrackFileId
+          : selectedTrackFileId as int?,
     );
   }
 }
@@ -262,6 +268,7 @@ class MainWindowStateStore extends ChangeNotifier {
         quickMarkDraft: null,
         selectedQuickMarkId: null,
         analysisSelection: null,
+        selectedTrackFileId: null,
         loopRangeEnabled: false,
         nativeLoopRangeSynced: false,
         startupLoopRangeApplied: false,
@@ -460,20 +467,25 @@ class MainWindowStateStore extends ChangeNotifier {
 
   void setSelectedQuickMarkId(int? id) {
     if (_value.selectedQuickMarkId == id &&
-        (id == null || _value.analysisSelection == null)) {
+        (id == null ||
+            (_value.analysisSelection == null &&
+                _value.selectedTrackFileId == null))) {
       return;
     }
     _set(
       _value.copyWith(
         selectedQuickMarkId: id,
         analysisSelection: id == null ? _value.analysisSelection : null,
+        selectedTrackFileId: id == null ? _value.selectedTrackFileId : null,
       ),
     );
   }
 
   void setAnalysisSelection(AnalysisUiSelection? selection) {
     if (_value.analysisSelection?.identity == selection?.identity &&
-        _value.selectedQuickMarkId == null) {
+        (selection == null ||
+            (_value.selectedQuickMarkId == null &&
+                _value.selectedTrackFileId == null))) {
       return;
     }
     _set(
@@ -482,6 +494,25 @@ class MainWindowStateStore extends ChangeNotifier {
             ? _value.selectedQuickMarkId
             : null,
         analysisSelection: selection,
+        selectedTrackFileId: selection == null
+            ? _value.selectedTrackFileId
+            : null,
+      ),
+    );
+  }
+
+  void setSelectedTrackFileId(int? fileId) {
+    if (_value.selectedTrackFileId == fileId &&
+        (fileId == null ||
+            (_value.selectedQuickMarkId == null &&
+                _value.analysisSelection == null))) {
+      return;
+    }
+    _set(
+      _value.copyWith(
+        selectedQuickMarkId: fileId == null ? _value.selectedQuickMarkId : null,
+        analysisSelection: fileId == null ? _value.analysisSelection : null,
+        selectedTrackFileId: fileId,
       ),
     );
   }

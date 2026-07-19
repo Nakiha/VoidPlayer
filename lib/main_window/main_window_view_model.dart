@@ -226,6 +226,7 @@ class MainWindowViewActions {
   final MainWindowToolbarActions toolbar;
   final MainWindowViewportActions viewport;
   final MainWindowMarksActions marks;
+  final MainWindowListActions? lists;
   final MainWindowMediaTimelineActions mediaTimeline;
   final MainWindowDeckActions deck;
   final MainWindowAnalysisOverlayActions analysisOverlay;
@@ -236,11 +237,18 @@ class MainWindowViewActions {
     required this.toolbar,
     required this.viewport,
     required this.marks,
+    this.lists,
     required this.mediaTimeline,
     required this.deck,
     required this.analysisOverlay,
     required this.overlays,
   });
+}
+
+class MainWindowListActions {
+  final ValueChanged<int?> onTrackSelected;
+
+  const MainWindowListActions({required this.onTrackSelected});
 }
 
 class MainWindowDeckActions {

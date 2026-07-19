@@ -1,5 +1,6 @@
 import '../analysis/ui/analysis_ui_selection.dart';
 import '../marks/quick_mark.dart';
+import '../video_renderer_controller.dart';
 
 sealed class MainWindowSelection {
   const MainWindowSelection();
@@ -21,4 +22,10 @@ final class MainWindowAnalysisSelection extends MainWindowSelection {
   final AnalysisUiSelection selection;
 
   const MainWindowAnalysisSelection(this.selection);
+}
+
+final class MainWindowTrackSelection extends MainWindowSelection {
+  final TrackInfo track;
+
+  const MainWindowTrackSelection(this.track);
 }

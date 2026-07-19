@@ -8,12 +8,12 @@ import '../platform/pointer_button_state_provider.dart';
 import '../viewport/viewport_display_state.dart';
 import '../widgets/app_feedback_host.dart';
 import '../widgets/axtree_region.dart';
-import '../widgets/quick_mark_sidebar.dart';
 import '../widgets/resizable_divider.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/viewport_panel.dart';
 import 'main_window_deck.dart';
 import 'main_window_inspector.dart';
+import 'main_window_list_sidebar.dart';
 import 'main_window_media_sections.dart';
 import 'main_window_overlays.dart';
 import 'main_window_state.dart';
@@ -44,7 +44,8 @@ class MainWindowScaffold extends StatelessWidget {
     final viewportActions = actions.viewport;
     final overlayActions = actions.overlays;
     final inspectorVisible = !model.selection.isEmpty;
-    final rightPanelVisible = inspectorVisible || overlays.marksSidebarVisible;
+    final leftPanelVisible = overlays.marksSidebarVisible;
+    final rightPanelVisible = inspectorVisible;
     final nativeCompositor = NativeCompositorFlags.nativeCompositor;
     final nativeCompositorViewportActive =
         nativeCompositor &&
@@ -54,6 +55,7 @@ class MainWindowScaffold extends StatelessWidget {
     if (overlays.settingsVisible ||
         overlays.mediaInfoVisible ||
         overlays.profilerVisible ||
+        leftPanelVisible ||
         rightPanelVisible) {
       log.fine(
         '[NativeCompositorDebug] scaffold overlay build '
@@ -61,6 +63,7 @@ class MainWindowScaffold extends StatelessWidget {
         'settings=${overlays.settingsVisible} '
         'mediaInfo=${overlays.mediaInfoVisible} '
         'profiler=${overlays.profilerVisible} '
+        'leftPanel=$leftPanelVisible '
         'rightPanel=$rightPanelVisible',
       );
     }
@@ -143,6 +146,17 @@ class MainWindowScaffold extends StatelessWidget {
                     children: [
                       Row(
                         children: [
+                          if (leftPanelVisible)
+                            _NativeCompositorOpaqueRegion(
+                              enabled: nativeCompositorViewportActive,
+                              color: shellBackgroundColor,
+                              child: MainWindowListSidebar(
+                                width: overlays.marksSidebarWidth,
+                                model: model,
+                                actions: actions,
+                                onClose: overlayActions.onCloseMarksSidebar,
+                              ),
+                            ),
                           Expanded(
                             child: Column(
                               children: [
@@ -224,29 +238,29 @@ class MainWindowScaffold extends StatelessWidget {
                             _NativeCompositorOpaqueRegion(
                               enabled: nativeCompositorViewportActive,
                               color: shellBackgroundColor,
-                              child: inspectorVisible
-                                  ? MainWindowInspector(
-                                      width: overlays.marksSidebarWidth,
-                                      selection: model.selection,
-                                      marks: model.marks,
-                                      markActions: actions.marks,
-                                      onClose: () => overlayActions
-                                          .onCloseInspector
-                                          ?.call(),
-                                    )
-                                  : QuickMarkSidebar(
-                                      width: overlays.marksSidebarWidth,
-                                      marks: model.marks,
-                                      actions: actions.marks,
-                                      onClose:
-                                          overlayActions.onCloseMarksSidebar,
-                                    ),
+                              child: MainWindowInspector(
+                                width: overlays.marksSidebarWidth,
+                                selection: model.selection,
+                                marks: model.marks,
+                                media: model.media,
+                                markActions: actions.marks,
+                                onClose: () =>
+                                    overlayActions.onCloseInspector?.call(),
+                              ),
                             ),
                         ],
                       ),
-                      if (rightPanelVisible)
-                        _MarksSidebarResizeHandle(
+                      if (leftPanelVisible)
+                        _SidebarResizeHandle(
                           width: overlays.marksSidebarWidth,
+                          fromLeft: true,
+                          onWidthChanged:
+                              overlayActions.onMarksSidebarWidthChanged,
+                        ),
+                      if (rightPanelVisible)
+                        _SidebarResizeHandle(
+                          width: overlays.marksSidebarWidth,
+                          fromLeft: false,
                           onWidthChanged:
                               overlayActions.onMarksSidebarWidthChanged,
                         ),
@@ -299,12 +313,14 @@ class MainWindowScaffold extends StatelessWidget {
   }
 }
 
-class _MarksSidebarResizeHandle extends StatelessWidget {
+class _SidebarResizeHandle extends StatelessWidget {
   final double width;
+  final bool fromLeft;
   final ValueChanged<double> onWidthChanged;
 
-  const _MarksSidebarResizeHandle({
+  const _SidebarResizeHandle({
     required this.width,
+    required this.fromLeft,
     required this.onWidthChanged,
   });
 
@@ -316,7 +332,8 @@ class _MarksSidebarResizeHandle extends StatelessWidget {
         children: [
           Positioned(
             top: 0,
-            right: width,
+            left: fromLeft ? width : null,
+            right: fromLeft ? null : width,
             bottom: 0,
             width: 1,
             child: ExcludeSemantics(
@@ -325,7 +342,8 @@ class _MarksSidebarResizeHandle extends StatelessWidget {
           ),
           Positioned(
             top: 0,
-            right: width - kMarksSidebarResizeHandleWidth / 2,
+            left: fromLeft ? width - kMarksSidebarResizeHandleWidth / 2 : null,
+            right: fromLeft ? null : width - kMarksSidebarResizeHandleWidth / 2,
             bottom: 0,
             width: kMarksSidebarResizeHandleWidth,
             child: ExcludeSemantics(
@@ -334,7 +352,7 @@ class _MarksSidebarResizeHandle extends StatelessWidget {
                 value: width,
                 minValue: kMinMarksSidebarWidth,
                 maxValue: kMaxMarksSidebarWidth,
-                deltaScale: -1,
+                deltaScale: fromLeft ? 1 : -1,
                 onValueChanged: onWidthChanged,
               ),
             ),

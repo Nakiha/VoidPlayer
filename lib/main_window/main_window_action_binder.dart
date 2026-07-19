@@ -188,6 +188,9 @@ extension MainWindowViewActionBinding on MainWindowController {
         onMarkDeleted: quickMarkCoordinator.delete,
         onFocusVisibleMark: quickMarkCoordinator.focus,
       ),
+      lists: MainWindowListActions(
+        onTrackSelected: stateStore.setSelectedTrackFileId,
+      ),
       mediaTimeline: MainWindowMediaTimelineActions(
         onMediaSwapped: (slotIndex, targetTrackIndex) {
           if (!_capabilities.canReorderTrack) return;
@@ -314,8 +317,10 @@ extension MainWindowViewActionBinding on MainWindowController {
         onCloseInspector: () {
           if (_state.selectedQuickMarkId != null) {
             quickMarkCoordinator.select(null);
-          } else {
+          } else if (_state.analysisSelection != null) {
             stateStore.setAnalysisSelection(null);
+          } else {
+            stateStore.setSelectedTrackFileId(null);
           }
         },
         onMarksSidebarWidthChanged: layoutCoordinator.setMarksSidebarWidth,

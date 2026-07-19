@@ -123,7 +123,7 @@ void main() {
     expect(notifications, 3);
   });
 
-  test('analysis and quick-mark selection are mutually exclusive', () {
+  test('mark, analysis, and track selections are mutually exclusive', () {
     final store = MainWindowStateStore();
     addTearDown(store.dispose);
     final selection = AnalysisNaluSelection(
@@ -148,6 +148,19 @@ void main() {
     store.setSelectedQuickMarkId(4);
     expect(store.value.selectedQuickMarkId, 4);
     expect(store.value.analysisSelection, isNull);
+
+    store.setSelectedTrackFileId(9);
+    expect(store.value.selectedTrackFileId, 9);
+    expect(store.value.selectedQuickMarkId, isNull);
+    expect(store.value.analysisSelection, isNull);
+
+    store.setAnalysisSelection(selection);
+    expect(store.value.analysisSelection, same(selection));
+    expect(store.value.selectedTrackFileId, isNull);
+
+    store.setSelectedQuickMarkId(4);
+    expect(store.value.selectedQuickMarkId, 4);
+    expect(store.value.selectedTrackFileId, isNull);
   });
 
   test('seek preview clears stale presented frame anchors', () {

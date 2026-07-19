@@ -4,6 +4,8 @@ import '../analysis/ui/analysis_ui_selection.dart';
 import '../analysis/ui/page/analysis_page_view.dart';
 import '../analysis/ui/widgets/analysis_nalu.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/time_format.dart';
+import '../video_renderer_controller.dart';
 import '../widgets/quick_mark_sidebar.dart';
 import 'main_window_selection.dart';
 import 'main_window_view_model.dart';
@@ -15,6 +17,7 @@ class MainWindowInspector extends StatelessWidget {
   final double width;
   final MainWindowSelection selection;
   final MainWindowMarksVm marks;
+  final MainWindowMediaVm media;
   final MainWindowMarksActions markActions;
   final VoidCallback onClose;
 
@@ -23,6 +26,7 @@ class MainWindowInspector extends StatelessWidget {
     required this.width,
     required this.selection,
     required this.marks,
+    required this.media,
     required this.markActions,
     required this.onClose,
   });
@@ -87,6 +91,7 @@ class MainWindowInspector extends StatelessWidget {
       MainWindowAnalysisSelection(selection: AnalysisNaluSelection()) =>
         l.analysisNaluDetail,
       MainWindowAnalysisSelection() => l.analysisFrameInfo,
+      MainWindowTrackSelection() => l.mainWindowTrackProperties,
       MainWindowNoSelection() => '',
     };
   }
@@ -114,6 +119,11 @@ class MainWindowInspector extends StatelessWidget {
         selection: final AnalysisFrameSelection selected,
       ) =>
         _AnalysisFrameInspector(selection: selected),
+      MainWindowTrackSelection(:final track) => _TrackInspector(
+        track: track,
+        syncOffsetUs: media.syncOffsets[track.fileId] ?? 0,
+        audible: media.audibleTrackFileId == track.fileId,
+      ),
       MainWindowNoSelection() => const SizedBox.shrink(),
     };
   }
@@ -126,6 +136,99 @@ class MainWindowInspector extends StatelessWidget {
       context,
     )!.quickMarkSidebarTrackLabel(track.slot + 1);
     return '$label${name.isEmpty ? '' : ' · $name'}';
+  }
+}
+
+class _TrackInspector extends StatelessWidget {
+  final TrackInfo track;
+  final int syncOffsetUs;
+  final bool audible;
+
+  const _TrackInspector({
+    required this.track,
+    required this.syncOffsetUs,
+    required this.audible,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final labelStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    );
+    final valueStyle = Theme.of(context).textTheme.bodySmall;
+    final name = track.path.split(RegExp(r'[/\\]')).last;
+    final rows = <(String, String)>[
+      ('File', name.isEmpty ? track.path : name),
+      ('Path', track.path),
+      ('Track', '${track.slot + 1}'),
+      ('Resolution', '${track.width} × ${track.height}'),
+      ('Format', _fallback(track.formatName)),
+      ('Codec', _codecLabel(track)),
+      ('Decoder', _fallback(track.decoderName)),
+      ('Duration', formatTimePad2(track.durationUs)),
+      ('Start time', formatTimePad2(track.startTimeUs)),
+      ('Bitrate', _bitrateLabel(track.bitRate)),
+      ('Sync offset', _signedMilliseconds(syncOffsetUs)),
+      ('Audio', audible ? 'Playing' : 'Muted'),
+      ('Color range', '${track.colorRange}'),
+      ('Color matrix', '${track.colorMatrix}'),
+      ('Color transfer', '${track.colorTransfer}'),
+      ('Color primaries', '${track.colorPrimaries}'),
+    ];
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            name.isEmpty
+                ? AppLocalizations.of(
+                    context,
+                  )!.quickMarkSidebarTrackLabel(track.slot + 1)
+                : name,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 10),
+          for (final row in rows)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: 96, child: Text(row.$1, style: labelStyle)),
+                  Expanded(child: SelectableText(row.$2, style: valueStyle)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  static String _fallback(String value) => value.trim().isEmpty ? '—' : value;
+
+  static String _codecLabel(TrackInfo track) {
+    final short = track.codecName.trim();
+    final long = track.codecLongName.trim();
+    if (short.isEmpty) return _fallback(long);
+    if (long.isEmpty || long.toLowerCase() == short.toLowerCase()) return short;
+    return '$short · $long';
+  }
+
+  static String _bitrateLabel(int bitRate) {
+    if (bitRate <= 0) return '—';
+    if (bitRate >= 1000000) {
+      return '${(bitRate / 1000000).toStringAsFixed(2)} Mbps';
+    }
+    return '${(bitRate / 1000).toStringAsFixed(0)} kbps';
+  }
+
+  static String _signedMilliseconds(int microseconds) {
+    final milliseconds = microseconds / 1000;
+    final sign = milliseconds > 0 ? '+' : '';
+    return '$sign${milliseconds.toStringAsFixed(1)} ms';
   }
 }
 

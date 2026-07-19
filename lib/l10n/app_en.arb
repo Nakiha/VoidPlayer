@@ -784,6 +784,14 @@
 
   "quickMarkSidebarTitle": "Marks",
   "@quickMarkSidebarTitle": { "description": "Quick mark sidebar title" },
+  "mainWindowListMarks": "Marks",
+  "@mainWindowListMarks": { "description": "Marks tab in the main-window list sidebar" },
+  "mainWindowListTracks": "Tracks",
+  "@mainWindowListTracks": { "description": "Tracks tab in the main-window list sidebar" },
+  "mainWindowListNoTracks": "No tracks open",
+  "@mainWindowListNoTracks": { "description": "Empty state for the main-window track list" },
+  "mainWindowTrackProperties": "Track properties",
+  "@mainWindowTrackProperties": { "description": "Title of the selected track inspector" },
 
   "quickMarkSidebarSearchHint": "Search annotation, time, track...",
   "@quickMarkSidebarSearchHint": { "description": "Quick mark sidebar search field hint" },

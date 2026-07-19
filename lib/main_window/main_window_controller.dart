@@ -346,6 +346,7 @@ class MainWindowController {
       analysisEntries: analysisCoordinator.entries,
       analysisTestHosts: analysisTestHosts,
       analysisSelection: _state.analysisSelection,
+      selectedTrackFileId: _state.selectedTrackFileId,
       presentedFrameAnchors: _state.presentedFrameAnchors,
       marksSidebarVisible: _marksSidebarVisible,
       marksSidebarWidth: _marksSidebarWidth,
@@ -370,6 +371,13 @@ class MainWindowController {
   }
 
   void _onTrackManagerChanged() {
+    final selectedTrackFileId = _state.selectedTrackFileId;
+    if (selectedTrackFileId != null &&
+        !trackManager.entries.any(
+          (entry) => entry.fileId == selectedTrackFileId,
+        )) {
+      stateStore.setSelectedTrackFileId(null);
+    }
     stateStore.setLayout(_layout.copyWith(order: trackManager.order));
     layoutCoordinator.onTrackSetChanged();
     layoutCoordinator.markLayoutDirty();

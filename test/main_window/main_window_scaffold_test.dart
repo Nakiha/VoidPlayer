@@ -7,6 +7,7 @@ import 'package:void_player/analysis/analysis_cache.dart';
 import 'package:void_player/analysis/analysis_ffi.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/analysis/analysis_overlay.dart';
+import 'package:void_player/analysis/analysis_quality_service.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
 import 'package:void_player/analysis/nalu_types.dart';
 import 'package:void_player/analysis/ui/analysis_ui_selection.dart';
@@ -22,6 +23,7 @@ import 'package:void_player/main_window/main_window_inspector.dart';
 import 'package:void_player/main_window/main_window_list_sidebar.dart';
 import 'package:void_player/main_window/main_window_media_sections.dart';
 import 'package:void_player/main_window/main_window_overlays.dart';
+import 'package:void_player/main_window/main_window_quality.dart';
 import 'package:void_player/main_window/main_window_scaffold.dart';
 import 'package:void_player/main_window/main_window_selection.dart';
 import 'package:void_player/main_window/main_window_state.dart';
@@ -235,6 +237,75 @@ void main() {
         find.byKey(const ValueKey('main-window-deck-tab-timeline')),
       );
       expect(selected, [MainWindowDeckTab.timeline]);
+    },
+  );
+
+  testWidgets(
+    'quality deck analyzes proxies, seeks samples, and requests metric marks',
+    (tester) async {
+      final feedback = AppFeedbackController();
+      addTearDown(feedback.dispose);
+      final seeks = <(int, int)>[];
+      final markRequests = <MainWindowQualityMarkRequest>[];
+      const mediaTrack = TrackEntry(
+        TrackInfo(
+          fileId: 7,
+          slot: 0,
+          path: 'quality.mp4',
+          width: 1920,
+          height: 1080,
+        ),
+      );
+
+      await tester.pumpWidget(
+        _localized(
+          AppFeedbackScope(
+            controller: feedback,
+            child: MainWindowScaffold(
+              model: _model(
+                settingsVisible: false,
+                tracks: const [mediaTrack],
+                deckTab: MainWindowDeckTab.quality,
+                qualityDataSource: const _FakeQualityDataSource(),
+              ),
+              handles: _handles(),
+              actions: _actionsWithDeck(
+                onQualitySeekRequested: (fileId, ptsUs) {
+                  seeks.add((fileId, ptsUs));
+                },
+                onQualityMarksRequested: (request) async {
+                  markRequests.add(request);
+                  return 1;
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Quality'), findsOneWidget);
+      expect(find.textContaining('experimental no-reference'), findsOneWidget);
+
+      await tester.tap(find.byKey(mainWindowQualityAnalyzeButtonKey));
+      await tester.pump();
+
+      expect(find.byKey(mainWindowQualityChartKey), findsOneWidget);
+      expect(find.textContaining('3 samples'), findsOneWidget);
+      expect(find.textContaining('p95 0.300'), findsOneWidget);
+      expect(find.text('Create 1 mark'), findsOneWidget);
+
+      final chartRect = tester.getRect(find.byKey(mainWindowQualityChartKey));
+      await tester.tapAt(Offset(chartRect.right - 2, chartRect.center.dy));
+      await tester.pump();
+      expect(seeks, [(7, 2000000)]);
+
+      await tester.tap(find.byKey(mainWindowQualityCreateMarksButtonKey));
+      await tester.pump();
+      expect(markRequests, hasLength(1));
+      expect(markRequests.single.fileId, 7);
+      expect(markRequests.single.metric, AnalysisQualityMetric.blockiness);
+      expect(markRequests.single.threshold, closeTo(0.3, 0.0001));
+      expect(find.textContaining('Created 1 metric mark'), findsOneWidget);
     },
   );
 
@@ -838,6 +909,7 @@ MainWindowViewModel _model({
   double deckHeight = kDefaultDeckHeight,
   bool deckCollapsed = false,
   MainWindowSelection? selection,
+  AnalysisQualityDataSource? qualityDataSource,
 }) => MainWindowViewModel(
   session: MainWindowSessionVm.fromSession(const PlaybackSession.normal()),
   viewport: MainWindowViewportVm(
@@ -906,6 +978,8 @@ MainWindowViewModel _model({
     collapsed: deckCollapsed,
     analysisEntries: ValueNotifier(const <AnalysisWorkspaceEntry>[]),
     analysisTestHosts: AnalysisTestHostRegistry(),
+    qualityDataSource:
+        qualityDataSource ?? const NativeAnalysisQualityService(),
   ),
   selection:
       selection ?? _selectionForQuickMark(selectedQuickMarkId, quickMarks),
@@ -1031,6 +1105,9 @@ MainWindowViewActions _actionsWithDeck({
   ValueChanged<MainWindowDeckTab>? onTabChanged,
   ValueChanged<double>? onHeightChanged,
   ValueChanged<bool>? onCollapsedChanged,
+  void Function(int fileId, int trackPtsUs)? onQualitySeekRequested,
+  Future<int> Function(MainWindowQualityMarkRequest request)?
+  onQualityMarksRequested,
 }) {
   return MainWindowViewActions(
     drop: _noop.drop,
@@ -1042,10 +1119,97 @@ MainWindowViewActions _actionsWithDeck({
       onTabChanged: onTabChanged ?? _noop.deck.onTabChanged,
       onHeightChanged: onHeightChanged ?? _noop.deck.onHeightChanged,
       onCollapsedChanged: onCollapsedChanged ?? _noop.deck.onCollapsedChanged,
+      onQualitySeekRequested: onQualitySeekRequested,
+      onQualityMarksRequested: onQualityMarksRequested,
     ),
     analysisOverlay: _noop.analysisOverlay,
     overlays: _noop.overlays,
   );
+}
+
+class _FakeQualityDataSource implements AnalysisQualityDataSource {
+  const _FakeQualityDataSource();
+
+  @override
+  Future<AnalysisQualityReport> analyze(AnalysisQualityRequest request) async {
+    return const AnalysisQualityReport(
+      schemaVersion: 4,
+      videoWidth: 1920,
+      videoHeight: 1080,
+      bitDepth: 8,
+      sampleIntervalUs: 1000000,
+      maxSamples: 600,
+      truncated: false,
+      unsupportedPixelFrames: 0,
+      distributions: {
+        AnalysisQualityMetric.blockiness: AnalysisQualityDistribution(
+          count: 3,
+          mean: 0.2,
+          p95: 0.3,
+          maximum: 0.4,
+        ),
+        AnalysisQualityMetric.banding: AnalysisQualityDistribution(
+          count: 3,
+          mean: 0.1,
+          p95: 0.2,
+          maximum: 0.25,
+        ),
+        AnalysisQualityMetric.blur: AnalysisQualityDistribution(
+          count: 3,
+          mean: 0.1,
+          p95: 0.2,
+          maximum: 0.25,
+        ),
+        AnalysisQualityMetric.noise: AnalysisQualityDistribution(
+          count: 3,
+          mean: 0.1,
+          p95: 0.2,
+          maximum: 0.25,
+        ),
+        AnalysisQualityMetric.flicker: AnalysisQualityDistribution(
+          count: 2,
+          mean: 0.1,
+          p95: 0.2,
+          maximum: 0.25,
+        ),
+      },
+      samples: [
+        AnalysisQualitySample(
+          sampleIndex: 0,
+          decodedFrameIndex: 0,
+          ptsUs: 0,
+          blockiness: 0.1,
+          banding: 0.1,
+          blur: 0.1,
+          noise: 0.1,
+          flicker: null,
+          averageQp: null,
+        ),
+        AnalysisQualitySample(
+          sampleIndex: 1,
+          decodedFrameIndex: 30,
+          ptsUs: 1000000,
+          blockiness: 0.2,
+          banding: 0.1,
+          blur: 0.1,
+          noise: 0.1,
+          flicker: 0.1,
+          averageQp: null,
+        ),
+        AnalysisQualitySample(
+          sampleIndex: 2,
+          decodedFrameIndex: 60,
+          ptsUs: 2000000,
+          blockiness: 0.4,
+          banding: 0.2,
+          blur: 0.2,
+          noise: 0.2,
+          flicker: 0.2,
+          averageQp: null,
+        ),
+      ],
+    );
+  }
 }
 
 MainWindowViewActions _actionsWithViewportRect(

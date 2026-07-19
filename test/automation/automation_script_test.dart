@@ -581,6 +581,21 @@ void main() {
     );
   });
 
+  test('parses CLICK_MAIN_WINDOW_QUALITY_ANALYZE', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_quality_analyze_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync('0.1,CLICK_MAIN_WINDOW_QUALITY_ANALYZE\n');
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(instructions, hasLength(1));
+    expect(instructions.single, isA<ScriptClickMainWindowQualityAnalyze>());
+  });
+
   test('parses native shortcut tracing actions', () {
     final file = File(
       '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_native_shortcut_script_test.csv',

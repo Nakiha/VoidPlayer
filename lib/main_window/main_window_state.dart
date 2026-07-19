@@ -17,7 +17,7 @@ const double kDefaultDeckHeight = 260.0;
 const double kMinDeckHeight = 180.0;
 const double kMaxDeckHeight = 440.0;
 
-enum MainWindowDeckTab { timeline, analysis }
+enum MainWindowDeckTab { timeline, analysis, quality }
 
 class MainWindowStateModel {
   final int? playerId;

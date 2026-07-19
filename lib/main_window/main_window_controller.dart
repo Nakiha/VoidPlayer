@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../actions/action_registry.dart';
 import '../agent/agent_protocol_server.dart';
 import '../analysis/analysis_manager.dart';
+import '../analysis/analysis_quality_service.dart';
 import '../analysis/analysis_toolbar_data_source.dart';
 import '../analysis/ui/testing/analysis_test_host.dart';
 import '../app_log.dart';
@@ -56,6 +57,7 @@ class MainWindowController {
   final NativeFilePicker nativeFilePicker;
   final AnalysisGenerationService analysisGeneration;
   final AnalysisToolbarDataSource analysisToolbarDataSource;
+  final AnalysisQualityDataSource qualityDataSource;
   final AppSettingsRepository appSettings;
   final PlaybackPreferences playbackPreferences;
   final QuickMarkRepository quickMarkRepository;
@@ -121,6 +123,7 @@ class MainWindowController {
     NativeFilePicker? nativeFilePicker,
     AnalysisGenerationService? analysisGeneration,
     AnalysisToolbarDataSource? analysisToolbarDataSource,
+    AnalysisQualityDataSource? qualityDataSource,
     AppSettingsRepository? appSettings,
     PlaybackPreferences? playbackPreferences,
     QuickMarkRepository? quickMarkRepository,
@@ -140,6 +143,8 @@ class MainWindowController {
              settings:
                  appSettings ?? AppConfigSettingsRepository(AppConfig.instance),
            ),
+       qualityDataSource =
+           qualityDataSource ?? const NativeAnalysisQualityService(),
        playbackPreferences =
            playbackPreferences ??
            AppConfigPlaybackPreferences(
@@ -345,6 +350,7 @@ class MainWindowController {
       deckCollapsed: _state.deckCollapsed,
       analysisEntries: analysisCoordinator.entries,
       analysisTestHosts: analysisTestHosts,
+      qualityDataSource: qualityDataSource,
       analysisSelection: _state.analysisSelection,
       selectedTrackFileId: _state.selectedTrackFileId,
       presentedFrameAnchors: _state.presentedFrameAnchors,

@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../analysis/analysis_ffi.dart';
 import '../analysis/analysis_overlay.dart';
+import '../analysis/analysis_quality_service.dart';
 import '../analysis/analysis_toolbar_data_source.dart';
 import '../analysis/ui/analysis_ui_selection.dart';
 import '../analysis/ui/testing/analysis_test_host.dart';
@@ -52,6 +54,7 @@ class MainWindowDeckVm {
   final ValueListenable<List<AnalysisWorkspaceEntry>> analysisEntries;
   final AnalysisTestHostRegistry analysisTestHosts;
   final Map<int, AnalysisPlaybackPosition> analysisPlaybackByFileId;
+  final AnalysisQualityDataSource qualityDataSource;
 
   const MainWindowDeckVm({
     required this.tab,
@@ -60,6 +63,21 @@ class MainWindowDeckVm {
     required this.analysisEntries,
     required this.analysisTestHosts,
     this.analysisPlaybackByFileId = const {},
+    this.qualityDataSource = const NativeAnalysisQualityService(),
+  });
+}
+
+class MainWindowQualityMarkRequest {
+  final int fileId;
+  final AnalysisQualityMetric metric;
+  final double threshold;
+  final AnalysisQualityReport report;
+
+  const MainWindowQualityMarkRequest({
+    required this.fileId,
+    required this.metric,
+    required this.threshold,
+    required this.report,
   });
 }
 
@@ -257,6 +275,9 @@ class MainWindowDeckActions {
   final ValueChanged<bool> onCollapsedChanged;
   final ValueChanged<AnalysisUiSelection?>? onAnalysisSelectionChanged;
   final ValueChanged<AnalysisFrameSeekRequest>? onAnalysisFrameSeekRequested;
+  final void Function(int fileId, int trackPtsUs)? onQualitySeekRequested;
+  final Future<int> Function(MainWindowQualityMarkRequest request)?
+  onQualityMarksRequested;
 
   const MainWindowDeckActions({
     required this.onTabChanged,
@@ -264,6 +285,8 @@ class MainWindowDeckActions {
     required this.onCollapsedChanged,
     this.onAnalysisSelectionChanged,
     this.onAnalysisFrameSeekRequested,
+    this.onQualitySeekRequested,
+    this.onQualityMarksRequested,
   });
 }
 

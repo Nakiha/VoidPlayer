@@ -50,6 +50,8 @@
   "@deckTimelineTab": { "description": "Main window bottom deck timeline tab label" },
   "deckAnalysisTab": "Analysis",
   "@deckAnalysisTab": { "description": "Main window bottom deck analysis tab label" },
+  "deckQualityTab": "Quality",
+  "@deckQualityTab": { "description": "Main window bottom deck quality tab label" },
 
   "sideBySide": "Side by Side",
   "@sideBySide": { "description": "View mode: side by side" },

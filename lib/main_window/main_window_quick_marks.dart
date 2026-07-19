@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
+import '../analysis/analysis_ffi.dart';
 import '../app_log.dart';
 import '../app_paths.dart';
 import '../marks/quick_mark.dart';
@@ -313,6 +314,32 @@ class MainWindowQuickMarkCoordinator {
         ),
       ),
     );
+  }
+
+  int addMetricMarks({
+    required int fileId,
+    required AnalysisQualityMetric metric,
+    required double threshold,
+    required AnalysisQualityReport report,
+  }) {
+    if (!trackManager.entries.any((entry) => entry.fileId == fileId)) {
+      return 0;
+    }
+    final candidates = buildQualityMetricMarks(
+      existingMarks: _quickMarks,
+      fileId: fileId,
+      metric: metric,
+      threshold: threshold,
+      report: report,
+    );
+    var nextStore = store;
+    for (final candidate in candidates) {
+      nextStore = nextStore.add(candidate);
+    }
+    if (candidates.isNotEmpty) {
+      _applyStore(nextStore);
+    }
+    return candidates.length;
   }
 
   int get markCount => _quickMarks.length;
@@ -939,3 +966,63 @@ String _quickMarkAnchorTrace(QuickMarkAnchor anchor) =>
     'afi=${anchor.analysisFrameIndex},mode=${anchor.frameIdentityMode},'
     'spi=${anchor.sourcePacketIndex},sps=${anchor.sourcePacketSize},'
     'spp=${anchor.sourcePacketPos}';
+
+String _qualityMetricDefectType(AnalysisQualityMetric metric) =>
+    switch (metric) {
+      AnalysisQualityMetric.blockiness => QuickMarkDefectTypes.blocking,
+      AnalysisQualityMetric.banding => QuickMarkDefectTypes.banding,
+      AnalysisQualityMetric.blur => QuickMarkDefectTypes.blur,
+      AnalysisQualityMetric.noise => 'noise',
+      AnalysisQualityMetric.flicker => QuickMarkDefectTypes.flicker,
+    };
+
+List<QuickMark> buildQualityMetricMarks({
+  required List<QuickMark> existingMarks,
+  required int fileId,
+  required AnalysisQualityMetric metric,
+  required double threshold,
+  required AnalysisQualityReport report,
+}) {
+  final existingPtsUs = {
+    for (final mark in existingMarks)
+      if (mark.fileId == fileId &&
+          mark.origin == QuickMarkOrigin.metric &&
+          mark.attributes['metric'] == metric.name)
+        mark.ptsUs,
+  };
+  final candidates = <QuickMark>[];
+  for (final sample in report.samples) {
+    final value = sample.valueFor(metric);
+    if (value == null ||
+        value < threshold ||
+        existingPtsUs.contains(sample.ptsUs)) {
+      continue;
+    }
+    candidates.add(
+      QuickMark(
+        id: 0,
+        anchor: QuickMarkAnchor(
+          fileId: fileId,
+          ptsUs: sample.ptsUs,
+          dtsUs: sample.ptsUs,
+        ),
+        sourceRect: const Rect.fromLTWH(0, 0, 1, 1),
+        color: const Color(0xFFFFA726),
+        text: 'Quality: ${metric.name} ${value.toStringAsFixed(3)}',
+        syncAcrossTracks: false,
+        origin: QuickMarkOrigin.metric,
+        defectType: _qualityMetricDefectType(metric),
+        attributes: {
+          'metric': metric.name,
+          'value': value,
+          'threshold': threshold,
+          'sampleIndex': sample.sampleIndex,
+          'decodedFrameIndex': sample.decodedFrameIndex,
+          'schemaVersion': report.schemaVersion,
+        },
+      ),
+    );
+    existingPtsUs.add(sample.ptsUs);
+  }
+  return List.unmodifiable(candidates);
+}

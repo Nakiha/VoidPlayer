@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart' as wm;
 import '../app_log.dart';
 import '../l10n/app_localizations.dart';
 import '../main_window/main_window_deck.dart';
+import '../main_window/main_window_quality.dart';
 import '../native_player/native_player_protocol.dart';
 import '../widgets/analysis_overlay_controls.dart';
 import '../widgets/media_header.dart';
@@ -479,7 +480,9 @@ class MainWindowTestHarness {
 
   void clickMainWindowDeckTab(String tabName) {
     final normalized = tabName.trim().toLowerCase();
-    if (normalized != 'timeline' && normalized != 'analysis') {
+    if (normalized != 'timeline' &&
+        normalized != 'analysis' &&
+        normalized != 'quality') {
       throw ArgumentError.value(tabName, 'tabName', 'unsupported deck tab');
     }
     _clickWidgetByKey(
@@ -492,6 +495,13 @@ class MainWindowTestHarness {
     _clickWidgetByKey(
       mainWindowDeckCollapseButtonKey,
       'TOGGLE_MAIN_WINDOW_DECK_COLLAPSED',
+    );
+  }
+
+  void clickMainWindowQualityAnalyze() {
+    _clickWidgetByKey(
+      mainWindowQualityAnalyzeButtonKey,
+      'CLICK_MAIN_WINDOW_QUALITY_ANALYZE',
     );
   }
 

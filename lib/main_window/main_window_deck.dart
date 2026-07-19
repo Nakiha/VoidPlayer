@@ -5,6 +5,7 @@ import '../l10n/app_localizations.dart';
 import '../widgets/loop_range_bar.dart';
 import '../widgets/resizable_divider.dart';
 import '../widgets/timeline_area.dart';
+import 'main_window_quality.dart';
 import 'main_window_state.dart';
 import 'main_window_view_handles.dart';
 import 'main_window_view_model.dart';
@@ -115,6 +116,10 @@ class _MainWindowDeckState extends State<MainWindowDeck> {
                     )
                   else
                     const SizedBox.shrink(),
+                  MainWindowQualityDeck(
+                    model: widget.model,
+                    actions: widget.actions,
+                  ),
                 ],
               ),
             ),
@@ -150,34 +155,43 @@ class _MainWindowDeckTabBar extends StatelessWidget {
         children: [
           const SizedBox(width: 8),
           for (final tab in MainWindowDeckTab.values)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
-              child: Semantics(
-                selected: tab == selectedTab,
-                button: true,
-                child: TextButton(
-                  key: ValueKey('main-window-deck-tab-${tab.name}'),
-                  onPressed: onTabChanged == null
-                      ? null
-                      : () {
-                          if (tab != selectedTab) onTabChanged!(tab);
-                        },
-                  style: TextButton.styleFrom(
-                    foregroundColor: tab == selectedTab
-                        ? colors.onPrimaryContainer
-                        : colors.onSurfaceVariant,
-                    backgroundColor: tab == selectedTab
-                        ? colors.primaryContainer
-                        : Colors.transparent,
-                    minimumSize: const Size(72, 30),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
+            Flexible(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 2,
+                  vertical: 3,
+                ),
+                child: Semantics(
+                  selected: tab == selectedTab,
+                  button: true,
+                  child: TextButton(
+                    key: ValueKey('main-window-deck-tab-${tab.name}'),
+                    onPressed: onTabChanged == null
+                        ? null
+                        : () {
+                            if (tab != selectedTab) onTabChanged!(tab);
+                          },
+                    style: TextButton.styleFrom(
+                      foregroundColor: tab == selectedTab
+                          ? colors.onPrimaryContainer
+                          : colors.onSurfaceVariant,
+                      backgroundColor: tab == selectedTab
+                          ? colors.primaryContainer
+                          : Colors.transparent,
+                      minimumSize: const Size(56, 30),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    child: Text(
+                      _labelFor(context, tab),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  child: Text(_labelFor(context, tab)),
                 ),
               ),
             ),
@@ -198,6 +212,7 @@ class _MainWindowDeckTabBar extends StatelessWidget {
     return switch (tab) {
       MainWindowDeckTab.timeline => l.deckTimelineTab,
       MainWindowDeckTab.analysis => l.deckAnalysisTab,
+      MainWindowDeckTab.quality => l.deckQualityTab,
     };
   }
 }

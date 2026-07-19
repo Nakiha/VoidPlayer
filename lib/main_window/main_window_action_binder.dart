@@ -288,6 +288,22 @@ extension MainWindowViewActionBinding on MainWindowController {
           );
           playbackCoordinator.seekTo(timelinePtsUs);
         },
+        onQualitySeekRequested: (fileId, trackPtsUs) {
+          if (!_capabilities.canSeek) return;
+          final timelinePtsUs = trackPtsUs + (_state.syncOffsets[fileId] ?? 0);
+          _boostNativeCompositorFlutterInteraction(
+            reason: 'quality-sample-seek',
+          );
+          playbackCoordinator.seekTo(timelinePtsUs);
+        },
+        onQualityMarksRequested: (request) async {
+          return quickMarkCoordinator.addMetricMarks(
+            fileId: request.fileId,
+            metric: request.metric,
+            threshold: request.threshold,
+            report: request.report,
+          );
+        },
       ),
       analysisOverlay: MainWindowAnalysisOverlayActions(
         onTypeChanged: (type) {

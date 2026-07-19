@@ -146,6 +146,10 @@ class ScriptToggleMainWindowDeckCollapsed extends ScriptInstruction {
   const ScriptToggleMainWindowDeckCollapsed(super.time);
 }
 
+class ScriptClickMainWindowQualityAnalyze extends ScriptInstruction {
+  const ScriptClickMainWindowQualityAnalyze(super.time);
+}
+
 class ScriptAssertMainWindowDeckTab extends ScriptInstruction {
   final String tabName;
 
@@ -1447,6 +1451,8 @@ ScriptInstruction? _parseInstruction(
       );
     case 'TOGGLE_MAIN_WINDOW_DECK_COLLAPSED':
       return ScriptToggleMainWindowDeckCollapsed(time);
+    case 'CLICK_MAIN_WINDOW_QUALITY_ANALYZE':
+      return ScriptClickMainWindowQualityAnalyze(time);
     case 'CLOSE_MAIN_WINDOW':
       return ScriptCloseMainWindow(time);
     case 'QUIT':

@@ -232,6 +232,9 @@ class TestRunner {
       case ScriptToggleMainWindowDeckCollapsed():
         testHarness.toggleMainWindowDeckCollapsed();
 
+      case ScriptClickMainWindowQualityAnalyze():
+        testHarness.clickMainWindowQualityAnalyze();
+
       case ScriptAssertMainWindowDeckTab(:final tabName):
         final actual = automation.mainWindowDeckTabName();
         if (actual != tabName) {

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../analysis/analysis_quality_service.dart';
 import '../analysis/analysis_toolbar_data_source.dart';
 import '../analysis/ui/analysis_ui_selection.dart';
 import '../analysis/ui/testing/analysis_test_host.dart';
@@ -58,6 +59,7 @@ class MainWindowViewModelFactory {
     required bool deckCollapsed,
     required ValueListenable<List<AnalysisWorkspaceEntry>> analysisEntries,
     required AnalysisTestHostRegistry analysisTestHosts,
+    required AnalysisQualityDataSource qualityDataSource,
     required AnalysisUiSelection? analysisSelection,
     required int? selectedTrackFileId,
     required Map<int, QuickMarkAnchor> presentedFrameAnchors,
@@ -158,6 +160,7 @@ class MainWindowViewModelFactory {
         collapsed: deckCollapsed,
         analysisEntries: analysisEntries,
         analysisTestHosts: analysisTestHosts,
+        qualityDataSource: qualityDataSource,
         analysisPlaybackByFileId: {
           for (final entry in presentedFrameAnchors.entries)
             entry.key: AnalysisPlaybackPosition(

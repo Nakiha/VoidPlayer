@@ -133,26 +133,57 @@ class _MainWindowDeckTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        for (final tab in MainWindowDeckTab.values)
-          TextButton(
-            key: ValueKey('main-window-deck-tab-${tab.name}'),
-            onPressed: onTabChanged == null || tab == selectedTab
-                ? null
-                : () {
-                    onTabChanged!(tab);
-                  },
-            child: Text(_labelFor(context, tab)),
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLowest,
+        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 8),
+          for (final tab in MainWindowDeckTab.values)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+              child: Semantics(
+                selected: tab == selectedTab,
+                button: true,
+                child: TextButton(
+                  key: ValueKey('main-window-deck-tab-${tab.name}'),
+                  onPressed: onTabChanged == null
+                      ? null
+                      : () {
+                          if (tab != selectedTab) onTabChanged!(tab);
+                        },
+                  style: TextButton.styleFrom(
+                    foregroundColor: tab == selectedTab
+                        ? colors.onPrimaryContainer
+                        : colors.onSurfaceVariant,
+                    backgroundColor: tab == selectedTab
+                        ? colors.primaryContainer
+                        : Colors.transparent,
+                    minimumSize: const Size(72, 30),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  child: Text(_labelFor(context, tab)),
+                ),
+              ),
+            ),
+          const Spacer(),
+          IconButton(
+            key: mainWindowDeckCollapseButtonKey,
+            onPressed: () => onCollapsedChanged(!collapsed),
+            tooltip: collapsed ? 'Expand deck' : 'Collapse deck',
+            icon: Icon(collapsed ? Icons.expand_less : Icons.expand_more),
           ),
-        const Spacer(),
-        IconButton(
-          key: mainWindowDeckCollapseButtonKey,
-          onPressed: () => onCollapsedChanged(!collapsed),
-          tooltip: collapsed ? 'Expand deck' : 'Collapse deck',
-          icon: Icon(collapsed ? Icons.expand_less : Icons.expand_more),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

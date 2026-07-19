@@ -9,6 +9,9 @@ import '../widgets/analysis_split_layout_controller.dart';
 import '../widgets/analysis_style.dart';
 import 'analysis_page_state.dart';
 
+const Key analysisNaluBrowserPanelKey = ValueKey('analysis-nalu-browser-panel');
+const Key analysisNaluDetailPanelKey = ValueKey('analysis-nalu-detail-panel');
+
 class AnalysisPageView extends StatelessWidget {
   final AnalysisPageViewModel model;
   final AnalysisPageActions actions;
@@ -64,6 +67,28 @@ class AnalysisPageView extends StatelessWidget {
           );
     final bottomPanel = LayoutBuilder(
       builder: (context, constraints) {
+        final selectedNalu =
+            model.selectedNaluIdx != null &&
+                model.selectedNaluIdx! >= model.naluIndexBase &&
+                model.selectedNaluIdx! <
+                    model.naluIndexBase + model.nalus.length
+            ? model.nalus[model.selectedNaluIdx! - model.naluIndexBase]
+            : null;
+        final browser = AnalysisNaluBrowserView(
+          key: analysisNaluBrowserPanelKey,
+          nalus: model.nalus,
+          naluIndexBase: model.naluIndexBase,
+          totalNalus: model.totalNaluCount,
+          codec: model.codec,
+          selectedIdx: model.selectedNaluIdx,
+          onSelected: actions.onNaluSelected,
+          onWindowRequested: actions.onNaluWindowRequested,
+          filter: model.naluFilter,
+          onFilterChanged: actions.onNaluFilterChanged,
+        );
+        if (selectedNalu == null) {
+          return browser;
+        }
         final totalW = constraints.maxWidth;
         final maxBrowserW = (totalW - 120).clamp(120.0, double.infinity);
         final layoutController = splitLayoutController;
@@ -76,30 +101,11 @@ class AnalysisPageView extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SizedBox(
-                  width: browserW,
-                  child: AnalysisNaluBrowserView(
-                    nalus: model.nalus,
-                    naluIndexBase: model.naluIndexBase,
-                    totalNalus: model.totalNaluCount,
-                    codec: model.codec,
-                    selectedIdx: model.selectedNaluIdx,
-                    onSelected: actions.onNaluSelected,
-                    onWindowRequested: actions.onNaluWindowRequested,
-                    filter: model.naluFilter,
-                    onFilterChanged: actions.onNaluFilterChanged,
-                  ),
-                ),
+                SizedBox(width: browserW, child: browser),
                 Expanded(
                   child: AnalysisNaluDetailView(
-                    nalu:
-                        model.selectedNaluIdx != null &&
-                            model.selectedNaluIdx! >= model.naluIndexBase &&
-                            model.selectedNaluIdx! <
-                                model.naluIndexBase + model.nalus.length
-                        ? model.nalus[model.selectedNaluIdx! -
-                              model.naluIndexBase]
-                        : null,
+                    key: analysisNaluDetailPanelKey,
+                    nalu: selectedNalu,
                     frameIdx: model.selectedFrameIdx,
                     frameIndexBase: model.frameIndexBase,
                     frames: model.frames,

@@ -12,7 +12,7 @@ const double kDefaultMarksSidebarWidth = 340.0;
 const double kMinMarksSidebarWidth = 260.0;
 const double kMaxMarksSidebarWidth = 560.0;
 const double kMarksSidebarResizeHandleWidth = 9.0;
-const double kDefaultDeckHeight = 300.0;
+const double kDefaultDeckHeight = 260.0;
 const double kMinDeckHeight = 180.0;
 const double kMaxDeckHeight = 440.0;
 

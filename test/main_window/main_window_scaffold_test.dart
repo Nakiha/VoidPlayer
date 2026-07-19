@@ -176,6 +176,61 @@ void main() {
     },
   );
 
+  testWidgets(
+    'deck tabs expose a visible selected state without disabling it',
+    (tester) async {
+      final feedback = AppFeedbackController();
+      addTearDown(feedback.dispose);
+      final selected = <MainWindowDeckTab>[];
+      const mediaTrack = TrackEntry(
+        TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: 'track.mp4',
+          width: 1920,
+          height: 1080,
+        ),
+      );
+
+      await tester.pumpWidget(
+        _localized(
+          AppFeedbackScope(
+            controller: feedback,
+            child: MainWindowScaffold(
+              model: _model(
+                settingsVisible: false,
+                tracks: const [mediaTrack],
+                deckTab: MainWindowDeckTab.analysis,
+              ),
+              handles: _handles(),
+              actions: _actionsWithDeck(onTabChanged: selected.add),
+            ),
+          ),
+        ),
+      );
+
+      final analysisButton = tester.widget<TextButton>(
+        find.byKey(const ValueKey('main-window-deck-tab-analysis')),
+      );
+      final colors = Theme.of(
+        tester.element(find.byType(MainWindowDeck)),
+      ).colorScheme;
+      expect(
+        analysisButton.style?.backgroundColor?.resolve(const {}),
+        colors.primaryContainer,
+      );
+      expect(analysisButton.onPressed, isNotNull);
+
+      await tester.tap(
+        find.byKey(const ValueKey('main-window-deck-tab-analysis')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('main-window-deck-tab-timeline')),
+      );
+      expect(selected, [MainWindowDeckTab.timeline]);
+    },
+  );
+
   testWidgets('deck resize and collapse expose bounded local actions', (
     tester,
   ) async {
@@ -807,6 +862,7 @@ final _noop = MainWindowViewActions(
 );
 
 MainWindowViewActions _actionsWithDeck({
+  ValueChanged<MainWindowDeckTab>? onTabChanged,
   ValueChanged<double>? onHeightChanged,
   ValueChanged<bool>? onCollapsedChanged,
 }) {
@@ -817,7 +873,7 @@ MainWindowViewActions _actionsWithDeck({
     marks: _noop.marks,
     mediaTimeline: _noop.mediaTimeline,
     deck: MainWindowDeckActions(
-      onTabChanged: _noop.deck.onTabChanged,
+      onTabChanged: onTabChanged ?? _noop.deck.onTabChanged,
       onHeightChanged: onHeightChanged ?? _noop.deck.onHeightChanged,
       onCollapsedChanged: onCollapsedChanged ?? _noop.deck.onCollapsedChanged,
     ),

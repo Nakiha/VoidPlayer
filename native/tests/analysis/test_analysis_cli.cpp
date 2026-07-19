@@ -3,6 +3,7 @@
 #include "analysis/parsers/vachunk_parser.h"
 #include "common/win_utf8.h"
 
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -264,6 +265,56 @@ bool run_cli_expect_exit(const std::string& cli_path,
     return true;
 }
 
+std::string quote_command_arg(const std::string& arg) {
+    std::string quoted = "\"";
+    for (const char ch : arg) {
+        if (ch == '"') {
+            quoted += "\\\"";
+        } else {
+            quoted += ch;
+        }
+    }
+    quoted += "\"";
+    return quoted;
+}
+
+bool run_cli_expect_output(
+    const std::string& cli_path,
+    const std::vector<std::string>& args,
+    int expected_exit_code,
+    const std::vector<std::string>& expected_fragments) {
+    std::string command = quote_command_arg(cli_path);
+    for (const auto& arg : args) {
+        command += " " + quote_command_arg(arg);
+    }
+    command = "\"" + command + "\"";
+
+    FILE* pipe = _popen(command.c_str(), "r");
+    if (pipe == nullptr) {
+        return fail("failed to capture CLI output");
+    }
+    std::string output;
+    char buffer[4096];
+    while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output += buffer;
+    }
+    const int exit_code = _pclose(pipe);
+    if (exit_code != expected_exit_code) {
+        std::cerr << "CLI command exited " << exit_code
+                  << ", expected " << expected_exit_code << ":"
+                  << command << "\n";
+        return false;
+    }
+    for (const auto& fragment : expected_fragments) {
+        if (output.find(fragment) == std::string::npos) {
+            std::cerr << "CLI output missing " << fragment << ": "
+                      << output << "\n";
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -302,7 +353,16 @@ int main(int argc, char** argv) {
             "--iterations", "2",
             "--with-grid",
             "--json",
-        }, 2);
+        }, 2) &&
+        run_cli_expect_output(cli_path, {
+            "score-quality",
+            "--bad-flag",
+            "--json",
+        }, 1, {
+            "\"type\":\"qualityError\"",
+            "\"code\":\"invalid_arguments\"",
+            "\"message\":\"failed to parse score-quality arguments\"",
+        });
 
     bool generation_ok = true;
     if (!analyzer_path.empty() && !video_path.empty()) {
@@ -345,13 +405,17 @@ int main(int argc, char** argv) {
                 "--max-samples", "2",
                 "--json",
             }) &&
-            run_cli(cli_path, {
+            run_cli_expect_output(cli_path, {
                 "score-quality",
                 "--input", video_path,
                 "--backend", "cpu",
                 "--max-samples", "1",
                 "--json",
                 "--summary-only",
+            }, 0, {
+                "\"maxSamples\":1",
+                "\"truncated\":true",
+                "\"sampledFrames\":1",
             }) &&
             run_cli(cli_path, {
                 "score-quality",

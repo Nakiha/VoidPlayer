@@ -107,6 +107,8 @@ struct QualityReport {
     int height = 0;
     int bit_depth = 0;
     int64_t sample_interval_us = 0;
+    uint32_t max_samples = 0;
+    bool truncated = false;
     uint64_t unsupported_pixel_frames = 0;
     StreamStatistics stream;
     DistributionSummary blockiness;

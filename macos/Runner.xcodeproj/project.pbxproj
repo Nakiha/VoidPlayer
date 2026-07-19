@@ -543,6 +543,7 @@
 				"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_media_ffmpeg.a",
 				"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_player_portable_core.a",
 				"$(PROJECT_DIR)/../build/native/runner/macos-xcode/analysis/libanalysis_lib.a",
+				"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_video_decode_core.a",
 				"$(PROJECT_DIR)/../build/native/runner/macos-xcode/_deps/zstd-build/lib/libzstd.a",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -773,6 +774,7 @@
 					"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_media_ffmpeg.a",
 					"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_player_portable_core.a",
 					"$(PROJECT_DIR)/../build/native/runner/macos-xcode/analysis/libanalysis_lib.a",
+					"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_video_decode_core.a",
 					"$(PROJECT_DIR)/../build/native/runner/macos-xcode/_deps/zstd-build/lib/libzstd.a",
 					"-lc++",
 					"-lavformat",
@@ -941,6 +943,7 @@
 					"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_media_ffmpeg.a",
 					"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_player_portable_core.a",
 					"$(PROJECT_DIR)/../build/native/runner/macos-xcode/analysis/libanalysis_lib.a",
+					"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_video_decode_core.a",
 					"$(PROJECT_DIR)/../build/native/runner/macos-xcode/_deps/zstd-build/lib/libzstd.a",
 					"-lc++",
 					"-lavformat",
@@ -995,6 +998,7 @@
 					"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_media_ffmpeg.a",
 					"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_player_portable_core.a",
 					"$(PROJECT_DIR)/../build/native/runner/macos-xcode/analysis/libanalysis_lib.a",
+					"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_video_decode_core.a",
 					"$(PROJECT_DIR)/../build/native/runner/macos-xcode/_deps/zstd-build/lib/libzstd.a",
 					"-lc++",
 					"-lavformat",

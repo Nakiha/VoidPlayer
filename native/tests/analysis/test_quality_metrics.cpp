@@ -358,6 +358,79 @@ TEST_CASE("quality metrics preserve behavior for little-endian 10-bit luma",
             Catch::Approx(signature8.mean_luma).margin(0.51));
 }
 
+TEST_CASE("packed 8-bit luma matches planar metrics at either byte offset",
+          "[analysis][quality]") {
+    constexpr int width = 64;
+    constexpr int height = 64;
+    constexpr int packed_stride = width * 2 + 8;
+    std::vector<uint8_t> planar(width * height);
+    std::vector<uint8_t> yuyv(
+        static_cast<size_t>(packed_stride * height), 0x35);
+    std::vector<uint8_t> uyvy(
+        static_cast<size_t>(packed_stride * height), 0xca);
+
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const uint8_t value = static_cast<uint8_t>(
+                24 + ((x * 13 + y * 7 + (x / 8) * 19) % 208));
+            planar[static_cast<size_t>(y * width + x)] = value;
+            yuyv[static_cast<size_t>(
+                y * packed_stride + x * 2)] = value;
+            uyvy[static_cast<size_t>(
+                y * packed_stride + x * 2 + 1)] = value;
+        }
+    }
+
+    const LumaPlaneView planar_view =
+        make_u8_view(planar, width, height);
+    const LumaPlaneView yuyv_view{
+        yuyv.data(), width, height, packed_stride, 2, 0, 8, 0};
+    const LumaPlaneView uyvy_view{
+        uyvy.data(), width, height, packed_stride, 2, 1, 8, 0};
+
+    REQUIRE(vr::analysis::quality::is_valid_luma_plane(yuyv_view));
+    REQUIRE(vr::analysis::quality::is_valid_luma_plane(uyvy_view));
+    for (const LumaPlaneView& packed_view : {yuyv_view, uyvy_view}) {
+        REQUIRE(
+            vr::analysis::quality::measure_blockiness(packed_view) ==
+            Catch::Approx(
+                vr::analysis::quality::measure_blockiness(planar_view))
+                .margin(1e-12));
+        REQUIRE(
+            vr::analysis::quality::measure_banding_proxy(packed_view) ==
+            Catch::Approx(
+                vr::analysis::quality::measure_banding_proxy(planar_view))
+                .margin(1e-12));
+        REQUIRE(
+            vr::analysis::quality::measure_blur_proxy(packed_view) ==
+            Catch::Approx(
+                vr::analysis::quality::measure_blur_proxy(planar_view))
+                .margin(1e-12));
+        REQUIRE(
+            vr::analysis::quality::measure_noise_proxy(packed_view) ==
+            Catch::Approx(
+                vr::analysis::quality::measure_noise_proxy(planar_view))
+                .margin(1e-12));
+
+        LumaTemporalSignature packed_signature;
+        LumaTemporalSignature planar_signature;
+        REQUIRE(vr::analysis::quality::make_temporal_signature(
+            packed_view, packed_signature));
+        REQUIRE(vr::analysis::quality::make_temporal_signature(
+            planar_view, planar_signature));
+        REQUIRE(packed_signature.mean_luma ==
+                Catch::Approx(planar_signature.mean_luma)
+                    .margin(1e-12));
+        REQUIRE(packed_signature.tile_means ==
+                planar_signature.tile_means);
+    }
+
+    LumaPlaneView invalid_offset = uyvy_view;
+    invalid_offset.bit_depth = 10;
+    REQUIRE_FALSE(
+        vr::analysis::quality::is_valid_luma_plane(invalid_offset));
+}
+
 TEST_CASE("blur proxy increases after deterministic spatial smoothing",
           "[analysis][quality]") {
     constexpr int width = 64;

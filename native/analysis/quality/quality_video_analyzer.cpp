@@ -208,7 +208,8 @@ std::shared_ptr<OwnedLumaPlane> copy_luma_plane(
         static_cast<size_t>(owned->stride_bytes) *
         static_cast<size_t>(source.height));
     const size_t sample_bytes =
-        static_cast<size_t>(source.sample_step_bytes);
+        static_cast<size_t>(
+            (source.bit_depth + source.sample_shift + 7) / 8);
     for (int y = 0; y < source.height; ++y) {
         const uint8_t* input =
             source.data +
@@ -355,6 +356,7 @@ bool analyze_video_quality(const std::string& video_path,
     report = QualityReport{};
     report.sample_interval_us = std::max<int64_t>(
         0, options.sample_interval_us);
+    report.max_samples = options.max_samples;
     report.execution.requested_backend =
         backend_name(options.backend);
     report.execution.cpu_mode =
@@ -907,6 +909,7 @@ bool analyze_video_quality(const std::string& video_path,
         ++accepted_samples;
         if (options.max_samples > 0 &&
             accepted_samples >= options.max_samples) {
+            report.truncated = true;
             stop = true;
         }
     };

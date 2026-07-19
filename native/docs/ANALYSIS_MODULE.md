@@ -192,6 +192,8 @@ schema v4 保留 v3 的 `metrics`、`stream`、`timingsMs` 和 `timeline` 读取
 - `metricDefinitions`：每项指标的范围、方向、单位、实验状态和简述；
 - `execution`：请求/实际 backend、CPU dispatch、decode threads、worker 和队列深度；
 - `capabilities`：timeline 编码方式，以及是否支持绝对阈值或跨指标融合；
+- `sampling.maxSamples` / `sampling.truncated`：区分完整分析与因
+  `--max-samples` 提前停止的 packet/frame/QP/flicker 前缀统计；
 - `warnings`：QP 缺失、unsupported layout、重复 PTS 等可操作提示；
 - distribution 的 `available`，避免把 `count=0` 的零值误当真实观测；
 - timeline 的 `sampleIndex` 和 `decodedFrameIndex`，其中 `sampleIndex` 是唯一键；

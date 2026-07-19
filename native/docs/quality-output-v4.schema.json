@@ -315,10 +315,25 @@
           "type": "object",
           "required": [
             "intervalUs",
+            "maxSamples",
+            "truncated",
             "sampledFrames",
             "decodedFrames",
             "unsupportedPixelFrames"
-          ]
+          ],
+          "properties": {
+            "maxSamples": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
         },
         "stream": {
           "type": "object",

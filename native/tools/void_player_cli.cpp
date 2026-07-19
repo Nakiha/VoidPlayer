@@ -1667,6 +1667,14 @@ int score_quality(const CliOptions& options) {
                   << "},"
                   << "\"sampling\":{"
                   << "\"intervalUs\":" << report.sample_interval_us << ","
+                  << "\"maxSamples\":";
+        if (report.max_samples > 0) {
+            std::cout << report.max_samples;
+        } else {
+            std::cout << "null";
+        }
+        std::cout << ",\"truncated\":"
+                  << (report.truncated ? "true" : "false") << ","
                   << "\"sampledFrames\":" << report.timeline.size() << ","
                   << "\"decodedFrames\":" << report.stream.decoded_frames << ","
                   << "\"unsupportedPixelFrames\":"
@@ -1793,6 +1801,14 @@ int score_quality(const CliOptions& options) {
                   << "},"
                   << "\"sampling\":{"
                   << "\"intervalUs\":" << report.sample_interval_us << ","
+                  << "\"maxSamples\":";
+        if (report.max_samples > 0) {
+            std::cout << report.max_samples;
+        } else {
+            std::cout << "null";
+        }
+        std::cout << ",\"truncated\":"
+                  << (report.truncated ? "true" : "false") << ","
                   << "\"sampledFrames\":" << report.timeline.size() << ","
                   << "\"decodedFrames\":" << report.stream.decoded_frames << ","
                   << "\"unsupportedPixelFrames\":"
@@ -1948,9 +1964,13 @@ int score_quality(const CliOptions& options) {
 
 int run_cli(const std::vector<std::string>& args) {
     CliOptions options;
+    const bool quality_machine_output_requested =
+        !args.empty() &&
+        args.front() == "score-quality" &&
+        (std::find(args.begin(), args.end(), "--json") != args.end() ||
+         std::find(args.begin(), args.end(), "--jsonl") != args.end());
     if (!parse_args(args, options)) {
-        if (options.command == "score-quality" &&
-            (options.json || options.quality_jsonl)) {
+        if (quality_machine_output_requested) {
             write_quality_error_json(
                 "invalid_arguments",
                 "failed to parse score-quality arguments");

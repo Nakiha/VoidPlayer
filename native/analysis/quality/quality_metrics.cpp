@@ -29,7 +29,8 @@ uint32_t read_sample(const LumaPlaneView& plane, int x, int y) {
         plane.sample_offset_bytes;
 
     uint32_t value = 0;
-    if (plane.sample_step_bytes == 1) {
+    const int stored_bits = plane.bit_depth + plane.sample_shift;
+    if (stored_bits <= 8) {
         value = *ptr;
     } else {
         uint16_t stored = 0;
@@ -272,8 +273,11 @@ bool is_valid_luma_plane(const LumaPlaneView& plane) {
     if (plane.sample_step_bytes != 1 && plane.sample_step_bytes != 2) {
         return false;
     }
-    return plane.bit_depth + plane.sample_shift <=
-           plane.sample_step_bytes * 8;
+    const int stored_bits = plane.bit_depth + plane.sample_shift;
+    const int stored_bytes = (stored_bits + 7) / 8;
+    return stored_bytes > 0 &&
+           plane.sample_offset_bytes + stored_bytes <=
+               plane.sample_step_bytes;
 }
 
 double measure_blockiness(const LumaPlaneView& plane) {

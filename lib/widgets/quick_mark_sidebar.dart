@@ -29,6 +29,35 @@ class QuickMarkSidebar extends StatefulWidget {
   State<QuickMarkSidebar> createState() => _QuickMarkSidebarState();
 }
 
+class QuickMarkInspector extends StatelessWidget {
+  final QuickMark mark;
+  final String trackLabel;
+  final MainWindowMarksActions actions;
+
+  const QuickMarkInspector({
+    super.key,
+    required this.mark,
+    required this.trackLabel,
+    required this.actions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
+    return _QuickMarkInspector(
+      mark: mark,
+      trackLabel: trackLabel,
+      colors: _QuickMarkSidebarState._colors,
+      fontSizes: _QuickMarkSidebarState._fontSizes,
+      strokeWidths: _QuickMarkSidebarState._strokeWidths,
+      onChanged: actions.onMarkChanged,
+      onFocus: () => actions.onFocusVisibleMark(mark.id),
+      onDelete: () => actions.onMarkDeleted(mark.id),
+      colorLabel: (color) => _quickMarkColorLabel(l, color),
+    );
+  }
+}
+
 class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
   static const _toolButtonSize = 28.0;
   static const _rowExtent = 62.0;
@@ -486,17 +515,21 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
   }
 
   String _colorLabel(AppLocalizations l, Color color) {
-    if (color == const Color(0xFFFF3B30)) return l.quickMarkColorRed;
-    if (color == const Color(0xFFFF9500)) return l.quickMarkColorOrange;
-    if (color == const Color(0xFFFFCC00)) return l.quickMarkColorYellow;
-    if (color == const Color(0xFF34C759)) return l.quickMarkColorGreen;
-    if (color == const Color(0xFF00C7BE)) return l.quickMarkColorCyan;
-    if (color == const Color(0xFF0A84FF)) return l.quickMarkColorBlue;
-    if (color == const Color(0xFFBF5AF2)) return l.quickMarkColorPurple;
-    if (color == const Color(0xFFFFFFFF)) return l.quickMarkColorWhite;
-    if (color == const Color(0xFF111111)) return l.quickMarkColorBlack;
-    return l.quickMarkColor;
+    return _quickMarkColorLabel(l, color);
   }
+}
+
+String _quickMarkColorLabel(AppLocalizations l, Color color) {
+  if (color == const Color(0xFFFF3B30)) return l.quickMarkColorRed;
+  if (color == const Color(0xFFFF9500)) return l.quickMarkColorOrange;
+  if (color == const Color(0xFFFFCC00)) return l.quickMarkColorYellow;
+  if (color == const Color(0xFF34C759)) return l.quickMarkColorGreen;
+  if (color == const Color(0xFF00C7BE)) return l.quickMarkColorCyan;
+  if (color == const Color(0xFF0A84FF)) return l.quickMarkColorBlue;
+  if (color == const Color(0xFFBF5AF2)) return l.quickMarkColorPurple;
+  if (color == const Color(0xFFFFFFFF)) return l.quickMarkColorWhite;
+  if (color == const Color(0xFF111111)) return l.quickMarkColorBlack;
+  return l.quickMarkColor;
 }
 
 enum _QuickMarkSidebarScope { current, all }

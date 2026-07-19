@@ -7,38 +7,35 @@ import 'package:void_player/analysis/ui/page/analysis_page_view.dart';
 import 'package:void_player/l10n/app_localizations.dart';
 
 void main() {
-  testWidgets(
-    'NALU browser uses the full lower panel until a unit is selected',
-    (tester) async {
-      final nalu = NaluInfo(
-        offset: 0,
-        size: 12,
-        nalType: 7,
-        temporalId: 0,
-        layerId: 0,
-        flags: 0,
-      );
+  testWidgets('NALU browser always uses the full lower panel', (tester) async {
+    final nalu = NaluInfo(
+      offset: 0,
+      size: 12,
+      nalType: 7,
+      temporalId: 0,
+      layerId: 0,
+      flags: 0,
+    );
 
-      Widget build(int? selectedNaluIdx) => MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: AnalysisPageView(
-          model: _model(nalu, selectedNaluIdx: selectedNaluIdx),
-          actions: _actions,
-        ),
-      );
+    Widget build(int? selectedNaluIdx) => MaterialApp(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: AnalysisPageView(
+        model: _model(nalu, selectedNaluIdx: selectedNaluIdx),
+        actions: _actions,
+      ),
+    );
 
-      await tester.pumpWidget(build(null));
-      expect(find.byKey(analysisNaluBrowserPanelKey), findsOneWidget);
-      expect(find.byKey(analysisNaluDetailPanelKey), findsNothing);
-      expect(find.text('Select a NALU'), findsNothing);
+    await tester.pumpWidget(build(null));
+    expect(find.byKey(analysisNaluBrowserPanelKey), findsOneWidget);
+    expect(find.byKey(analysisNaluDetailPanelKey), findsNothing);
+    expect(find.text('Select a NALU'), findsNothing);
 
-      await tester.pumpWidget(build(0));
-      await tester.pump();
-      expect(find.byKey(analysisNaluBrowserPanelKey), findsOneWidget);
-      expect(find.byKey(analysisNaluDetailPanelKey), findsOneWidget);
-    },
-  );
+    await tester.pumpWidget(build(0));
+    await tester.pump();
+    expect(find.byKey(analysisNaluBrowserPanelKey), findsOneWidget);
+    expect(find.byKey(analysisNaluDetailPanelKey), findsNothing);
+  });
 }
 
 AnalysisPageViewModel _model(NaluInfo nalu, {required int? selectedNaluIdx}) {

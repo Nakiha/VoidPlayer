@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../analysis/analysis_overlay.dart';
 import '../analysis/analysis_toolbar_data_source.dart';
+import '../analysis/ui/analysis_ui_selection.dart';
 import '../analysis/ui/testing/analysis_test_host.dart';
 import '../analysis/ui/workspace/analysis_workspace_models.dart';
 import '../marks/quick_mark.dart';
@@ -15,6 +16,7 @@ import '../video_renderer_controller.dart';
 import '../viewport/display_geometry.dart';
 import '../viewport/viewport_display_state.dart';
 import '../widgets/loop_range_bar.dart';
+import 'main_window_selection.dart';
 import 'main_window_state.dart';
 
 typedef AsyncUiAction = Future<void> Function();
@@ -28,6 +30,7 @@ class MainWindowViewModel {
   final MainWindowMediaVm media;
   final MainWindowPlaybackVm playback;
   final MainWindowDeckVm deck;
+  final MainWindowSelection selection;
   final MainWindowOverlayVm overlays;
 
   const MainWindowViewModel({
@@ -37,6 +40,7 @@ class MainWindowViewModel {
     required this.media,
     required this.playback,
     required this.deck,
+    this.selection = const MainWindowNoSelection(),
     required this.overlays,
   });
 }
@@ -241,11 +245,13 @@ class MainWindowDeckActions {
   final ValueChanged<MainWindowDeckTab> onTabChanged;
   final ValueChanged<double> onHeightChanged;
   final ValueChanged<bool> onCollapsedChanged;
+  final ValueChanged<AnalysisUiSelection?>? onAnalysisSelectionChanged;
 
   const MainWindowDeckActions({
     required this.onTabChanged,
     required this.onHeightChanged,
     required this.onCollapsedChanged,
+    this.onAnalysisSelectionChanged,
   });
 }
 
@@ -404,6 +410,7 @@ class MainWindowOverlayActions {
   final VoidCallback onCloseProfiler;
   final VoidCallback onCloseSettings;
   final VoidCallback onCloseMarksSidebar;
+  final VoidCallback? onCloseInspector;
   final ValueChanged<double> onMarksSidebarWidthChanged;
   final ValueChanged<ViewportPixelSizeMode> onViewportPixelSizeModeChanged;
   final ValueChanged<PerformanceAlertPolicy> onPerformanceAlertPolicyChanged;
@@ -415,6 +422,7 @@ class MainWindowOverlayActions {
     required this.onCloseProfiler,
     required this.onCloseSettings,
     required this.onCloseMarksSidebar,
+    this.onCloseInspector,
     required this.onMarksSidebarWidthChanged,
     required this.onViewportPixelSizeModeChanged,
     required this.onPerformanceAlertPolicyChanged,

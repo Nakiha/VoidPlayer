@@ -345,6 +345,7 @@ class MainWindowController {
       deckCollapsed: _state.deckCollapsed,
       analysisEntries: analysisCoordinator.entries,
       analysisTestHosts: analysisTestHosts,
+      analysisSelection: _state.analysisSelection,
       marksSidebarVisible: _marksSidebarVisible,
       marksSidebarWidth: _marksSidebarWidth,
       fullScreen: _fullScreen,

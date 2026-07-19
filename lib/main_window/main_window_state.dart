@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../analysis/ui/analysis_ui_selection.dart';
 import '../marks/quick_mark.dart';
 import '../marks/quick_mark_thumbnail.dart';
 import '../preferences/playback_preferences.dart';
@@ -56,6 +57,7 @@ class MainWindowStateModel {
   final Map<int, QuickMarkThumbnail> quickMarkThumbnails;
   final QuickMark? quickMarkDraft;
   final int? selectedQuickMarkId;
+  final AnalysisUiSelection? analysisSelection;
 
   const MainWindowStateModel({
     this.playerId,
@@ -95,6 +97,7 @@ class MainWindowStateModel {
     this.quickMarkThumbnails = const {},
     this.quickMarkDraft,
     this.selectedQuickMarkId,
+    this.analysisSelection,
   });
 
   MainWindowStateModel copyWith({
@@ -135,6 +138,7 @@ class MainWindowStateModel {
     Map<int, QuickMarkThumbnail>? quickMarkThumbnails,
     Object? quickMarkDraft = _mainWindowStateUnset,
     Object? selectedQuickMarkId = _mainWindowStateUnset,
+    Object? analysisSelection = _mainWindowStateUnset,
   }) {
     return MainWindowStateModel(
       playerId: playerId == _mainWindowStateUnset
@@ -196,6 +200,9 @@ class MainWindowStateModel {
       selectedQuickMarkId: selectedQuickMarkId == _mainWindowStateUnset
           ? this.selectedQuickMarkId
           : selectedQuickMarkId as int?,
+      analysisSelection: analysisSelection == _mainWindowStateUnset
+          ? this.analysisSelection
+          : analysisSelection as AnalysisUiSelection?,
     );
   }
 }
@@ -254,6 +261,7 @@ class MainWindowStateStore extends ChangeNotifier {
         quickMarkThumbnails: const {},
         quickMarkDraft: null,
         selectedQuickMarkId: null,
+        analysisSelection: null,
         loopRangeEnabled: false,
         nativeLoopRangeSynced: false,
         startupLoopRangeApplied: false,
@@ -451,8 +459,31 @@ class MainWindowStateStore extends ChangeNotifier {
   }
 
   void setSelectedQuickMarkId(int? id) {
-    if (_value.selectedQuickMarkId == id) return;
-    _set(_value.copyWith(selectedQuickMarkId: id));
+    if (_value.selectedQuickMarkId == id &&
+        (id == null || _value.analysisSelection == null)) {
+      return;
+    }
+    _set(
+      _value.copyWith(
+        selectedQuickMarkId: id,
+        analysisSelection: id == null ? _value.analysisSelection : null,
+      ),
+    );
+  }
+
+  void setAnalysisSelection(AnalysisUiSelection? selection) {
+    if (_value.analysisSelection?.identity == selection?.identity &&
+        _value.selectedQuickMarkId == null) {
+      return;
+    }
+    _set(
+      _value.copyWith(
+        selectedQuickMarkId: selection == null
+            ? _value.selectedQuickMarkId
+            : null,
+        analysisSelection: selection,
+      ),
+    );
   }
 }
 

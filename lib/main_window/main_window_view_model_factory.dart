@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../analysis/analysis_toolbar_data_source.dart';
+import '../analysis/ui/analysis_ui_selection.dart';
 import '../analysis/ui/testing/analysis_test_host.dart';
 import '../analysis/ui/workspace/analysis_workspace_models.dart';
 import '../marks/quick_mark.dart';
@@ -13,6 +14,7 @@ import '../track_manager.dart';
 import '../video_renderer_controller.dart';
 import '../viewport/display_geometry.dart';
 import '../viewport/viewport_display_state.dart';
+import 'main_window_selection.dart';
 import 'main_window_state.dart';
 import 'main_window_view_model.dart';
 
@@ -56,11 +58,24 @@ class MainWindowViewModelFactory {
     required bool deckCollapsed,
     required ValueListenable<List<AnalysisWorkspaceEntry>> analysisEntries,
     required AnalysisTestHostRegistry analysisTestHosts,
+    required AnalysisUiSelection? analysisSelection,
     required bool marksSidebarVisible,
     required double marksSidebarWidth,
     required bool fullScreen,
     required bool fullScreenControlsVisible,
   }) {
+    QuickMark? selectedMark;
+    for (final mark in markView.allMarks) {
+      if (mark.id == markView.selectedMarkId) {
+        selectedMark = mark;
+        break;
+      }
+    }
+    final selection = selectedMark != null
+        ? MainWindowQuickMarkSelection(selectedMark)
+        : analysisSelection != null
+        ? MainWindowAnalysisSelection(analysisSelection)
+        : const MainWindowNoSelection();
     return MainWindowViewModel(
       session: MainWindowSessionVm.fromSession(session),
       viewport: MainWindowViewportVm(
@@ -133,6 +148,7 @@ class MainWindowViewModelFactory {
         analysisEntries: analysisEntries,
         analysisTestHosts: analysisTestHosts,
       ),
+      selection: selection,
       overlays: MainWindowOverlayVm(
         dragging: dragging,
         mediaInfoVisible: mediaInfoVisible,

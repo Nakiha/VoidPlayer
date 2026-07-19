@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../analysis_manager.dart';
+import '../analysis_ui_selection.dart';
 import '../page/analysis_page.dart';
 import '../testing/analysis_test_host.dart';
 import '../widgets/analysis_split_layout_controller.dart';
@@ -13,11 +14,13 @@ import 'analysis_workspace_tabs.dart';
 class AnalysisWorkspacePage extends StatefulWidget {
   final ValueListenable<List<AnalysisWorkspaceEntry>> entries;
   final AnalysisTestHostRegistry testHosts;
+  final ValueChanged<AnalysisUiSelection?>? onSelectionChanged;
 
   const AnalysisWorkspacePage({
     super.key,
     required this.entries,
     required this.testHosts,
+    this.onSelectionChanged,
   });
 
   @override
@@ -74,6 +77,9 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
               ? 0
               : _clampIndex(_selected, entries.length)
         : entries.indexWhere((entry) => entry.fileId == selectedFileId);
+    if (selectedFileId != null && nextSelected < 0) {
+      widget.onSelectionChanged?.call(null);
+    }
 
     void applySnapshot() {
       _entries = entries;
@@ -117,6 +123,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
               onModeChanged: (value) => setState(() => _splitView = value),
               onSelected: (index) {
                 widget.testHosts.selectFileId(entries[index].fileId);
+                widget.onSelectionChanged?.call(null);
                 setState(() => _selected = index);
               },
               contentBuilder: (entry) => _buildEntry(entry, split: true),
@@ -129,6 +136,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
               onModeChanged: (value) => setState(() => _splitView = value),
               onSelected: (index) {
                 widget.testHosts.selectFileId(entries[index].fileId);
+                widget.onSelectionChanged?.call(null);
                 setState(() => _selected = index);
               },
               child: _buildEntry(entries[selected]),
@@ -146,6 +154,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         testHosts: widget.testHosts,
         pollSummary: false,
         splitLayoutController: split ? _splitLayout : null,
+        onSelectionChanged: widget.onSelectionChanged,
       );
     }
     return _AnalysisGenerationPlaceholder(entry: entry);

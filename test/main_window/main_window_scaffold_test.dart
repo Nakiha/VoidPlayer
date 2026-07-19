@@ -4,9 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/analysis/analysis_cache.dart';
+import 'package:void_player/analysis/analysis_ffi.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/analysis/analysis_overlay.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
+import 'package:void_player/analysis/nalu_types.dart';
+import 'package:void_player/analysis/ui/analysis_ui_selection.dart';
+import 'package:void_player/analysis/ui/page/analysis_page_view.dart';
 import 'package:void_player/analysis/ui/testing/analysis_test_host.dart';
 import 'package:void_player/analysis/ui/workspace/analysis_workspace_models.dart';
 import 'package:void_player/analysis/ui/workspace/analysis_workspace_page.dart';
@@ -14,9 +18,11 @@ import 'package:void_player/app_log.dart';
 import 'package:void_player/feedback/app_feedback.dart';
 import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/main_window/main_window_deck.dart';
+import 'package:void_player/main_window/main_window_inspector.dart';
 import 'package:void_player/main_window/main_window_media_sections.dart';
 import 'package:void_player/main_window/main_window_overlays.dart';
 import 'package:void_player/main_window/main_window_scaffold.dart';
+import 'package:void_player/main_window/main_window_selection.dart';
 import 'package:void_player/main_window/main_window_state.dart';
 import 'package:void_player/main_window/main_window_view_handles.dart';
 import 'package:void_player/main_window/main_window_view_model.dart';
@@ -297,6 +303,52 @@ void main() {
     expect(find.byTooltip('Select all marks'), findsOneWidget);
     expect(find.byTooltip('Cancel mark selection'), findsOneWidget);
     expect(find.byTooltip('Delete selected marks'), findsOneWidget);
+  });
+
+  testWidgets('analysis selection opens the shared right inspector', (
+    tester,
+  ) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+    var closed = false;
+    final selection = AnalysisNaluSelection(
+      fileId: 1,
+      codec: AnalysisCodec.h264,
+      naluIndex: 2,
+      nalu: NaluInfo(
+        offset: 24,
+        size: 16,
+        nalType: 7,
+        temporalId: 0,
+        layerId: 0,
+        flags: 0,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              selection: MainWindowAnalysisSelection(selection),
+            ),
+            handles: _handles(),
+            actions: _noopWithOverlayActions(
+              onCloseInspector: () => closed = true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(mainWindowInspectorKey), findsOneWidget);
+    expect(find.byKey(analysisNaluDetailPanelKey), findsOneWidget);
+    expect(find.byType(QuickMarkSidebar), findsNothing);
+
+    await tester.tap(find.byKey(mainWindowInspectorCloseKey));
+    expect(closed, isTrue);
   });
 
   testWidgets(
@@ -687,6 +739,7 @@ MainWindowViewModel _model({
   MainWindowDeckTab deckTab = MainWindowDeckTab.timeline,
   double deckHeight = kDefaultDeckHeight,
   bool deckCollapsed = false,
+  MainWindowSelection selection = const MainWindowNoSelection(),
 }) => MainWindowViewModel(
   session: MainWindowSessionVm.fromSession(const PlaybackSession.normal()),
   viewport: MainWindowViewportVm(
@@ -756,6 +809,7 @@ MainWindowViewModel _model({
     analysisEntries: ValueNotifier(const <AnalysisWorkspaceEntry>[]),
     analysisTestHosts: AnalysisTestHostRegistry(),
   ),
+  selection: selection,
   overlays: MainWindowOverlayVm(
     dragging: false,
     mediaInfoVisible: false,
@@ -947,6 +1001,7 @@ MainWindowViewActions _noopWithMarkActions({
 
 MainWindowViewActions _noopWithOverlayActions({
   ValueChanged<double>? onMarksSidebarWidthChanged,
+  VoidCallback? onCloseInspector,
 }) {
   return MainWindowViewActions(
     drop: _noop.drop,
@@ -961,6 +1016,7 @@ MainWindowViewActions _noopWithOverlayActions({
       onCloseProfiler: _noop.overlays.onCloseProfiler,
       onCloseSettings: _noop.overlays.onCloseSettings,
       onCloseMarksSidebar: _noop.overlays.onCloseMarksSidebar,
+      onCloseInspector: onCloseInspector,
       onMarksSidebarWidthChanged:
           onMarksSidebarWidthChanged ??
           _noop.overlays.onMarksSidebarWidthChanged,

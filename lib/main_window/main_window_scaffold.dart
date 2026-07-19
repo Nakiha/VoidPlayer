@@ -13,6 +13,7 @@ import '../widgets/resizable_divider.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/viewport_panel.dart';
 import 'main_window_deck.dart';
+import 'main_window_inspector.dart';
 import 'main_window_media_sections.dart';
 import 'main_window_overlays.dart';
 import 'main_window_state.dart';
@@ -42,6 +43,8 @@ class MainWindowScaffold extends StatelessWidget {
     final toolbarActions = actions.toolbar;
     final viewportActions = actions.viewport;
     final overlayActions = actions.overlays;
+    final inspectorVisible = !model.selection.isEmpty;
+    final rightPanelVisible = inspectorVisible || overlays.marksSidebarVisible;
     final nativeCompositor = NativeCompositorFlags.nativeCompositor;
     final nativeCompositorViewportActive =
         nativeCompositor &&
@@ -51,14 +54,14 @@ class MainWindowScaffold extends StatelessWidget {
     if (overlays.settingsVisible ||
         overlays.mediaInfoVisible ||
         overlays.profilerVisible ||
-        overlays.marksSidebarVisible) {
+        rightPanelVisible) {
       log.fine(
         '[NativeCompositorDebug] scaffold overlay build '
         'nativeHole=$nativeCompositorViewportActive '
         'settings=${overlays.settingsVisible} '
         'mediaInfo=${overlays.mediaInfoVisible} '
         'profiler=${overlays.profilerVisible} '
-        'sidebar=${overlays.marksSidebarVisible}',
+        'rightPanel=$rightPanelVisible',
       );
     }
     final shellBackgroundColor = Theme.of(context).scaffoldBackgroundColor;
@@ -74,7 +77,7 @@ class MainWindowScaffold extends StatelessWidget {
             'global=${event.position} local=${event.localPosition} '
             'buttons=${event.buttons} tracks=${media.tracks.length} '
             'nativeHole=$nativeCompositorViewportActive '
-            'marksSidebar=${overlays.marksSidebarVisible} '
+            'rightPanel=$rightPanelVisible '
             'settings=${overlays.settingsVisible} '
             'dragging=${overlays.dragging}',
           );
@@ -217,20 +220,31 @@ class MainWindowScaffold extends StatelessWidget {
                               ],
                             ),
                           ),
-                          if (overlays.marksSidebarVisible)
+                          if (rightPanelVisible)
                             _NativeCompositorOpaqueRegion(
                               enabled: nativeCompositorViewportActive,
                               color: shellBackgroundColor,
-                              child: QuickMarkSidebar(
-                                width: overlays.marksSidebarWidth,
-                                marks: model.marks,
-                                actions: actions.marks,
-                                onClose: overlayActions.onCloseMarksSidebar,
-                              ),
+                              child: inspectorVisible
+                                  ? MainWindowInspector(
+                                      width: overlays.marksSidebarWidth,
+                                      selection: model.selection,
+                                      marks: model.marks,
+                                      markActions: actions.marks,
+                                      onClose: () => overlayActions
+                                          .onCloseInspector
+                                          ?.call(),
+                                    )
+                                  : QuickMarkSidebar(
+                                      width: overlays.marksSidebarWidth,
+                                      marks: model.marks,
+                                      actions: actions.marks,
+                                      onClose:
+                                          overlayActions.onCloseMarksSidebar,
+                                    ),
                             ),
                         ],
                       ),
-                      if (overlays.marksSidebarVisible)
+                      if (rightPanelVisible)
                         _MarksSidebarResizeHandle(
                           width: overlays.marksSidebarWidth,
                           onWidthChanged:

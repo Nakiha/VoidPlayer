@@ -275,6 +275,7 @@ extension MainWindowViewActionBinding on MainWindowController {
         },
         onHeightChanged: stateStore.setDeckHeight,
         onCollapsedChanged: stateStore.setDeckCollapsed,
+        onAnalysisSelectionChanged: stateStore.setAnalysisSelection,
       ),
       analysisOverlay: MainWindowAnalysisOverlayActions(
         onTypeChanged: (type) {
@@ -301,6 +302,13 @@ extension MainWindowViewActionBinding on MainWindowController {
         onCloseSettings: () => stateStore.setSettingsVisible(false),
         onCloseMarksSidebar: () =>
             layoutCoordinator.setMarksSidebarVisible(false),
+        onCloseInspector: () {
+          if (_state.selectedQuickMarkId != null) {
+            quickMarkCoordinator.select(null);
+          } else {
+            stateStore.setAnalysisSelection(null);
+          }
+        },
         onMarksSidebarWidthChanged: layoutCoordinator.setMarksSidebarWidth,
         onViewportPixelSizeModeChanged: (mode) =>
             layoutCoordinator.setPixelSizeMode(mode.layoutValue),

@@ -106,6 +106,8 @@ class _MainWindowDeckState extends State<MainWindowDeck> {
                     AnalysisWorkspacePage(
                       entries: widget.model.deck.analysisEntries,
                       testHosts: widget.model.deck.analysisTestHosts,
+                      onSelectionChanged:
+                          widget.actions.deck.onAnalysisSelectionChanged,
                     )
                   else
                     const SizedBox.shrink(),

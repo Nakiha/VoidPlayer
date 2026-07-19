@@ -3,6 +3,9 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:void_player/analysis/analysis_ffi.dart';
+import 'package:void_player/analysis/nalu_types.dart';
+import 'package:void_player/analysis/ui/analysis_ui_selection.dart';
 import 'package:void_player/main_window/main_window_media.dart';
 import 'package:void_player/main_window/main_window_playback.dart';
 import 'package:void_player/main_window/main_window_state.dart';
@@ -118,6 +121,33 @@ void main() {
     store.setDeckCollapsed(true);
     expect(store.value.deckCollapsed, isTrue);
     expect(notifications, 3);
+  });
+
+  test('analysis and quick-mark selection are mutually exclusive', () {
+    final store = MainWindowStateStore();
+    addTearDown(store.dispose);
+    final selection = AnalysisNaluSelection(
+      fileId: 7,
+      codec: AnalysisCodec.h264,
+      naluIndex: 3,
+      nalu: NaluInfo(
+        offset: 12,
+        size: 8,
+        nalType: 7,
+        temporalId: 0,
+        layerId: 0,
+        flags: 0,
+      ),
+    );
+
+    store.setSelectedQuickMarkId(4);
+    store.setAnalysisSelection(selection);
+    expect(store.value.selectedQuickMarkId, isNull);
+    expect(store.value.analysisSelection, same(selection));
+
+    store.setSelectedQuickMarkId(4);
+    expect(store.value.selectedQuickMarkId, 4);
+    expect(store.value.analysisSelection, isNull);
   });
 
   test('seek preview clears stale presented frame anchors', () {

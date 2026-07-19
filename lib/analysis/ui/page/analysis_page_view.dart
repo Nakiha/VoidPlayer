@@ -65,80 +65,17 @@ class AnalysisPageView extends StatelessWidget {
             onFrameSelected: actions.onChartFrameSelected,
             l: l,
           );
-    final bottomPanel = LayoutBuilder(
-      builder: (context, constraints) {
-        final selectedNalu =
-            model.selectedNaluIdx != null &&
-                model.selectedNaluIdx! >= model.naluIndexBase &&
-                model.selectedNaluIdx! <
-                    model.naluIndexBase + model.nalus.length
-            ? model.nalus[model.selectedNaluIdx! - model.naluIndexBase]
-            : null;
-        final browser = AnalysisNaluBrowserView(
-          key: analysisNaluBrowserPanelKey,
-          nalus: model.nalus,
-          naluIndexBase: model.naluIndexBase,
-          totalNalus: model.totalNaluCount,
-          codec: model.codec,
-          selectedIdx: model.selectedNaluIdx,
-          onSelected: actions.onNaluSelected,
-          onWindowRequested: actions.onNaluWindowRequested,
-          filter: model.naluFilter,
-          onFilterChanged: actions.onNaluFilterChanged,
-        );
-        if (selectedNalu == null) {
-          return browser;
-        }
-        final totalW = constraints.maxWidth;
-        final maxBrowserW = (totalW - 120).clamp(120.0, double.infinity);
-        final layoutController = splitLayoutController;
-        final requestedBrowserW = layoutController != null
-            ? totalW * layoutController.naluBrowserFraction
-            : model.naluBrowserWidth;
-        final browserW = requestedBrowserW.clamp(120.0, maxBrowserW);
-        return Stack(
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(width: browserW, child: browser),
-                Expanded(
-                  child: AnalysisNaluDetailView(
-                    key: analysisNaluDetailPanelKey,
-                    nalu: selectedNalu,
-                    frameIdx: model.selectedFrameIdx,
-                    frameIndexBase: model.frameIndexBase,
-                    frames: model.frames,
-                    codec: model.codec,
-                    l: l,
-                  ),
-                ),
-              ],
-            ),
-            Positioned(
-              left: browserW - 4,
-              top: 0,
-              bottom: 0,
-              width: 9,
-              child: ExcludeSemantics(
-                child: AnalysisResizableVDivider(
-                  position: browserW,
-                  onPositionChanged: (v) {
-                    final clamped = v.clamp(120.0, maxBrowserW);
-                    if (layoutController != null) {
-                      layoutController.setNaluBrowserFraction(
-                        totalW <= 0 ? 0.0 : clamped / totalW,
-                      );
-                    } else {
-                      actions.onNaluBrowserWidthChanged(clamped);
-                    }
-                  },
-                ),
-              ),
-            ),
-          ],
-        );
-      },
+    final bottomPanel = AnalysisNaluBrowserView(
+      key: analysisNaluBrowserPanelKey,
+      nalus: model.nalus,
+      naluIndexBase: model.naluIndexBase,
+      totalNalus: model.totalNaluCount,
+      codec: model.codec,
+      selectedIdx: model.selectedNaluIdx,
+      onSelected: actions.onNaluSelected,
+      onWindowRequested: actions.onNaluWindowRequested,
+      filter: model.naluFilter,
+      onFilterChanged: actions.onNaluFilterChanged,
     );
     return Scaffold(
       body: AxTreeRegion(
@@ -224,7 +161,7 @@ class AnalysisPageView extends StatelessWidget {
                         top: topH + dividerLineH,
                         height: bottomH,
                         child: AxTreeRegion(
-                          label: 'NAL unit inspector',
+                          label: 'NAL unit browser',
                           child: bottomPanel,
                         ),
                       ),

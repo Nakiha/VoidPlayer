@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../analysis/analysis_ffi.dart';
 import '../../../analysis/nalu_types.dart';
+import '../analysis_ui_selection.dart';
 import '../testing/analysis_test_host.dart';
 import '../widgets/analysis_split_layout_controller.dart';
 import 'analysis_page_controller.dart';
@@ -13,6 +14,7 @@ class AnalysisPage extends StatefulWidget {
   final AnalysisTestHostRegistry testHosts;
   final bool pollSummary;
   final AnalysisSplitLayoutController? splitLayoutController;
+  final ValueChanged<AnalysisUiSelection?>? onSelectionChanged;
 
   const AnalysisPage({
     super.key,
@@ -21,6 +23,7 @@ class AnalysisPage extends StatefulWidget {
     required this.testHosts,
     this.pollSummary = true,
     this.splitLayoutController,
+    this.onSelectionChanged,
   });
 
   @override
@@ -30,11 +33,13 @@ class AnalysisPage extends StatefulWidget {
 class AnalysisPageState extends State<AnalysisPage>
     implements AnalysisTestHost {
   late AnalysisPageController _controller;
+  Object? _lastPublishedSelectionIdentity;
 
   @override
   void initState() {
     super.initState();
     _controller = _createController();
+    _controller.addListener(_publishSelection);
     widget.testHosts.register(widget.fileId, this);
     widget.splitLayoutController?.addListener(_onSplitLayoutChanged);
   }
@@ -53,8 +58,13 @@ class AnalysisPageState extends State<AnalysisPage>
     }
     if (oldWidget.hash != widget.hash ||
         oldWidget.pollSummary != widget.pollSummary) {
+      _controller.removeListener(_publishSelection);
       _controller.dispose();
       _controller = _createController();
+      _controller.addListener(_publishSelection);
+      _lastPublishedSelectionIdentity = null;
+    } else if (oldWidget.onSelectionChanged != widget.onSelectionChanged) {
+      _publishSelection();
     }
   }
 
@@ -62,6 +72,7 @@ class AnalysisPageState extends State<AnalysisPage>
   void dispose() {
     widget.testHosts.unregister(widget.fileId, this);
     widget.splitLayoutController?.removeListener(_onSplitLayoutChanged);
+    _controller.removeListener(_publishSelection);
     _controller.dispose();
     super.dispose();
   }
@@ -91,6 +102,48 @@ class AnalysisPageState extends State<AnalysisPage>
 
   void _onSplitLayoutChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _publishSelection() {
+    final callback = widget.onSelectionChanged;
+    if (callback == null) return;
+    final selection = _selectionSnapshot();
+    final identity = selection?.identity;
+    if (_lastPublishedSelectionIdentity == identity) return;
+    _lastPublishedSelectionIdentity = identity;
+    callback(selection);
+  }
+
+  AnalysisUiSelection? _selectionSnapshot() {
+    final frameIndex = _controller.selectedFrameIdx;
+    FrameInfo? frame;
+    if (frameIndex != null) {
+      final frameOffset = frameIndex - _controller.frameIndexBase;
+      if (frameOffset >= 0 && frameOffset < _controller.frames.length) {
+        frame = _controller.frames[frameOffset];
+      }
+    }
+    final naluIndex = _controller.selectedNaluIdx;
+    if (naluIndex != null) {
+      final naluOffset = naluIndex - _controller.naluIndexBase;
+      if (naluOffset >= 0 && naluOffset < _controller.nalus.length) {
+        return AnalysisNaluSelection(
+          fileId: widget.fileId,
+          frameIndex: frameIndex,
+          frame: frame,
+          codec: _controller.codec,
+          naluIndex: naluIndex,
+          nalu: _controller.nalus[naluOffset],
+        );
+      }
+    }
+    if (frameIndex == null || frame == null) return null;
+    return AnalysisFrameSelection(
+      fileId: widget.fileId,
+      frameIndex: frameIndex,
+      frame: frame,
+      codec: _controller.codec,
+    );
   }
 
   @override

@@ -10,6 +10,7 @@ set(BUILD_PYTHON OFF CACHE BOOL "" FORCE)
 include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/Dependencies.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/FFmpeg.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/NativeSources.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/VideoDecodeCoreTarget.cmake")
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.

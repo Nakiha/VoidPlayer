@@ -1,11 +1,19 @@
-# Main window should spawn one workspace analysis process for all loaded tracks.
+# Main window should expose all loaded tracks in one inline analysis workspace.
 @WINDOW, 1280, 720
-0.2, SET_ANALYSIS_TEST_SCRIPT, ui_tests/analysis/child_smoke.csv
 0.5, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
 1.0, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
 1.5, ADD_MEDIA, resources/video/h266_10s_1920x1080.mp4
 4.0, ASSERT_TRACK_COUNT, 3
 4.2, RUN_ANALYSIS
-5.0, WAIT_ANALYSIS_PROCESS_COUNT, 1, 120000
-6.0, ASSERT_ANALYSIS_PROCESS_COUNT, 1
+4.3, WAIT_ANALYSIS_ENTRY_COUNT, 3, 120000
+4.4, ASSERT_ANALYSIS_ENTRY_COUNT, 3
+4.5, WAIT_ANALYSIS_LOADED, 120000
+4.6, ASSERT_ANALYSIS_LOADED
+4.7, ASSERT_ANALYSIS_MIN_COUNTS, 1, 1, 1
+4.8, SET_ANALYSIS_TAB, frame_trend
+4.9, ASSERT_ANALYSIS_TAB, frame_trend
+5.0, SET_ANALYSIS_ORDER, dts
+5.1, ASSERT_ANALYSIS_ORDER, dts
+5.2, SELECT_ANALYSIS_NALU, 0
+5.3, ASSERT_ANALYSIS_DETAIL_VISIBLE
 10.0, QUIT, 0

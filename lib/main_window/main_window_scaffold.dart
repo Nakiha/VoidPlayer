@@ -12,6 +12,7 @@ import '../widgets/quick_mark_sidebar.dart';
 import '../widgets/resizable_divider.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/viewport_panel.dart';
+import 'main_window_deck.dart';
 import 'main_window_media_sections.dart';
 import 'main_window_overlays.dart';
 import 'main_window_state.dart';
@@ -119,17 +120,14 @@ class MainWindowScaffold extends StatelessWidget {
                           media.networkMediaPlaybackCapability,
                           media.sshRemoteMediaPlaybackCapability,
                         ]),
-                        analysisDisabledTooltip: firstCapabilityUserMessage([
-                          media.externalAnalysisWindowsCapability,
-                          media.analysisOverlaysCapability,
-                        ]),
+                        analysisDisabledTooltip: null,
                         canAddTrack: capabilities.canAddTrack,
                         canOpenLocalMedia: capabilities.canOpenLocalMedia,
                         canOpenNetworkMedia: capabilities.canOpenNetworkMedia,
                         canOpenSshMedia: capabilities.canOpenSshMedia,
                         canOpenMediaInfo: capabilities.canOpenMediaInfo,
                         canOpenProfiler: capabilities.canOpenProfiler,
-                        canRunAnalysis: capabilities.canRunAnalysis,
+                        canRunAnalysis: media.tracks.isNotEmpty,
                         analysisEnabled: media.analysisEnabled,
                         mediaInfoActive: overlays.mediaInfoVisible,
                         profilerActive: overlays.profilerVisible,
@@ -199,10 +197,20 @@ class MainWindowScaffold extends StatelessWidget {
                                     child: _NativeCompositorOpaqueRegion(
                                       enabled: nativeCompositorViewportActive,
                                       color: shellBackgroundColor,
-                                      child: MediaTimelineSection(
-                                        model: model,
-                                        handles: handles,
-                                        actions: actions,
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          PinnedPlaybackChrome(
+                                            model: model,
+                                            handles: handles,
+                                            actions: actions,
+                                          ),
+                                          MainWindowDeck(
+                                            model: model,
+                                            handles: handles,
+                                            actions: actions,
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),

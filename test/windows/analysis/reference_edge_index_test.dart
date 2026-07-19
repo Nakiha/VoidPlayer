@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:void_player/windows/analysis/charts/reference_edge_index.dart';
+import 'package:void_player/analysis/ui/charts/reference_edge_index.dart';
 
 void main() {
   test('edge span index returns edges crossing the queried range', () {

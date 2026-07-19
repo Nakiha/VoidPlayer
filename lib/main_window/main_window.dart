@@ -7,7 +7,6 @@ import '../feedback/app_feedback.dart';
 import '../l10n/app_localizations.dart';
 import '../marks/quick_mark_persistence.dart';
 import '../native_player/native_player_protocol.dart';
-import '../platform/analysis_process_host.dart';
 import '../platform/main_window_platform.dart';
 import '../platform/main_window_shutdown.dart';
 import '../platform/native_file_picker.dart';
@@ -22,7 +21,6 @@ class MainWindow extends StatefulWidget {
   final ActionRegistry actionRegistry;
   final String? testScriptPath;
   final StartupOptions startupOptions;
-  final AnalysisProcessHost? analysisProcesses;
   final PlatformCapabilities platformCapabilities;
   final MainWindowPlatform? platformWindow;
   final NativeFilePicker? nativeFilePicker;
@@ -30,14 +28,12 @@ class MainWindow extends StatefulWidget {
   final AppSettingsRepository? appSettings;
   final PlaybackPreferences? playbackPreferences;
   final QuickMarkRepository? quickMarkRepository;
-  final Color? accentColor;
 
   const MainWindow({
     super.key,
     required this.actionRegistry,
     this.testScriptPath,
     this.startupOptions = const StartupOptions(),
-    this.analysisProcesses,
     this.platformCapabilities = PlatformCapabilities.windows,
     this.platformWindow,
     this.nativeFilePicker,
@@ -45,7 +41,6 @@ class MainWindow extends StatefulWidget {
     this.appSettings,
     this.playbackPreferences,
     this.quickMarkRepository,
-    this.accentColor,
   });
 
   @override
@@ -55,7 +50,6 @@ class MainWindow extends StatefulWidget {
 class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   late final MainWindowController _controller;
   int? _lastViewportBackgroundColor;
-  int? _lastAnalysisAccentColor;
 
   @override
   void initState() {
@@ -64,7 +58,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       actionRegistry: widget.actionRegistry,
       vsync: this,
       startupOptions: widget.startupOptions,
-      analysisProcesses: widget.analysisProcesses,
       platformCapabilities: widget.platformCapabilities,
       platformWindow: widget.platformWindow,
       nativeFilePicker: widget.nativeFilePicker,
@@ -84,15 +77,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _syncViewportBackgroundColor(context);
-    _syncAnalysisAccentColor();
-  }
-
-  @override
-  void didUpdateWidget(MainWindow oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.accentColor != widget.accentColor) {
-      _syncAnalysisAccentColor();
-    }
   }
 
   @override
@@ -124,15 +108,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     if (_lastViewportBackgroundColor == value) return;
     _lastViewportBackgroundColor = value;
     _controller.setViewportBackgroundColor(color);
-  }
-
-  void _syncAnalysisAccentColor() {
-    final accentColor = widget.accentColor;
-    if (accentColor == null) return;
-    final value = accentColor.toARGB32();
-    if (_lastAnalysisAccentColor == value) return;
-    _lastAnalysisAccentColor = value;
-    _controller.setAnalysisAccentColor(accentColor);
   }
 
   void _showDuplicateMediaSkipped(int count) {

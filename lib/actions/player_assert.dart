@@ -244,11 +244,6 @@ class AssertCaptureDiff extends PlayerAssert {
   });
 }
 
-class AssertAnalysisProcessCount extends PlayerAssert {
-  final int count;
-  const AssertAnalysisProcessCount(this.count);
-}
-
 class AssertAnalysisFfiAvailable extends PlayerAssert {
   final bool available;
   const AssertAnalysisFfiAvailable(this.available);

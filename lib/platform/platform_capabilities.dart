@@ -59,7 +59,6 @@ class PlatformCapabilities {
   final PlatformCapability networkMediaPlaybackCapability;
   final PlatformCapability sshRemoteMediaPlaybackCapability;
   final PlatformCapability nativeFilePickerCapability;
-  final PlatformCapability externalAnalysisWindowsCapability;
   final PlatformCapability analysisOverlaysCapability;
   final PlatformCapability nativeViewportCaptureCapability;
   final PlatformCapability pathLauncherCapability;
@@ -70,7 +69,6 @@ class PlatformCapabilities {
     required this.networkMediaPlaybackCapability,
     required this.sshRemoteMediaPlaybackCapability,
     required this.nativeFilePickerCapability,
-    required this.externalAnalysisWindowsCapability,
     required this.analysisOverlaysCapability,
     required this.nativeViewportCaptureCapability,
     required this.pathLauncherCapability,
@@ -82,8 +80,6 @@ class PlatformCapabilities {
   bool get sshRemoteMediaPlayback =>
       sshRemoteMediaPlaybackCapability.isAvailable;
   bool get nativeFilePicker => nativeFilePickerCapability.isAvailable;
-  bool get externalAnalysisWindows =>
-      externalAnalysisWindowsCapability.isAvailable;
   bool get analysisOverlays => analysisOverlaysCapability.isAvailable;
   bool get nativeViewportCapture => nativeViewportCaptureCapability.isAvailable;
   bool get pathLauncher => pathLauncherCapability.isAvailable;
@@ -98,9 +94,6 @@ class PlatformCapabilities {
       CapabilityState.supported,
     ),
     nativeFilePickerCapability: PlatformCapability(CapabilityState.supported),
-    externalAnalysisWindowsCapability: PlatformCapability(
-      CapabilityState.supported,
-    ),
     analysisOverlaysCapability: PlatformCapability(CapabilityState.supported),
     nativeViewportCaptureCapability: PlatformCapability(
       CapabilityState.supported,
@@ -128,10 +121,6 @@ class PlatformCapabilities {
     nativeFilePickerCapability: PlatformCapability(
       CapabilityState.sandboxLimited,
       detail: 'NSOpenPanel grants read-only access for selected files.',
-    ),
-    externalAnalysisWindowsCapability: PlatformCapability(
-      CapabilityState.unsupported,
-      detail: 'macOS analysis UI/IPC remains capability-gated.',
     ),
     analysisOverlaysCapability: PlatformCapability(
       CapabilityState.localOnly,

@@ -51,7 +51,7 @@ paths unless the current change specifically touches that risk.
 | --- | --- |
 | `macos/` | macOS runner, native target ring, Metal compositor, VideoToolbox, and shared native facade smokes. |
 | `smoke/` | Fast app sanity checks. Use this for unrelated Flutter UI changes before picking a narrower regression. |
-| `analysis/` | Main-window analysis spawning, analysis child-window behavior, and analysis IPC track updates. Changes under `lib/windows/analysis/`, analysis launch flow, or analysis IPC should use this folder. |
+| `analysis/` | Inline analysis deck, cache generation, chart/NALU behavior, and in-process track updates. Changes under `lib/analysis/ui/` or the main-window analysis flow should use this folder. |
 | `timeline/` | Real timeline pointer/click paths and repeated timeline seek regressions. Prefer this over direct `SEEK_TO` when a user-facing timeline interaction changed. |
 | `seek/` | Direct seek, step, rapid seek, and seek crash guards. Use this when changing playback/seek logic without touching timeline pointer handling. |
 | `loop/` | Loop range enable/end/handle behavior and loop frame stability. |
@@ -63,15 +63,12 @@ paths unless the current change specifically touches that risk.
 
 ## Analysis Tests
 
-The analysis folder has two kinds of scripts:
+All analysis scripts run in the main process. Analysis-specific commands are
+dispatched to the selected inline `AnalysisPage` through `AnalysisTestHost`.
+Unknown CSV commands fail parsing so removed child-process commands cannot be
+silently skipped.
 
-- `spawn_*.csv` and `ipc_*.csv` run from the main window. They generate analysis,
-  spawn or reuse the analysis workspace process, and may pass a child script to
-  the spawned analysis window.
-- `child_*.csv` run inside an analysis child/standalone window. They are support
-  scripts for the main-window spawn scripts, not normal main-window UI tests.
-
-For analysis-window refactors, use the `analysis/` folder rather than
+For inline-analysis refactors, use the `analysis/` folder rather than
 `smoke/basic.csv` alone.
 
 ## Naming

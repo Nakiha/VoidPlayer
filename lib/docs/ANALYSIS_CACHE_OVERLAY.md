@@ -15,7 +15,7 @@
 | `AnalysisCache` | Resolve cache paths, validate runtime VAC versions, discover current overlay chunks by file name. |
 | `SerialAnalysisGenerationQueue` | Serialize VAC2 base writes and keep same-hash overlay submission behind active base writes. It is not a CPU worker pool. |
 | native analysis generation service | Own the resident VACHUNK worker pool, request de-duplication, job stats, and asynchronous completion polling. |
-| `MainWindowAnalysisCoordinator` | Connect active tracks, presented-frame timing, overlay panel state, analysis IPC, and redraw requests. |
+| `MainWindowAnalysisCoordinator` | Connect active tracks, inline analysis workspace entries, presented-frame timing, overlay panel state, and redraw requests. |
 | `MainWindowPlaybackCoordinator` | Notify analysis after seek settles so overlay chunks can be requested without blocking seek or frame presentation. |
 
 Flutter never draws CU/MB geometry. It only requests cache materialization and

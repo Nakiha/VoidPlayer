@@ -123,7 +123,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `OPEN_SETTINGS` | — | 打开主窗口设置对话框 |
 | `OPEN_STATS` | — | 打开主窗口性能浮层 |
 | `OPEN_MEMORY` | — | 打开主窗口性能浮层 |
-| `RUN_ANALYSIS` | — | 触发 analysis 流程 |
+| `RUN_ANALYSIS` | — | 生成当前 tracks 的 analysis cache 并切换到主窗口 analysis deck tab |
 
 ## Automation Command 清单
 
@@ -193,7 +193,6 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 |------|------|------|
 | `WAIT_PLAYING` | timeoutMs? | 轮询等待播放器进入播放状态 |
 | `WAIT_PAUSED` | timeoutMs? | 轮询等待播放器进入暂停状态 |
-| `WAIT_ANALYSIS_PROCESS_COUNT` | count, timeoutMs? | 轮询等待 analysis 进程数量达到指定值 |
 | `WAIT_PRESENTED_FRAME_RANGE` | fileId, minUs, maxUs, timeoutMs?, intervalMs? | 轮询等待指定文件当前已上屏帧 PTS 位于范围内；用于 seek/device-recovery 等异步发布路径 |
 
 ## 文件清单

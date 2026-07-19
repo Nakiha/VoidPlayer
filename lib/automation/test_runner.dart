@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import '../actions/automation_action.dart';
 import '../actions/player_action.dart';
 import '../analysis/analysis_cache.dart';
+import '../analysis/ui/testing/analysis_test_executor.dart';
 import '../app_log.dart';
 import '../video_renderer_controller.dart';
 import '../viewport/viewport_interaction_diagnostics.dart';
@@ -43,7 +44,6 @@ class TestRunner {
   AutomationAssertExecutor get _assertExecutor => AutomationAssertExecutor(
     probe: _probe,
     state: _state,
-    analysisProcesses: automation.analysisProcesses,
     effectiveDurationUs: automation.effectiveDurationUs,
     timelinePtsUs: automation.timelinePtsUs,
     quickMarkCount: automation.quickMarkCount,
@@ -52,7 +52,14 @@ class TestRunner {
 
   /// Parse and execute the test script. Exits the process on QUIT or failure.
   Future<void> run() async {
-    final instructions = parseAutomationScript(scriptPath);
+    late final List<ScriptInstruction> instructions;
+    try {
+      instructions = parseAutomationScript(scriptPath);
+    } catch (error, stack) {
+      log.severe('TestRunner: failed to parse $scriptPath', error, stack);
+      runtime.quit(1);
+      return;
+    }
     if (instructions.isEmpty) {
       log.severe('Test script is empty: $scriptPath');
       runtime.quit(1);
@@ -100,29 +107,49 @@ class TestRunner {
         log.info('TestRunner ${instr.time}: assert ${assertion.runtimeType}');
         await _assertExecutor.execute(assertion);
 
+      case ScriptAnalysis(:final command):
+        log.info(
+          'TestRunner ${instr.time}: analysis ${command.type.name} '
+          '${command.args.join(' ')}',
+        );
+        final hostTimeout = command.type == AnalysisTestCommandType.waitLoaded
+            ? Duration(milliseconds: command.intArg(0, defaultValue: 10000))
+            : const Duration(seconds: 10);
+        final host = await automation.analysisTestHosts.waitForActiveHost(
+          hostTimeout,
+        );
+        await AnalysisTestExecutor(host).execute(command);
+
       case ScriptWait(:final state, :final timeout):
         log.info(
           'TestRunner ${instr.time}: WAIT_${state.name.toUpperCase()} ${timeout.inMilliseconds}ms',
         );
         await _executeWait(state, timeout);
 
-      case ScriptWaitAnalysisProcessCount(:final count, :final timeout):
-        log.info(
-          'TestRunner ${instr.time}: WAIT_ANALYSIS_PROCESS_COUNT $count ${timeout.inMilliseconds}ms',
-        );
-        final ok = await automation.waitForAnalysisProcessCount(count, timeout);
-        if (!ok) {
-          throw AssertionError(
-            'Expected $count analysis process(es), got '
-            '${automation.analysisProcessCount}; exits=${automation.analysisExitCodes}',
-          );
-        }
-
       case ScriptWaitTrackCount(:final count, :final timeout):
         log.info(
           'TestRunner ${instr.time}: WAIT_TRACK_COUNT $count ${timeout.inMilliseconds}ms',
         );
         await _executeWaitTrackCount(count, timeout);
+
+      case ScriptWaitAnalysisEntryCount(:final count, :final timeout):
+        log.info(
+          'TestRunner ${instr.time}: WAIT_ANALYSIS_ENTRY_COUNT $count '
+          '${timeout.inMilliseconds}ms',
+        );
+        await _executeWaitAnalysisEntryCount(count, timeout);
+
+      case ScriptAssertAnalysisEntryCount(:final count):
+        final actual = automation.analysisEntryCount();
+        log.info(
+          'TestRunner ${instr.time}: ASSERT_ANALYSIS_ENTRY_COUNT '
+          'expected=$count actual=$actual',
+        );
+        if (actual != count) {
+          throw AssertionError(
+            'Expected $count inline analysis entries, got $actual',
+          );
+        }
 
       case ScriptWaitPresentedFrameRange(
         :final fileId,
@@ -143,10 +170,6 @@ class TestRunner {
           timeout: timeout,
           interval: interval,
         );
-
-      case ScriptSetAnalysisTestScript(:final path):
-        log.info('TestRunner ${instr.time}: SET_ANALYSIS_TEST_SCRIPT $path');
-        automation.analysisTestScriptPath = path;
 
       case ScriptGenerateTestVideo(
         :final path,
@@ -200,9 +223,33 @@ class TestRunner {
           );
         }
 
+      case ScriptClickMainWindowDeckTab(:final tabName):
+        testHarness.clickMainWindowDeckTab(tabName);
+
+      case ScriptDragMainWindowDeck(:final deltaY, :final steps):
+        await testHarness.dragMainWindowDeck(deltaY, steps: steps);
+
+      case ScriptToggleMainWindowDeckCollapsed():
+        testHarness.toggleMainWindowDeckCollapsed();
+
+      case ScriptAssertMainWindowDeckTab(:final tabName):
+        final actual = automation.mainWindowDeckTabName();
+        if (actual != tabName) {
+          throw AssertionError(
+            'Expected main-window deck tab $tabName, got $actual',
+          );
+        }
+
+      case ScriptAssertMainWindowDeckCollapsed(:final collapsed):
+        final actual = automation.mainWindowDeckCollapsed();
+        if (actual != collapsed) {
+          throw AssertionError(
+            'Expected main-window deck collapsed=$collapsed, got $actual',
+          );
+        }
+
       case ScriptQuit(:final exitCode):
         log.info('TestRunner ${instr.time}: QUIT $exitCode');
-        await automation.closeAllAnalysisWindows();
         if (controller.hasPlayer) {
           await controller.destroyPlayerOnly();
         }
@@ -936,6 +983,22 @@ class TestRunner {
     throw AssertionError(
       'WAIT_TRACK_COUNT timed out after ${timeout.inMilliseconds}ms: '
       'expected $count, got $lastCount',
+    );
+  }
+
+  Future<void> _executeWaitAnalysisEntryCount(
+    int count,
+    Duration timeout,
+  ) async {
+    final stopwatch = Stopwatch()..start();
+    while (stopwatch.elapsed < timeout) {
+      if (automation.analysisEntryCount() == count) return;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    throw AssertionError(
+      'WAIT_ANALYSIS_ENTRY_COUNT timed out after '
+      '${timeout.inMilliseconds}ms: expected $count, got '
+      '${automation.analysisEntryCount()}',
     );
   }
 

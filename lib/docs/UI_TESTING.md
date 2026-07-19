@@ -70,7 +70,7 @@ test/
 ui_tests/               # 启动真实 app 的 CSV GUI 自动化脚本
 ├── macos/              # macOS runner / texture bridge smoke
 ├── smoke/              # 快速主窗口 sanity check
-├── analysis/           # analysis spawn / 子窗体 / IPC
+├── analysis/           # 内嵌 analysis deck / cache / 图表 / track entry
 ├── timeline/           # timeline 真实 pointer/click 路径
 ├── seek/               # 直接 seek / step / rapid seek
 ├── loop/               # loop range 行为
@@ -120,7 +120,7 @@ ui_tests/               # 启动真实 app 的 CSV GUI 自动化脚本
 |------|----------------|
 | `macos/` | macOS runner / texture bridge / native facade 上屏路径。 |
 | `smoke/` | 通用 UI 改动、先确认 app 能启动和基础播放路径。 |
-| `analysis/` | `lib/windows/analysis/`、主窗体生成 analysis、spawn analysis 窗体、analysis IPC track 更新。 |
+| `analysis/` | `lib/analysis/ui/`、主窗体生成 analysis、deck tab 与进程内 track entry 更新。 |
 | `timeline/` | 用户真实点击/拖动 timeline，尤其是 timeline seek、重复点击、防崩溃。 |
 | `seek/` | 直接 seek、step forward、rapid seek、seek 后位置稳定。 |
 | `loop/` | loop range 开关、start/end handle、loop 尾帧稳定。 |
@@ -130,10 +130,9 @@ ui_tests/               # 启动真实 app 的 CSV GUI 自动化脚本
 | `color/` | 软件/硬件解码最终截图差异、range/matrix/tone-map 等色彩管线回归。 |
 | `local/` | 依赖个人绝对路径或大型私有素材，只在本机复现特定问题时使用。 |
 
-analysis 目录里有两类脚本：
-
-- `spawn_*.csv` / `ipc_*.csv` 从主窗口执行，覆盖生成 analysis、spawn/reuse analysis workspace、track 更新同步。
-- `child_*.csv` 在 analysis 子窗体内执行，是主窗口脚本通过 `SET_ANALYSIS_TEST_SCRIPT` 传进去的辅助脚本，不是普通主窗口 smoke。
+`ui_tests/analysis/` 全部在主进程运行。Analysis 专属命令通过
+`AnalysisTestHost` 分发到当前选中的内嵌页面；未知 CSV 命令会直接使脚本失败，
+避免删除过的 child-process 命令被静默忽略。
 
 ## 常用入口
 

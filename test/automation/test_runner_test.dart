@@ -3,12 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/actions/action_registry.dart';
+import 'package:void_player/analysis/ui/testing/analysis_test_host.dart';
 import 'package:void_player/app_log.dart';
 import 'package:void_player/automation/main_window_harness.dart';
 import 'package:void_player/automation/test_runner.dart';
 import 'package:void_player/automation/ui_automation_bridge.dart';
 import 'package:void_player/automation/ui_automation_runtime.dart';
-import 'package:void_player/platform/analysis_process_host.dart';
 import 'package:void_player/preferences/playback_preferences.dart';
 import 'package:void_player/video_renderer_controller.dart';
 
@@ -185,7 +185,10 @@ String _writeScript(String contents) {
 UiAutomationBridge _bridge(NativePlayerController controller) {
   return UiAutomationBridge(
     controller: controller,
-    analysisProcesses: UnsupportedAnalysisProcessHost(),
+    analysisTestHosts: AnalysisTestHostRegistry(),
+    analysisEntryCount: () => 0,
+    mainWindowDeckTabName: () => 'timeline',
+    mainWindowDeckCollapsed: () => false,
     testHarness: MainWindowTestHarness(
       viewportKey: GlobalKey(),
       timelineSliderKey: GlobalKey(),

@@ -82,7 +82,7 @@ extension MainWindowViewActionBinding on MainWindowController {
           if (!_capabilities.canRunAnalysis) return Future<void>.value();
           return _runUserAction(
             'run analysis',
-            analysisCoordinator.triggerAnalysis,
+            analysisCoordinator.enterAnalysis,
           );
         },
         onAnalysisOverlayPanelToggle: () {
@@ -261,6 +261,20 @@ extension MainWindowViewActionBinding on MainWindowController {
           );
           stateStore.setTimelineControlsWidth(width);
         },
+      ),
+      deck: MainWindowDeckActions(
+        onTabChanged: (tab) {
+          if (tab == MainWindowDeckTab.analysis) {
+            _fireUserAction(
+              'enter analysis deck',
+              analysisCoordinator.enterAnalysis,
+            );
+            return;
+          }
+          stateStore.setDeckTab(tab);
+        },
+        onHeightChanged: stateStore.setDeckHeight,
+        onCollapsedChanged: stateStore.setDeckCollapsed,
       ),
       analysisOverlay: MainWindowAnalysisOverlayActions(
         onTypeChanged: (type) {

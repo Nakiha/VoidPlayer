@@ -7,6 +7,7 @@ import '../actions/action_registry.dart';
 import '../agent/agent_protocol_server.dart';
 import '../analysis/analysis_manager.dart';
 import '../analysis/analysis_toolbar_data_source.dart';
+import '../analysis/ui/testing/analysis_test_host.dart';
 import '../app_log.dart';
 import '../automation/main_window_harness.dart';
 import '../automation/test_runner.dart';
@@ -14,7 +15,6 @@ import '../automation/ui_automation_bridge.dart';
 import '../config/app_config.dart';
 import '../config/app_settings_repository.dart';
 import '../marks/quick_mark_persistence.dart';
-import '../platform/analysis_process_host.dart';
 import '../platform/main_window_platform.dart';
 import '../platform/native_file_picker.dart';
 import '../platform/platform_capabilities.dart';
@@ -52,7 +52,6 @@ class MainWindowController {
   final StartupOptions startupOptions;
   final bool Function() mounted;
   final MainWindowPlatform platformWindow;
-  final AnalysisProcessHost analysisProcesses;
   final PlatformCapabilities platformCapabilities;
   final NativeFilePicker nativeFilePicker;
   final AnalysisGenerationService analysisGeneration;
@@ -66,6 +65,7 @@ class MainWindowController {
   final NativePlayerController player = NativePlayerController();
   final TrackManager trackManager = TrackManager();
   final MainWindowStateStore stateStore = MainWindowStateStore();
+  final AnalysisTestHostRegistry analysisTestHosts = AnalysisTestHostRegistry();
   final PlaybackSession _session = const PlaybackSession.normal();
   late final MainWindowTimelineMetrics timelineMetrics =
       MainWindowTimelineMetrics(
@@ -117,7 +117,6 @@ class MainWindowController {
     required this.startupOptions,
     required this.mounted,
     MainWindowPlatform? platformWindow,
-    AnalysisProcessHost? analysisProcesses,
     this.platformCapabilities = PlatformCapabilities.windows,
     NativeFilePicker? nativeFilePicker,
     AnalysisGenerationService? analysisGeneration,
@@ -129,8 +128,6 @@ class MainWindowController {
     this.onUserActionFailed,
   }) : platformWindow =
            platformWindow ?? const WindowManagerMainWindowPlatform(),
-       analysisProcesses =
-           analysisProcesses ?? UnsupportedAnalysisProcessHost(),
        nativeFilePicker =
            nativeFilePicker ?? const MethodChannelNativeFilePicker(),
        analysisGeneration = analysisGeneration ?? AnalysisManager.instance,
@@ -195,6 +192,7 @@ class MainWindowController {
       ], eagerError: false);
     } finally {
       trackManager.dispose();
+      analysisTestHosts.dispose();
       stateStore.dispose();
     }
   }
@@ -204,10 +202,6 @@ class MainWindowController {
       'set viewport background color',
       player.setViewportBackgroundColor(color.toARGB32()),
     );
-  }
-
-  void setAnalysisAccentColor(Color color) {
-    analysisCoordinator.publishAccentColor(color.toARGB32());
   }
 
   Future<void> _runUserAction(
@@ -346,6 +340,11 @@ class MainWindowController {
       profilerVisible: _profilerVisible,
       settingsVisible: _settingsVisible,
       analysisOverlayControlsVisible: _analysisOverlayControlsVisible,
+      deckTab: _state.deckTab,
+      deckHeight: _state.deckHeight,
+      deckCollapsed: _state.deckCollapsed,
+      analysisEntries: analysisCoordinator.entries,
+      analysisTestHosts: analysisTestHosts,
       marksSidebarVisible: _marksSidebarVisible,
       marksSidebarWidth: _marksSidebarWidth,
       fullScreen: _fullScreen,
@@ -373,10 +372,6 @@ class MainWindowController {
     layoutCoordinator.onTrackSetChanged();
     layoutCoordinator.markLayoutDirty();
     quickMarkCoordinator.reconcilePersistence();
-    fireAndLog(
-      'publish analysis track snapshot',
-      analysisCoordinator.publishTrackSnapshot(),
-    );
     fireAndLog(
       'sync analysis overlay tracks',
       analysisCoordinator.syncOverlayPanelTracks(),

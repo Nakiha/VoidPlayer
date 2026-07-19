@@ -7,9 +7,13 @@ import 'package:void_player/analysis/analysis_cache.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/analysis/analysis_overlay.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
+import 'package:void_player/analysis/ui/testing/analysis_test_host.dart';
+import 'package:void_player/analysis/ui/workspace/analysis_workspace_models.dart';
+import 'package:void_player/analysis/ui/workspace/analysis_workspace_page.dart';
 import 'package:void_player/app_log.dart';
 import 'package:void_player/feedback/app_feedback.dart';
 import 'package:void_player/l10n/app_localizations.dart';
+import 'package:void_player/main_window/main_window_deck.dart';
 import 'package:void_player/main_window/main_window_media_sections.dart';
 import 'package:void_player/main_window/main_window_overlays.dart';
 import 'package:void_player/main_window/main_window_scaffold.dart';
@@ -72,6 +76,7 @@ void main() {
     (tester) async {
       final feedback = AppFeedbackController();
       addTearDown(feedback.dispose);
+      final handles = _handles();
       final mediaTrack = const TrackEntry(
         TrackInfo(
           fileId: 1,
@@ -93,7 +98,7 @@ void main() {
                 analysisOverlayControlsVisible: true,
                 tracks: [mediaTrack],
               ),
-              handles: _handles(),
+              handles: handles,
               actions: _noop,
             ),
           ),
@@ -101,15 +106,119 @@ void main() {
       );
 
       final viewportRect = tester.getRect(find.byType(ViewportPanel));
+      final chromeRect = tester.getRect(find.byType(PinnedPlaybackChrome));
+      final deckRect = tester.getRect(find.byType(MainWindowDeck));
       final stripRect = tester.getRect(find.byKey(analysisOverlayStripKey));
       final sidebarRect = tester.getRect(find.byType(QuickMarkSidebar));
 
       expect(stripRect.top, greaterThanOrEqualTo(viewportRect.bottom));
+      expect(chromeRect.top, greaterThanOrEqualTo(viewportRect.bottom));
+      expect(deckRect.top, greaterThanOrEqualTo(chromeRect.bottom));
       expect(stripRect.right, lessThanOrEqualTo(sidebarRect.left));
       expect(sidebarRect.top, lessThanOrEqualTo(viewportRect.top));
       expect(sidebarRect.bottom, greaterThanOrEqualTo(stripRect.bottom));
+      expect(find.byKey(handles.analysisOverlayButtonKey), findsOneWidget);
+      expect(find.byKey(handles.controlsBarKey), findsOneWidget);
+      expect(find.byKey(handles.timelineSliderKey), findsOneWidget);
+      expect(find.byKey(handles.loopRangeBarKey), findsOneWidget);
+      expect(find.text('Timeline'), findsOneWidget);
+      expect(find.text('Analysis'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'deck tab switch keeps viewport and transport geometry stable and loads analysis lazily',
+    (tester) async {
+      final feedback = AppFeedbackController();
+      addTearDown(feedback.dispose);
+      const mediaTrack = TrackEntry(
+        TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: 'track.mp4',
+          width: 1920,
+          height: 1080,
+        ),
+      );
+      final handles = _handles();
+
+      Widget build(MainWindowDeckTab tab) => _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              tracks: const [mediaTrack],
+              deckTab: tab,
+            ),
+            handles: handles,
+            actions: _noop,
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(build(MainWindowDeckTab.timeline));
+      final timelineViewport = tester.getRect(find.byType(ViewportPanel));
+      final timelineChrome = tester.getRect(find.byType(PinnedPlaybackChrome));
+      final timelineDeck = tester.getRect(find.byType(MainWindowDeck));
+      expect(find.byType(AnalysisWorkspacePage), findsNothing);
+
+      await tester.pumpWidget(build(MainWindowDeckTab.analysis));
+      await tester.pump();
+      final analysisViewport = tester.getRect(find.byType(ViewportPanel));
+      final analysisChrome = tester.getRect(find.byType(PinnedPlaybackChrome));
+      final analysisDeck = tester.getRect(find.byType(MainWindowDeck));
+
+      expect(analysisViewport, timelineViewport);
+      expect(analysisChrome, timelineChrome);
+      expect(analysisDeck, timelineDeck);
+      expect(find.byType(AnalysisWorkspacePage), findsOneWidget);
+    },
+  );
+
+  testWidgets('deck resize and collapse expose bounded local actions', (
+    tester,
+  ) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+    const mediaTrack = TrackEntry(
+      TrackInfo(
+        fileId: 1,
+        slot: 0,
+        path: 'track.mp4',
+        width: 1920,
+        height: 1080,
+      ),
+    );
+    final heights = <double>[];
+    final collapsed = <bool>[];
+
+    await tester.pumpWidget(
+      _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(settingsVisible: false, tracks: const [mediaTrack]),
+            handles: _handles(),
+            actions: _actionsWithDeck(
+              onHeightChanged: heights.add,
+              onCollapsedChanged: collapsed.add,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.drag(
+      find.byKey(mainWindowDeckResizeHandleKey),
+      const Offset(0, -80),
+    );
+    expect(heights, isNotEmpty);
+    expect(heights.last, inInclusiveRange(kMinDeckHeight, kMaxDeckHeight));
+
+    await tester.tap(find.byKey(mainWindowDeckCollapseButtonKey));
+    expect(collapsed, [true]);
+  });
 
   testWidgets('marks sidebar renders with list header actions', (tester) async {
     final feedback = AppFeedbackController();
@@ -240,7 +349,7 @@ void main() {
 
       final viewportRect = tester.getRect(find.byType(ViewportPanel));
       final sidebarRect = tester.getRect(find.byType(QuickMarkSidebar));
-      final timelineRect = tester.getRect(find.byType(MediaTimelineSection));
+      final timelineRect = tester.getRect(find.byType(MainWindowDeck));
       final devicePixelRatio = tester.view.devicePixelRatio;
       final reported = rects.last;
 
@@ -520,6 +629,9 @@ MainWindowViewModel _model({
   List<QuickMark> quickMarks = const [],
   int? selectedQuickMarkId,
   Map<int, TrackInfo> tracksByFileId = const {},
+  MainWindowDeckTab deckTab = MainWindowDeckTab.timeline,
+  double deckHeight = kDefaultDeckHeight,
+  bool deckCollapsed = false,
 }) => MainWindowViewModel(
   session: MainWindowSessionVm.fromSession(const PlaybackSession.normal()),
   viewport: MainWindowViewportVm(
@@ -561,8 +673,6 @@ MainWindowViewModel _model({
         PlatformCapabilities.windows.sshRemoteMediaPlaybackCapability,
     nativeFilePickerCapability:
         PlatformCapabilities.windows.nativeFilePickerCapability,
-    externalAnalysisWindowsCapability:
-        PlatformCapabilities.windows.externalAnalysisWindowsCapability,
     analysisOverlaysCapability:
         PlatformCapabilities.windows.analysisOverlaysCapability,
     tracks: tracks,
@@ -583,6 +693,13 @@ MainWindowViewModel _model({
     loopStartUs: 0,
     loopEndUs: 0,
     controlsWidth: 280,
+  ),
+  deck: MainWindowDeckVm(
+    tab: deckTab,
+    height: deckHeight,
+    collapsed: deckCollapsed,
+    analysisEntries: ValueNotifier(const <AnalysisWorkspaceEntry>[]),
+    analysisTestHosts: AnalysisTestHostRegistry(),
   ),
   overlays: MainWindowOverlayVm(
     dragging: false,
@@ -665,6 +782,11 @@ final _noop = MainWindowViewActions(
     onToggleTrackAudio: (_) {},
     onControlsWidthChanged: (_) {},
   ),
+  deck: MainWindowDeckActions(
+    onTabChanged: (_) {},
+    onHeightChanged: (_) {},
+    onCollapsedChanged: (_) {},
+  ),
   analysisOverlay: MainWindowAnalysisOverlayActions(
     onTypeChanged: (_) {},
     onOpacityChanged: (_) {},
@@ -683,6 +805,26 @@ final _noop = MainWindowViewActions(
     onFullScreenControlsHoverChanged: (_) {},
   ),
 );
+
+MainWindowViewActions _actionsWithDeck({
+  ValueChanged<double>? onHeightChanged,
+  ValueChanged<bool>? onCollapsedChanged,
+}) {
+  return MainWindowViewActions(
+    drop: _noop.drop,
+    toolbar: _noop.toolbar,
+    viewport: _noop.viewport,
+    marks: _noop.marks,
+    mediaTimeline: _noop.mediaTimeline,
+    deck: MainWindowDeckActions(
+      onTabChanged: _noop.deck.onTabChanged,
+      onHeightChanged: onHeightChanged ?? _noop.deck.onHeightChanged,
+      onCollapsedChanged: onCollapsedChanged ?? _noop.deck.onCollapsedChanged,
+    ),
+    analysisOverlay: _noop.analysisOverlay,
+    overlays: _noop.overlays,
+  );
+}
 
 MainWindowViewActions _actionsWithViewportRect(
   void Function(
@@ -717,6 +859,7 @@ MainWindowViewActions _actionsWithViewportRect(
     ),
     marks: _noop.marks,
     mediaTimeline: _noop.mediaTimeline,
+    deck: _noop.deck,
     analysisOverlay: _noop.analysisOverlay,
     overlays: _noop.overlays,
   );
@@ -740,6 +883,7 @@ MainWindowViewActions _noopWithMarkActions({
       onFocusVisibleMark: _noop.marks.onFocusVisibleMark,
     ),
     mediaTimeline: _noop.mediaTimeline,
+    deck: _noop.deck,
     analysisOverlay: _noop.analysisOverlay,
     overlays: _noop.overlays,
   );
@@ -754,6 +898,7 @@ MainWindowViewActions _noopWithOverlayActions({
     viewport: _noop.viewport,
     marks: _noop.marks,
     mediaTimeline: _noop.mediaTimeline,
+    deck: _noop.deck,
     analysisOverlay: _noop.analysisOverlay,
     overlays: MainWindowOverlayActions(
       onCloseMediaInfo: _noop.overlays.onCloseMediaInfo,

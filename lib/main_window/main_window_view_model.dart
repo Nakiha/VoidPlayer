@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../analysis/analysis_overlay.dart';
 import '../analysis/analysis_toolbar_data_source.dart';
+import '../analysis/ui/testing/analysis_test_host.dart';
+import '../analysis/ui/workspace/analysis_workspace_models.dart';
 import '../marks/quick_mark.dart';
 import '../marks/quick_mark_thumbnail.dart';
 import '../platform/platform_capabilities.dart';
@@ -12,6 +15,7 @@ import '../video_renderer_controller.dart';
 import '../viewport/display_geometry.dart';
 import '../viewport/viewport_display_state.dart';
 import '../widgets/loop_range_bar.dart';
+import 'main_window_state.dart';
 
 typedef AsyncUiAction = Future<void> Function();
 typedef AsyncUiAction1<T> = Future<void> Function(T value);
@@ -23,6 +27,7 @@ class MainWindowViewModel {
   final MainWindowMarksVm marks;
   final MainWindowMediaVm media;
   final MainWindowPlaybackVm playback;
+  final MainWindowDeckVm deck;
   final MainWindowOverlayVm overlays;
 
   const MainWindowViewModel({
@@ -31,7 +36,24 @@ class MainWindowViewModel {
     required this.marks,
     required this.media,
     required this.playback,
+    required this.deck,
     required this.overlays,
+  });
+}
+
+class MainWindowDeckVm {
+  final MainWindowDeckTab tab;
+  final double height;
+  final bool collapsed;
+  final ValueListenable<List<AnalysisWorkspaceEntry>> analysisEntries;
+  final AnalysisTestHostRegistry analysisTestHosts;
+
+  const MainWindowDeckVm({
+    required this.tab,
+    required this.height,
+    required this.collapsed,
+    required this.analysisEntries,
+    required this.analysisTestHosts,
   });
 }
 
@@ -113,7 +135,6 @@ class MainWindowMediaVm {
   final PlatformCapability networkMediaPlaybackCapability;
   final PlatformCapability sshRemoteMediaPlaybackCapability;
   final PlatformCapability nativeFilePickerCapability;
-  final PlatformCapability externalAnalysisWindowsCapability;
   final PlatformCapability analysisOverlaysCapability;
   final List<TrackEntry> tracks;
   final Map<int, int> syncOffsets; // fileId -> offset in microseconds
@@ -133,7 +154,6 @@ class MainWindowMediaVm {
     required this.networkMediaPlaybackCapability,
     required this.sshRemoteMediaPlaybackCapability,
     required this.nativeFilePickerCapability,
-    required this.externalAnalysisWindowsCapability,
     required this.analysisOverlaysCapability,
     required this.tracks,
     required this.syncOffsets,
@@ -201,6 +221,7 @@ class MainWindowViewActions {
   final MainWindowViewportActions viewport;
   final MainWindowMarksActions marks;
   final MainWindowMediaTimelineActions mediaTimeline;
+  final MainWindowDeckActions deck;
   final MainWindowAnalysisOverlayActions analysisOverlay;
   final MainWindowOverlayActions overlays;
 
@@ -210,8 +231,21 @@ class MainWindowViewActions {
     required this.viewport,
     required this.marks,
     required this.mediaTimeline,
+    required this.deck,
     required this.analysisOverlay,
     required this.overlays,
+  });
+}
+
+class MainWindowDeckActions {
+  final ValueChanged<MainWindowDeckTab> onTabChanged;
+  final ValueChanged<double> onHeightChanged;
+  final ValueChanged<bool> onCollapsedChanged;
+
+  const MainWindowDeckActions({
+    required this.onTabChanged,
+    required this.onHeightChanged,
+    required this.onCollapsedChanged,
   });
 }
 

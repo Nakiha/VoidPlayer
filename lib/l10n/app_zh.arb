@@ -18,6 +18,8 @@
   "playbackControls": "播放控制",
   "zoom": "缩放",
   "timelineSeek": "播放进度",
+  "deckTimelineTab": "时间线",
+  "deckAnalysisTab": "分析",
 
   "sideBySide": "并排",
   "splitScreen": "分屏",
@@ -169,9 +171,9 @@
   "selectAll": "全选",
   "cancelSelection": "取消选择",
   "deleteSelectedCache": "删除选中的缓存",
-  "cacheDeleteConfirmMessage": "删除选中的 {count} 项分析缓存？正在使用的分析窗口可能会阻止删除。",
+  "cacheDeleteConfirmMessage": "删除选中的 {count} 项分析缓存？正在使用的分析页面可能会阻止删除。",
   "cacheDeleted": "已删除 {count} 项缓存。",
-  "cacheDeleteFailed": "有 {count} 项缓存删除失败。它们可能正在被分析窗口打开，或仍在生成中。",
+  "cacheDeleteFailed": "有 {count} 项缓存删除失败。它们可能正在被分析页面打开，或仍在生成中。",
   "deleteSelectedMarkData": "删除选中的标记数据",
   "deleteSelectedMarkThumbnails": "删除选中的标记缩略图",
   "storageDeleteConfirmMessage": "删除选中的 {count} 个文件？",
@@ -303,6 +305,5 @@
   "mediaInfoLocateFile": "在资源管理器中定位",
   "mediaInfoLocateFailed": "无法定位媒体文件。",
 
-  "analysisFilterHint": "按类型、名称或 #序号筛选",
-  "analysisIpcDisconnected": "IPC 已断开，轨道快照可能已过期"
+  "analysisFilterHint": "按类型、名称或 #序号筛选"
 }

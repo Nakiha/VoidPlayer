@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/actions/automation_action.dart';
 import 'package:void_player/actions/player_action.dart';
 import 'package:void_player/actions/player_assert.dart';
+import 'package:void_player/analysis/ui/testing/analysis_test_executor.dart';
 import 'package:void_player/app_log.dart';
 import 'package:void_player/automation/automation_script.dart';
 
@@ -32,6 +33,77 @@ void main() {
         isA<RemoveTrackAction>().having((action) => action.fileId, 'fileId', 7),
       ),
     );
+  });
+
+  test('parses inline analysis commands into the main-window script', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_analysis_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync('''
+0.1,WAIT_ANALYSIS_LOADED,30000
+0.2,ASSERT_ANALYSIS_CODEC,h264
+0.3,WAIT_ANALYSIS_ENTRY_COUNT,2,5000
+0.4,ASSERT_ANALYSIS_ENTRY_COUNT,2
+''');
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(instructions, hasLength(4));
+    expect(
+      instructions.first,
+      isA<ScriptAnalysis>().having(
+        (instruction) => instruction.command.type,
+        'type',
+        AnalysisTestCommandType.waitLoaded,
+      ),
+    );
+    expect(
+      instructions[1],
+      isA<ScriptAnalysis>().having(
+        (instruction) => instruction.command.type,
+        'type',
+        AnalysisTestCommandType.assertCodec,
+      ),
+    );
+    expect(instructions[2], isA<ScriptWaitAnalysisEntryCount>());
+    expect(instructions[3], isA<ScriptAssertAnalysisEntryCount>());
+  });
+
+  test('unknown commands fail parsing instead of producing false green', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_unknown_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync('0.1,SET_ANALYSIS_TEST_SCRIPT,child.csv\n');
+
+    expect(
+      () => parseAutomationScript(file.path),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('all repository UI scripts use supported commands', () {
+    final scripts =
+        Directory('ui_tests')
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((file) => file.path.toLowerCase().endsWith('.csv'))
+            .toList()
+          ..sort((a, b) => a.path.compareTo(b.path));
+
+    expect(scripts, isNotEmpty);
+    for (final script in scripts) {
+      expect(
+        () => parseAutomationScript(script.path),
+        returnsNormally,
+        reason: script.path,
+      );
+    }
   });
 
   test('parses and sorts release ui automation instructions', () {

@@ -1,0 +1,218 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+
+import '../../../l10n/app_localizations.dart';
+import '../../analysis_manager.dart';
+import '../page/analysis_page.dart';
+import '../testing/analysis_test_host.dart';
+import '../widgets/analysis_split_layout_controller.dart';
+import 'analysis_workspace_models.dart';
+import 'analysis_workspace_split.dart';
+import 'analysis_workspace_tabs.dart';
+
+class AnalysisWorkspacePage extends StatefulWidget {
+  final ValueListenable<List<AnalysisWorkspaceEntry>> entries;
+  final AnalysisTestHostRegistry testHosts;
+
+  const AnalysisWorkspacePage({
+    super.key,
+    required this.entries,
+    required this.testHosts,
+  });
+
+  @override
+  State<AnalysisWorkspacePage> createState() => _AnalysisWorkspacePageState();
+}
+
+class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
+  int _selected = 0;
+  bool _splitView = false;
+  bool _disposed = false;
+  late List<AnalysisWorkspaceEntry> _entries;
+  final _splitLayout = AnalysisSplitLayoutController();
+
+  int _clampIndex(int value, int length) {
+    if (length <= 0) return 0;
+    return value.clamp(0, length - 1).toInt();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _entries = widget.entries.value;
+    widget.testHosts.selectFileId(
+      _entries.isEmpty ? null : _entries.first.fileId,
+    );
+    widget.entries.addListener(_onEntriesChanged);
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    widget.entries.removeListener(_onEntriesChanged);
+    _splitLayout.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant AnalysisWorkspacePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.entries == widget.entries) return;
+    oldWidget.entries.removeListener(_onEntriesChanged);
+    widget.entries.addListener(_onEntriesChanged);
+    _onEntriesChanged();
+  }
+
+  void _onEntriesChanged() {
+    if (_disposed) return;
+    final selectedFileId = _entries.isNotEmpty
+        ? _entries[_clampIndex(_selected, _entries.length)].fileId
+        : null;
+    final entries = widget.entries.value;
+    final nextSelected = selectedFileId == null
+        ? entries.isEmpty
+              ? 0
+              : _clampIndex(_selected, entries.length)
+        : entries.indexWhere((entry) => entry.fileId == selectedFileId);
+
+    void applySnapshot() {
+      _entries = entries;
+      if (entries.length <= 1) {
+        _splitView = false;
+      }
+      _selected = entries.isEmpty
+          ? 0
+          : nextSelected >= 0
+          ? nextSelected
+          : _clampIndex(_selected, entries.length);
+      widget.testHosts.selectFileId(
+        entries.isEmpty ? null : entries[_selected].fileId,
+      );
+    }
+
+    if (!mounted) {
+      applySnapshot();
+      return;
+    }
+    setState(applySnapshot);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = _entries;
+    if (entries.isEmpty) {
+      return const Scaffold(body: SizedBox.shrink());
+    }
+    final selected = _clampIndex(_selected, entries.length);
+    final modeToggleEnabled = entries.length > 1;
+
+    return Scaffold(
+      body: _splitView
+          ? AnalysisSplitView(
+              entries: entries,
+              splitView: _splitView,
+              modeToggleEnabled: modeToggleEnabled,
+              selectedIndex: selected,
+              layoutController: _splitLayout,
+              onModeChanged: (value) => setState(() => _splitView = value),
+              onSelected: (index) {
+                widget.testHosts.selectFileId(entries[index].fileId);
+                setState(() => _selected = index);
+              },
+              contentBuilder: (entry) => _buildEntry(entry, split: true),
+            )
+          : AnalysisTabbedView(
+              entries: entries,
+              selectedIndex: selected,
+              splitView: _splitView,
+              modeToggleEnabled: modeToggleEnabled,
+              onModeChanged: (value) => setState(() => _splitView = value),
+              onSelected: (index) {
+                widget.testHosts.selectFileId(entries[index].fileId);
+                setState(() => _selected = index);
+              },
+              child: _buildEntry(entries[selected]),
+            ),
+    );
+  }
+
+  Widget _buildEntry(AnalysisWorkspaceEntry entry, {bool split = false}) {
+    final hash = entry.hash;
+    if (hash != null && hash.isNotEmpty) {
+      return AnalysisPage(
+        key: ValueKey('analysis-${split ? 'split-' : ''}${entry.fileId}-$hash'),
+        fileId: entry.fileId,
+        hash: hash,
+        testHosts: widget.testHosts,
+        pollSummary: false,
+        splitLayoutController: split ? _splitLayout : null,
+      );
+    }
+    return _AnalysisGenerationPlaceholder(entry: entry);
+  }
+}
+
+class _AnalysisGenerationPlaceholder extends StatelessWidget {
+  final AnalysisWorkspaceEntry entry;
+
+  const _AnalysisGenerationPlaceholder({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l = AppLocalizations.of(context)!;
+    final status = entry.generationStatus;
+    final failed = status?.isError ?? false;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (failed)
+              Icon(Icons.error_outline, color: theme.colorScheme.error)
+            else
+              SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(
+                  value: status?.status == AnalysisTrackStatus.generating
+                      ? status!.progress.clamp(0.0, 1.0)
+                      : null,
+                ),
+              ),
+            const SizedBox(height: 12),
+            Text(entry.fileName, maxLines: 1, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 4),
+            Text(
+              _statusText(l, status),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: failed
+                    ? theme.colorScheme.error
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _statusText(
+    AppLocalizations l,
+    AnalysisTrackGenerationStatus? status,
+  ) {
+    if (status?.isError ?? false) return l.analysisCacheStatusFailed;
+    return switch (status?.status) {
+      AnalysisTrackStatus.generating => l.analysisGeneratingFor(
+        status!.fileName,
+      ),
+      AnalysisTrackStatus.loading => l.analysisCacheStatusLoading,
+      AnalysisTrackStatus.cached => l.analysisCacheStatusCached,
+      AnalysisTrackStatus.idle => l.analysisCacheStatusMissing,
+      AnalysisTrackStatus.computingHash ||
+      null => l.analysisCacheStatusChecking,
+      AnalysisTrackStatus.error => l.analysisCacheStatusFailed,
+    };
+  }
+}

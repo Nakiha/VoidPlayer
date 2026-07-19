@@ -8,7 +8,6 @@ import '../analysis/analysis_ffi.dart';
 import '../analysis/analysis_manager.dart';
 import '../app_log.dart';
 import '../native_player/native_player_protocol.dart';
-import '../platform/analysis_process_host.dart';
 import '../windows/win32ffi.dart' deferred as win32;
 import 'automation_probe.dart';
 import 'automation_run_state.dart';
@@ -20,7 +19,6 @@ int _gpuBreakdownBytes(Map<String, dynamic> breakdown, String key) {
 class AutomationAssertExecutor {
   final AutomationProbe probe;
   final AutomationRunState state;
-  final AnalysisProcessHost analysisProcesses;
   final int Function() effectiveDurationUs;
   final int Function() timelinePtsUs;
   final int Function() quickMarkCount;
@@ -29,7 +27,6 @@ class AutomationAssertExecutor {
   const AutomationAssertExecutor({
     required this.probe,
     required this.state,
-    required this.analysisProcesses,
     required this.effectiveDurationUs,
     required this.timelinePtsUs,
     required this.quickMarkCount,
@@ -458,14 +455,6 @@ class AutomationAssertExecutor {
             '$summary exceeds thresholds '
             '(meanAbsChannel<=$maxMeanAbsChannel, '
             'meanAbsLuma<=$maxMeanAbsLuma, maxChannel<=$maxMaxChannel)',
-          );
-        }
-      case AssertAnalysisProcessCount(:final count):
-        final actual = analysisProcesses.analysisProcessCount;
-        if (actual != count) {
-          throw AssertionError(
-            'Expected analysis process count $count, got $actual; '
-            'exits=${analysisProcesses.analysisExitCodes}',
           );
         }
       case AssertAnalysisFfiAvailable(:final available):

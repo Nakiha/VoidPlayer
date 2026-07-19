@@ -10,6 +10,7 @@ import 'package:window_manager/window_manager.dart' as wm;
 
 import '../app_log.dart';
 import '../l10n/app_localizations.dart';
+import '../main_window/main_window_deck.dart';
 import '../native_player/native_player_protocol.dart';
 import '../widgets/analysis_overlay_controls.dart';
 import '../widgets/media_header.dart';
@@ -469,6 +470,104 @@ class MainWindowTestHarness {
     );
     GestureBinding.instance.handlePointerEvent(
       PointerRemovedEvent(
+        pointer: pointer,
+        position: global,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+  }
+
+  void clickMainWindowDeckTab(String tabName) {
+    final normalized = tabName.trim().toLowerCase();
+    if (normalized != 'timeline' && normalized != 'analysis') {
+      throw ArgumentError.value(tabName, 'tabName', 'unsupported deck tab');
+    }
+    _clickWidgetByKey(
+      ValueKey('main-window-deck-tab-$normalized'),
+      'CLICK_MAIN_WINDOW_DECK_TAB $normalized',
+    );
+  }
+
+  void toggleMainWindowDeckCollapsed() {
+    _clickWidgetByKey(
+      mainWindowDeckCollapseButtonKey,
+      'TOGGLE_MAIN_WINDOW_DECK_COLLAPSED',
+    );
+  }
+
+  Future<void> dragMainWindowDeck(double deltaY, {int steps = 12}) async {
+    final context = _findContextByKey(mainWindowDeckResizeHandleKey);
+    if (context == null) {
+      throw StateError('Main-window deck resize handle is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Main-window deck resize handle has no render box');
+    }
+    final count = steps <= 0 ? 1 : steps;
+    final start = renderObject.localToGlobal(
+      Offset(renderObject.size.width / 2, renderObject.size.height / 2),
+    );
+    final end = start + Offset(0, deltaY);
+    final pointer = _pointerId++;
+    var previous = start;
+
+    log.info('Test action: DRAG_MAIN_WINDOW_DECK deltaY=$deltaY steps=$count');
+    GestureBinding.instance.handlePointerEvent(
+      PointerDownEvent(
+        pointer: pointer,
+        position: start,
+        buttons: kPrimaryButton,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    for (var i = 1; i <= count; i++) {
+      final next = Offset.lerp(start, end, i / count)!;
+      GestureBinding.instance.handlePointerEvent(
+        PointerMoveEvent(
+          pointer: pointer,
+          position: next,
+          delta: next - previous,
+          buttons: kPrimaryButton,
+          kind: PointerDeviceKind.mouse,
+        ),
+      );
+      previous = next;
+      await Future<void>.delayed(const Duration(milliseconds: 8));
+    }
+    GestureBinding.instance.handlePointerEvent(
+      PointerUpEvent(
+        pointer: pointer,
+        position: end,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+  }
+
+  void _clickWidgetByKey(Key key, String label) {
+    final context = _findContextByKey(key);
+    if (context == null) {
+      throw StateError('$label target is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('$label target has no render box');
+    }
+    final global = renderObject.localToGlobal(
+      Offset(renderObject.size.width / 2, renderObject.size.height / 2),
+    );
+    final pointer = _pointerId++;
+    log.info('Test action: $label');
+    GestureBinding.instance.handlePointerEvent(
+      PointerDownEvent(
+        pointer: pointer,
+        position: global,
+        buttons: kPrimaryButton,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerUpEvent(
         pointer: pointer,
         position: global,
         kind: PointerDeviceKind.mouse,

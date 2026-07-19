@@ -53,7 +53,7 @@ class LogConfig {
       native: Level.INFO,
       ffmpeg: Level.INFO,
       logsDir: AppPaths.current.logsDir,
-      processRole: _processRoleFromArgs(args),
+      processRole: 'main',
     );
   }
 
@@ -486,11 +486,4 @@ Level? _parseLevel(String s) {
     default:
       return null;
   }
-}
-
-String _processRoleFromArgs(List<String> args) {
-  if (args.any((arg) => arg == '--standalone-analysis')) {
-    return 'analysis';
-  }
-  return 'main';
 }

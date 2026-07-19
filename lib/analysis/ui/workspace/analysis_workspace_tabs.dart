@@ -148,7 +148,7 @@ class AnalysisTrackTitleButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final label = '${index + 1}. ${entry.fileName ?? 'Track ${index + 1}'}';
+    final label = '${index + 1}. ${entry.fileName}';
     return Semantics(
       button: true,
       selected: selected,

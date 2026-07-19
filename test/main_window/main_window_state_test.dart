@@ -28,6 +28,9 @@ void main() {
     store.setLoopRange(0, 0);
     store.setLayout(const LayoutState());
     store.setSyncOffsets(const {});
+    store.setDeckTab(MainWindowDeckTab.timeline);
+    store.setDeckHeight(kDefaultDeckHeight);
+    store.setDeckCollapsed(false);
 
     expect(notifications, 0);
 
@@ -96,6 +99,25 @@ void main() {
 
     store.setMarksSidebarWidth(kMaxMarksSidebarWidth + 100);
     expect(store.value.marksSidebarWidth, kMaxMarksSidebarWidth);
+  });
+
+  test('deck height is clamped and collapse state skips redundant updates', () {
+    final store = MainWindowStateStore();
+    addTearDown(store.dispose);
+    var notifications = 0;
+    store.addListener(() => notifications++);
+
+    store.setDeckHeight(kMinDeckHeight - 100);
+    expect(store.value.deckHeight, kMinDeckHeight);
+    store.setDeckHeight(kMaxDeckHeight + 100);
+    expect(store.value.deckHeight, kMaxDeckHeight);
+    store.setDeckHeight(kMaxDeckHeight + 200);
+    expect(notifications, 2);
+
+    store.setDeckCollapsed(true);
+    store.setDeckCollapsed(true);
+    expect(store.value.deckCollapsed, isTrue);
+    expect(notifications, 3);
   });
 
   test('seek preview clears stale presented frame anchors', () {

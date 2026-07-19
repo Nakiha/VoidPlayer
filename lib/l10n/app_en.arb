@@ -46,6 +46,11 @@
   "timelineSeek": "Timeline seek",
   "@timelineSeek": { "description": "Accessibility label for the playback seek slider" },
 
+  "deckTimelineTab": "Timeline",
+  "@deckTimelineTab": { "description": "Main window bottom deck timeline tab label" },
+  "deckAnalysisTab": "Analysis",
+  "@deckAnalysisTab": { "description": "Main window bottom deck analysis tab label" },
+
   "sideBySide": "Side by Side",
   "@sideBySide": { "description": "View mode: side by side" },
 
@@ -483,13 +488,13 @@
   "deleteSelectedCache": "Delete selected cache",
   "@deleteSelectedCache": { "description": "Delete selected analysis cache action" },
 
-  "cacheDeleteConfirmMessage": "Delete {count} selected analysis cache item(s)? Analysis windows may block files they are currently using.",
+  "cacheDeleteConfirmMessage": "Delete {count} selected analysis cache item(s)? Active analysis pages may block files they are currently using.",
   "@cacheDeleteConfirmMessage": { "description": "Confirm deleting selected analysis cache entries", "placeholders": { "count": { "type": "int" } } },
 
   "cacheDeleted": "Deleted {count} cache item(s).",
   "@cacheDeleted": { "description": "Analysis cache delete success message", "placeholders": { "count": { "type": "int" } } },
 
-  "cacheDeleteFailed": "Could not delete {count} cache item(s). They may be open in an analysis window or still being generated.",
+  "cacheDeleteFailed": "Could not delete {count} cache item(s). They may be open in an analysis page or still being generated.",
   "@cacheDeleteFailed": { "description": "Analysis cache delete failure message", "placeholders": { "count": { "type": "int" } } },
 
   "deleteSelectedMarkData": "Delete selected mark data",
@@ -868,8 +873,5 @@
   "@mediaInfoLocateFailed": { "description": "Error shown when Explorer cannot locate a media file" },
 
   "analysisFilterHint": "Filter by type, name or #id",
-  "@analysisFilterHint": { "description": "Placeholder text for NALU filter search bar" },
-
-  "analysisIpcDisconnected": "IPC disconnected - track snapshot is stale",
-  "@analysisIpcDisconnected": { "description": "Banner shown in analysis workspace when the main-window IPC connection closes" }
+  "@analysisFilterHint": { "description": "Placeholder text for NALU filter search bar" }
 }

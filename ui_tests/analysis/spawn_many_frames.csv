@@ -2,10 +2,18 @@
 # Generate a fresh high-frame-count H.264 file at runtime so the test does not
 # depend on a checked-in binary and analysis cache stays cold.
 0.1, GENERATE_TEST_VIDEO, build/generated/analysis_many_frames_h264.mp4, 9000, 120, 64, 64
-0.2, SET_ANALYSIS_TEST_SCRIPT, ui_tests/analysis/child_many_frames.csv
 0.5, ADD_MEDIA, build/generated/analysis_many_frames_h264.mp4
 2.0, ASSERT_TRACK_COUNT, 1
 2.2, RUN_ANALYSIS
-3.0, WAIT_ANALYSIS_PROCESS_COUNT, 1, 120000
-3.2, ASSERT_ANALYSIS_PROCESS_COUNT, 1
+2.3, WAIT_ANALYSIS_LOADED, 120000
+2.4, ASSERT_ANALYSIS_LOADED
+2.5, ASSERT_ANALYSIS_MIN_COUNTS, 9000, 9000, 9000
+2.6, SET_ANALYSIS_TAB, frame_trend
+2.7, SET_ANALYSIS_ORDER, dts
+2.8, SET_ANALYSIS_CHART_WINDOW, 0, 4096
+2.9, ASSERT_ANALYSIS_TAB, frame_trend
+3.0, ASSERT_ANALYSIS_ORDER, dts
+3.1, SELECT_ANALYSIS_NALU, 5000
+3.2, ASSERT_ANALYSIS_DETAIL_VISIBLE
+3.3, ASSERT_ANALYSIS_ENTRY_COUNT, 1
 30.0, QUIT, 0

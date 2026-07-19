@@ -43,7 +43,8 @@ voidplayer://v1/open?loopStart=1.5s&loopEnd=4s
 | `loopRange=<start>:<end>` | 启动后首次加载媒体时启用 loop range。无单位数值按秒解析，也支持 `s`、`ms`、`us` 后缀。 |
 | `loopStart=<time>` / `loopEnd=<time>` | 与 `loopRange` 等价，拆分传递起止时间。 |
 
-开发/测试参数如 `--test-script`、`--silent-ui-test`、`--standalone-analysis`、`--analysis-ipc-*` 不会通过 `voidplayer://` 暴露。
+开发/测试参数如 `--test-script`、`--silent-ui-test` 不会通过
+`voidplayer://` 暴露。
 
 ## 安装与卸载数据
 
@@ -54,18 +55,3 @@ voidplayer://v1/open?loopStart=1.5s&loopEnd=4s
 ## 命令行工具
 
 发布包会在 `void_player.exe` 旁放置 `VoidPlayerCli.exe`，用于只读检查 VAC2/VACHUNK 分析缓存。用法见 [cli.md](cli.md)。
-
-## 内部窗口参数
-
-下面这些参数主要供 VoidPlayer 自身启动独立分析窗口或 secondary window 时使用，普通用户一般不需要手动传入：
-
-| 参数 | 说明 |
-| --- | --- |
-| `--standalone-analysis` | 启动独立分析窗口进程。 |
-| `--hash=<hash>` | 要打开的分析缓存 hash，可重复传入。 |
-| `--fileName=<name>` | 与 hash 对应的展示文件名，可重复传入。 |
-| `--x=<px>` / `--y=<px>` | 初始窗口位置。 |
-| `--width=<px>` / `--height=<px>` | 初始窗口大小。 |
-| `--accentColor=<argbInt>` | 主窗口传递给子窗口的主题色。 |
-| `--analysis-ipc-port=<port>` / `--analysis-ipc-token=<token>` | 分析窗口 IPC 连接参数。 |
-| `multi_window <windowId> <json>` | `desktop_multi_window` 的 secondary window 路由参数。 |

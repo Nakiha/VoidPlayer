@@ -2,23 +2,23 @@ import 'package:flutter/material.dart';
 
 import '../../../analysis/analysis_ffi.dart';
 import '../../../analysis/nalu_types.dart';
-import '../../../utils/async_guard.dart';
 import '../testing/analysis_test_host.dart';
-import '../testing/analysis_test_runner.dart';
 import '../widgets/analysis_split_layout_controller.dart';
 import 'analysis_page_controller.dart';
 import 'analysis_page_view.dart';
 
 class AnalysisPage extends StatefulWidget {
+  final int fileId;
   final String hash;
-  final String? testScriptPath;
+  final AnalysisTestHostRegistry testHosts;
   final bool pollSummary;
   final AnalysisSplitLayoutController? splitLayoutController;
 
   const AnalysisPage({
     super.key,
+    required this.fileId,
     required this.hash,
-    this.testScriptPath,
+    required this.testHosts,
     this.pollSummary = true,
     this.splitLayoutController,
   });
@@ -30,14 +30,13 @@ class AnalysisPage extends StatefulWidget {
 class AnalysisPageState extends State<AnalysisPage>
     implements AnalysisTestHost {
   late AnalysisPageController _controller;
-  bool _testStarted = false;
 
   @override
   void initState() {
     super.initState();
     _controller = _createController();
+    widget.testHosts.register(widget.fileId, this);
     widget.splitLayoutController?.addListener(_onSplitLayoutChanged);
-    _maybeStartTestRunner();
   }
 
   @override
@@ -47,20 +46,21 @@ class AnalysisPageState extends State<AnalysisPage>
       oldWidget.splitLayoutController?.removeListener(_onSplitLayoutChanged);
       widget.splitLayoutController?.addListener(_onSplitLayoutChanged);
     }
+    if (oldWidget.fileId != widget.fileId ||
+        oldWidget.testHosts != widget.testHosts) {
+      oldWidget.testHosts.unregister(oldWidget.fileId, this);
+      widget.testHosts.register(widget.fileId, this);
+    }
     if (oldWidget.hash != widget.hash ||
         oldWidget.pollSummary != widget.pollSummary) {
       _controller.dispose();
       _controller = _createController();
-      _testStarted = false;
-      _maybeStartTestRunner();
-    } else if (oldWidget.testScriptPath != widget.testScriptPath) {
-      _testStarted = false;
-      _maybeStartTestRunner();
     }
   }
 
   @override
   void dispose() {
+    widget.testHosts.unregister(widget.fileId, this);
     widget.splitLayoutController?.removeListener(_onSplitLayoutChanged);
     _controller.dispose();
     super.dispose();
@@ -91,18 +91,6 @@ class AnalysisPageState extends State<AnalysisPage>
 
   void _onSplitLayoutChanged() {
     if (mounted) setState(() {});
-  }
-
-  void _maybeStartTestRunner() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final scriptPath = widget.testScriptPath;
-      if (!mounted || scriptPath == null || _testStarted) return;
-      _testStarted = true;
-      fireAndLogFine(
-        'run analysis test script',
-        runAnalysisTestScript(scriptPath),
-      );
-    });
   }
 
   @override

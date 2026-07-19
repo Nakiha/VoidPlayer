@@ -5,13 +5,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/analysis/analysis_overlay.dart';
 import 'package:void_player/main_window/main_window_analysis.dart';
+import 'package:void_player/main_window/main_window_state.dart';
 import 'package:void_player/native_player/native_player_protocol.dart';
-import 'package:void_player/platform/analysis_process_host.dart';
 import 'package:void_player/track_manager.dart';
 
 class _CountingAnalysisGenerationService extends ChangeNotifier
     implements AnalysisGenerationService {
   int ensureGeneratedCalls = 0;
+  int activeEnsureGeneratedCalls = 0;
+  int maxActiveEnsureGeneratedCalls = 0;
   int activateOverlayCalls = 0;
   int activateOverlayTracksCalls = 0;
   bool _overlayPanelVisible = false;
@@ -19,6 +21,7 @@ class _CountingAnalysisGenerationService extends ChangeNotifier
   AnalysisOverlayConfig _config = const AnalysisOverlayConfig();
   int _overlayPresentationRevision = 0;
   Completer<String?>? ensureGeneratedCompleter;
+  Duration ensureGeneratedDelay = Duration.zero;
   final List<List<AnalysisOverlayTrackSource>> overlayTrackActivations = [];
 
   @override
@@ -48,12 +51,25 @@ class _CountingAnalysisGenerationService extends ChangeNotifier
   @override
   Future<String?> ensureGenerated(String videoPath) async {
     ensureGeneratedCalls++;
-    final completer = ensureGeneratedCompleter;
-    if (completer != null) {
-      ensureGeneratedCompleter = null;
-      return completer.future;
+    final call = ensureGeneratedCalls;
+    activeEnsureGeneratedCalls++;
+    maxActiveEnsureGeneratedCalls =
+        activeEnsureGeneratedCalls > maxActiveEnsureGeneratedCalls
+        ? activeEnsureGeneratedCalls
+        : maxActiveEnsureGeneratedCalls;
+    try {
+      final completer = ensureGeneratedCompleter;
+      if (completer != null) {
+        ensureGeneratedCompleter = null;
+        return await completer.future;
+      }
+      if (ensureGeneratedDelay > Duration.zero) {
+        await Future<void>.delayed(ensureGeneratedDelay);
+      }
+      return 'hash-$call';
+    } finally {
+      activeEnsureGeneratedCalls--;
     }
-    return 'hash-$ensureGeneratedCalls';
   }
 
   @override
@@ -155,37 +171,84 @@ TrackManager _trackManagerWithOneTrack() {
   return tracks;
 }
 
+TrackManager _trackManagerWithTwoTracks() {
+  final tracks = _trackManagerWithOneTrack();
+  tracks.addTrack(
+    const TrackInfo(
+      fileId: 8,
+      slot: 1,
+      path: '/tmp/video-2.mp4',
+      width: 320,
+      height: 180,
+      durationUs: 1,
+    ),
+  );
+  return tracks;
+}
+
 void main() {
+  test('enterAnalysis generates cache and selects the analysis deck', () async {
+    final tracks = _trackManagerWithOneTrack();
+    final generation = _CountingAnalysisGenerationService();
+    final stateStore = MainWindowStateStore();
+    final coordinator = MainWindowAnalysisCoordinator(
+      trackManager: tracks,
+      stateStore: stateStore,
+      analysisGeneration: generation,
+    );
+    addTearDown(coordinator.dispose);
+    addTearDown(tracks.dispose);
+    addTearDown(stateStore.dispose);
+
+    await coordinator.enterAnalysis();
+
+    expect(generation.ensureGeneratedCalls, 1);
+    expect(stateStore.value.deckTab, MainWindowDeckTab.analysis);
+    expect(coordinator.entries.value.single.hash, 'hash-1');
+    tracks.clear();
+    expect(coordinator.entries.value, isEmpty);
+  });
+
   test(
-    'triggerAnalysis no-ops when external analysis windows are unsupported',
+    'enterAnalysis serializes cache generation for multiple tracks',
     () async {
-      final tracks = _trackManagerWithOneTrack();
-      final generation = _CountingAnalysisGenerationService();
+      final tracks = _trackManagerWithTwoTracks();
+      final generation = _CountingAnalysisGenerationService()
+        ..ensureGeneratedDelay = const Duration(milliseconds: 1);
+      final stateStore = MainWindowStateStore();
       final coordinator = MainWindowAnalysisCoordinator(
         trackManager: tracks,
-        analysisProcesses: UnsupportedAnalysisProcessHost(),
+        stateStore: stateStore,
         analysisGeneration: generation,
       );
       addTearDown(coordinator.dispose);
       addTearDown(tracks.dispose);
+      addTearDown(stateStore.dispose);
 
-      await coordinator.triggerAnalysis();
+      await coordinator.enterAnalysis();
 
-      expect(generation.ensureGeneratedCalls, 0);
+      expect(generation.ensureGeneratedCalls, 2);
+      expect(generation.maxActiveEnsureGeneratedCalls, 1);
+      expect(coordinator.entries.value.map((entry) => entry.hash), [
+        'hash-1',
+        'hash-2',
+      ]);
     },
   );
 
   test('overlay actions no-op when analysis overlays are disabled', () async {
     final tracks = _trackManagerWithOneTrack();
     final generation = _CountingAnalysisGenerationService();
+    final stateStore = MainWindowStateStore();
     final coordinator = MainWindowAnalysisCoordinator(
       trackManager: tracks,
-      analysisProcesses: UnsupportedAnalysisProcessHost(),
+      stateStore: stateStore,
       analysisGeneration: generation,
       analysisOverlaysEnabled: false,
     );
     addTearDown(coordinator.dispose);
     addTearDown(tracks.dispose);
+    addTearDown(stateStore.dispose);
 
     await coordinator.toggleOverlayForSlot(0);
     await coordinator.toggleOverlayPanel();
@@ -201,11 +264,12 @@ void main() {
   ) async {
     final tracks = _trackManagerWithOneTrack();
     final generation = _CountingAnalysisGenerationService();
+    final stateStore = MainWindowStateStore();
     var redraws = 0;
     var presentedFrameCalls = 0;
     final coordinator = MainWindowAnalysisCoordinator(
       trackManager: tracks,
-      analysisProcesses: UnsupportedAnalysisProcessHost(),
+      stateStore: stateStore,
       analysisGeneration: generation,
       presentedFrameProvider: (fileId) async {
         presentedFrameCalls++;
@@ -220,6 +284,7 @@ void main() {
     );
     addTearDown(coordinator.dispose);
     addTearDown(tracks.dispose);
+    addTearDown(stateStore.dispose);
 
     await coordinator.toggleOverlayPanel();
     await tester.pump();
@@ -246,10 +311,11 @@ void main() {
   test('overlay chunk readiness requests redraw for paused viewport', () {
     final tracks = _trackManagerWithOneTrack();
     final generation = _CountingAnalysisGenerationService();
+    final stateStore = MainWindowStateStore();
     var redraws = 0;
     final coordinator = MainWindowAnalysisCoordinator(
       trackManager: tracks,
-      analysisProcesses: UnsupportedAnalysisProcessHost(),
+      stateStore: stateStore,
       analysisGeneration: generation,
       onOverlayStateChanged: () {
         redraws++;
@@ -257,6 +323,7 @@ void main() {
     );
     addTearDown(coordinator.dispose);
     addTearDown(tracks.dispose);
+    addTearDown(stateStore.dispose);
 
     generation.completeOverlayChunkForTest();
 
@@ -272,13 +339,14 @@ void main() {
     () async {
       final tracks = _trackManagerWithOneTrack();
       final generation = _CountingAnalysisGenerationService();
+      final stateStore = MainWindowStateStore();
       generation.setActiveOverlayTrackForTest(7);
       final firstHash = Completer<String?>();
       generation.ensureGeneratedCompleter = firstHash;
       var redraws = 0;
       final coordinator = MainWindowAnalysisCoordinator(
         trackManager: tracks,
-        analysisProcesses: UnsupportedAnalysisProcessHost(),
+        stateStore: stateStore,
         analysisGeneration: generation,
         onOverlayStateChanged: () {
           redraws++;
@@ -286,6 +354,7 @@ void main() {
       );
       addTearDown(coordinator.dispose);
       addTearDown(tracks.dispose);
+      addTearDown(stateStore.dispose);
 
       coordinator.beginSeekOverlayRefresh(1);
       final staleRefresh = coordinator.refreshOverlayForPresentedFrame(

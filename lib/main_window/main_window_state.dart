@@ -12,6 +12,11 @@ const double kDefaultMarksSidebarWidth = 340.0;
 const double kMinMarksSidebarWidth = 260.0;
 const double kMaxMarksSidebarWidth = 560.0;
 const double kMarksSidebarResizeHandleWidth = 9.0;
+const double kDefaultDeckHeight = 300.0;
+const double kMinDeckHeight = 180.0;
+const double kMaxDeckHeight = 440.0;
+
+enum MainWindowDeckTab { timeline, analysis }
 
 class MainWindowStateModel {
   final int? playerId;
@@ -26,6 +31,9 @@ class MainWindowStateModel {
   final DateTime? pendingSeekAt;
   final Map<int, int> syncOffsets; // fileId -> offset in microseconds
   final double timelineControlsWidth;
+  final MainWindowDeckTab deckTab;
+  final double deckHeight;
+  final bool deckCollapsed;
   final bool loopRangeEnabled;
   final bool nativeLoopRangeSynced;
   final bool startupLoopRangeApplied;
@@ -62,6 +70,9 @@ class MainWindowStateModel {
     this.pendingSeekAt,
     this.syncOffsets = const {},
     this.timelineControlsWidth = kDefaultTimelineControlsWidth,
+    this.deckTab = MainWindowDeckTab.timeline,
+    this.deckHeight = kDefaultDeckHeight,
+    this.deckCollapsed = false,
     this.loopRangeEnabled = false,
     this.nativeLoopRangeSynced = false,
     this.startupLoopRangeApplied = false,
@@ -99,6 +110,9 @@ class MainWindowStateModel {
     Object? pendingSeekAt = _mainWindowStateUnset,
     Map<int, int>? syncOffsets,
     double? timelineControlsWidth,
+    MainWindowDeckTab? deckTab,
+    double? deckHeight,
+    bool? deckCollapsed,
     bool? loopRangeEnabled,
     bool? nativeLoopRangeSynced,
     bool? startupLoopRangeApplied,
@@ -144,6 +158,9 @@ class MainWindowStateModel {
       syncOffsets: syncOffsets ?? this.syncOffsets,
       timelineControlsWidth:
           timelineControlsWidth ?? this.timelineControlsWidth,
+      deckTab: deckTab ?? this.deckTab,
+      deckHeight: deckHeight ?? this.deckHeight,
+      deckCollapsed: deckCollapsed ?? this.deckCollapsed,
       loopRangeEnabled: loopRangeEnabled ?? this.loopRangeEnabled,
       nativeLoopRangeSynced:
           nativeLoopRangeSynced ?? this.nativeLoopRangeSynced,
@@ -285,6 +302,22 @@ class MainWindowStateStore extends ChangeNotifier {
   void setTimelineControlsWidth(double width) {
     if (_value.timelineControlsWidth == width) return;
     _set(_value.copyWith(timelineControlsWidth: width));
+  }
+
+  void setDeckTab(MainWindowDeckTab tab) {
+    if (_value.deckTab == tab) return;
+    _set(_value.copyWith(deckTab: tab));
+  }
+
+  void setDeckHeight(double height) {
+    final next = height.clamp(kMinDeckHeight, kMaxDeckHeight).toDouble();
+    if (_value.deckHeight == next) return;
+    _set(_value.copyWith(deckHeight: next));
+  }
+
+  void setDeckCollapsed(bool collapsed) {
+    if (_value.deckCollapsed == collapsed) return;
+    _set(_value.copyWith(deckCollapsed: collapsed));
   }
 
   void setMarksSidebarWidth(double width) {

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../widgets/axtree_region.dart';
-import '../page/analysis_page.dart';
 import '../widgets/analysis_split_layout_controller.dart';
 import '../widgets/analysis_style.dart';
 import 'analysis_workspace_mode_toggle.dart';
@@ -16,6 +15,7 @@ class AnalysisSplitView extends StatelessWidget {
   final AnalysisSplitLayoutController layoutController;
   final ValueChanged<bool> onModeChanged;
   final ValueChanged<int> onSelected;
+  final Widget Function(AnalysisWorkspaceEntry entry) contentBuilder;
 
   const AnalysisSplitView({
     super.key,
@@ -26,6 +26,7 @@ class AnalysisSplitView extends StatelessWidget {
     required this.layoutController,
     required this.onModeChanged,
     required this.onSelected,
+    required this.contentBuilder,
   });
 
   @override
@@ -88,12 +89,7 @@ class AnalysisSplitView extends StatelessWidget {
           modeToggleEnabled: modeToggleEnabled,
           onModeChanged: onModeChanged,
           onSelected: () => onSelected(index),
-          child: AnalysisPage(
-            key: ValueKey('analysis-split-${entry.hash}'),
-            hash: entry.hash,
-            pollSummary: false,
-            splitLayoutController: layoutController,
-          ),
+          child: contentBuilder(entry),
         ),
       ),
     );

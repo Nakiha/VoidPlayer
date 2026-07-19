@@ -1,4 +1,8 @@
+import 'package:flutter/foundation.dart';
+
 import '../analysis/analysis_toolbar_data_source.dart';
+import '../analysis/ui/testing/analysis_test_host.dart';
+import '../analysis/ui/workspace/analysis_workspace_models.dart';
 import '../marks/quick_mark.dart';
 import '../marks/quick_mark_store.dart';
 import '../marks/quick_mark_thumbnail.dart';
@@ -9,6 +13,7 @@ import '../track_manager.dart';
 import '../video_renderer_controller.dart';
 import '../viewport/display_geometry.dart';
 import '../viewport/viewport_display_state.dart';
+import 'main_window_state.dart';
 import 'main_window_view_model.dart';
 
 class MainWindowViewModelFactory {
@@ -46,6 +51,11 @@ class MainWindowViewModelFactory {
     required bool profilerVisible,
     required bool settingsVisible,
     required bool analysisOverlayControlsVisible,
+    required MainWindowDeckTab deckTab,
+    required double deckHeight,
+    required bool deckCollapsed,
+    required ValueListenable<List<AnalysisWorkspaceEntry>> analysisEntries,
+    required AnalysisTestHostRegistry analysisTestHosts,
     required bool marksSidebarVisible,
     required double marksSidebarWidth,
     required bool fullScreen,
@@ -77,8 +87,7 @@ class MainWindowViewModelFactory {
         currentPtsUs: currentPtsUs,
       ),
       media: MainWindowMediaVm(
-        analysisEnabled:
-            platformCapabilities.externalAnalysisWindows && tracks.isNotEmpty,
+        analysisEnabled: tracks.isNotEmpty,
         analysisOverlayEnabled:
             platformCapabilities.analysisOverlays && tracks.isNotEmpty,
         nativePlaybackAvailable:
@@ -96,8 +105,6 @@ class MainWindowViewModelFactory {
             platformCapabilities.sshRemoteMediaPlaybackCapability,
         nativeFilePickerCapability:
             platformCapabilities.nativeFilePickerCapability,
-        externalAnalysisWindowsCapability:
-            platformCapabilities.externalAnalysisWindowsCapability,
         analysisOverlaysCapability:
             platformCapabilities.analysisOverlaysCapability,
         tracks: tracks,
@@ -118,6 +125,13 @@ class MainWindowViewModelFactory {
         loopStartUs: loopStartUs,
         loopEndUs: loopEndUs,
         controlsWidth: controlsWidth,
+      ),
+      deck: MainWindowDeckVm(
+        tab: deckTab,
+        height: deckHeight,
+        collapsed: deckCollapsed,
+        analysisEntries: analysisEntries,
+        analysisTestHosts: analysisTestHosts,
       ),
       overlays: MainWindowOverlayVm(
         dragging: dragging,

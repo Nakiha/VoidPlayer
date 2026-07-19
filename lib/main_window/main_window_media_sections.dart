@@ -3,19 +3,16 @@ import 'package:flutter/material.dart';
 import '../utils/async_guard.dart';
 import '../widgets/analysis_overlay_controls.dart';
 import '../widgets/controls_bar.dart';
-import '../widgets/loop_range_bar.dart';
 import '../widgets/media_header.dart';
-import '../widgets/timeline_area.dart';
-import 'main_window_state.dart';
 import 'main_window_view_handles.dart';
 import 'main_window_view_model.dart';
 
-class MediaTimelineSection extends StatelessWidget {
+class PinnedPlaybackChrome extends StatelessWidget {
   final MainWindowViewModel model;
   final MainWindowViewHandles handles;
   final MainWindowViewActions actions;
 
-  const MediaTimelineSection({
+  const PinnedPlaybackChrome({
     super.key,
     required this.model,
     required this.handles,
@@ -25,8 +22,6 @@ class MediaTimelineSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final media = model.media;
-    final playback = model.playback;
-    final mediaActions = actions.mediaTimeline;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -47,44 +42,6 @@ class MediaTimelineSection extends StatelessWidget {
         ),
         MainWindowMediaHeader(model: model, handles: handles, actions: actions),
         MainWindowControlsBar(model: model, handles: handles, actions: actions),
-        LoopRangeBar(
-          key: handles.loopRangeBarKey,
-          timelineStartWidth: playback.timelineStartWidth,
-          enabled: playback.loopRangeEnabled,
-          startUs: playback.loopStartUs,
-          endUs: playback.loopEndUs,
-          durationUs: playback.durationUs,
-          onEnabledChanged: mediaActions.onLoopRangeEnabledChanged,
-          onRangeChanged: mediaActions.onLoopRangeChanged,
-          onRangeChangeEnd: mediaActions.onLoopRangeChangeEnd,
-        ),
-        ValueListenableBuilder<TimelineHoverState>(
-          valueListenable: handles.timelineHoverListenable,
-          builder: (context, hover, _) => TimelineArea(
-            entries: media.tracks,
-            currentPtsUs: playback.currentPtsUs,
-            onRemoveTrack: mediaActions.onRemoveTrack,
-            onReorder: mediaActions.onReorder,
-            onOffsetChanged: mediaActions.onOffsetChanged,
-            onToggleTrackAudio: mediaActions.onToggleTrackAudio,
-            canRemoveTrack: model.session.capabilities.canRemoveTrack,
-            canReorderTrack: model.session.capabilities.canReorderTrack,
-            canAdjustTrackOffset:
-                model.session.capabilities.canAdjustTrackOffset,
-            canToggleTrackAudio: model.session.capabilities.canToggleTrackAudio,
-            audibleTrackFileId: media.audibleTrackFileId,
-            syncOffsets: media.syncOffsets,
-            maxEffectiveDurationUs: playback.durationUs,
-            hoverPtsUs: hover.hoverPtsUs,
-            sliderHovering: hover.sliderHovering,
-            controlsWidth: playback.controlsWidth,
-            onControlsWidthChanged: mediaActions.onControlsWidthChanged,
-            markerPtsUs: playback.markerUs,
-            loopRangeEnabled: playback.loopRangeEnabled,
-            loopStartUs: playback.loopStartUs,
-            loopEndUs: playback.loopEndUs,
-          ),
-        ),
       ],
     );
   }

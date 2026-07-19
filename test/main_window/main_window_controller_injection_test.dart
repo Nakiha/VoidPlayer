@@ -13,7 +13,6 @@ import 'package:void_player/main_window/main_window_controller.dart';
 import 'package:void_player/marks/quick_mark.dart';
 import 'package:void_player/marks/quick_mark_persistence.dart';
 import 'package:void_player/marks/quick_mark_thumbnail.dart';
-import 'package:void_player/platform/analysis_process_host.dart';
 import 'package:void_player/platform/main_window_platform.dart';
 import 'package:void_player/platform/platform_capabilities.dart';
 import 'package:void_player/preferences/playback_preferences.dart';
@@ -257,7 +256,6 @@ void main() {
 
   test('MainWindowController keeps injected platform services', () {
     final platformWindow = _FakeMainWindowPlatform();
-    final analysisProcesses = UnsupportedAnalysisProcessHost();
     final analysisGeneration = _FakeAnalysisGenerationService();
     final analysisToolbarDataSource = _FakeAnalysisToolbarDataSource();
     final appSettings = _FakeAppSettingsRepository();
@@ -268,7 +266,6 @@ void main() {
       startupOptions: const StartupOptions(),
       mounted: () => true,
       platformWindow: platformWindow,
-      analysisProcesses: analysisProcesses,
       analysisGeneration: analysisGeneration,
       analysisToolbarDataSource: analysisToolbarDataSource,
       appSettings: appSettings,
@@ -277,7 +274,6 @@ void main() {
     addTearDown(controller.dispose);
 
     expect(controller.platformWindow, same(platformWindow));
-    expect(controller.analysisProcesses, same(analysisProcesses));
     expect(controller.analysisGeneration, same(analysisGeneration));
     expect(
       controller.analysisToolbarDataSource,
@@ -288,7 +284,7 @@ void main() {
   });
 
   test(
-    'macOS phase capabilities hide analysis window but keep overlay entry',
+    'macOS phase capabilities expose inline analysis and overlay entries',
     () {
       final controller = MainWindowController(
         actionRegistry: ActionRegistry(),
@@ -313,12 +309,8 @@ void main() {
         ),
       );
 
-      expect(controller.viewModel.media.analysisEnabled, isFalse);
+      expect(controller.viewModel.media.analysisEnabled, isTrue);
       expect(controller.viewModel.media.analysisOverlayEnabled, isTrue);
-      expect(
-        controller.viewModel.media.externalAnalysisWindowsCapability.detail,
-        contains('analysis UI/IPC'),
-      );
       expect(
         controller.viewModel.media.networkMediaPlaybackCapability.detail,
         contains('network media playback'),

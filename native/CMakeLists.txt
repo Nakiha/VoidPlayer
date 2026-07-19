@@ -36,6 +36,8 @@ set(VOID_SANITIZER "" CACHE STRING "Native sanitizer to enable: address, thread,
 set_property(CACHE VOID_SANITIZER PROPERTY STRINGS "" "address" "thread" "undefined")
 
 enable_testing()
+find_package(Threads REQUIRED)
+include(cmake/VideoDecodeCoreTarget.cmake)
 if(BUILD_ANALYSIS)
     add_subdirectory(analysis)
 endif()
@@ -78,10 +80,37 @@ if(WIN32 AND BUILD_ANALYSIS)
     endif()
 endif()
 
+if(UNIX AND NOT APPLE AND BUILD_ANALYSIS)
+    void_add_analysis_cli(VoidPlayerCli)
+    if(BUILD_TESTS)
+        add_test(NAME voidplayer_cli_help COMMAND VoidPlayerCli --help)
+        set_tests_properties(voidplayer_cli_help PROPERTIES
+            LABELS "linux;analysis;cli;canary")
+    endif()
+endif()
+
+if(BUILD_ANALYSIS AND BUILD_TESTS)
+    add_executable(quality_metrics_tests
+        tests/test_main.cpp
+        tests/analysis/test_quality_metrics.cpp
+    )
+    void_apply_native_compile_options(quality_metrics_tests)
+    target_include_directories(quality_metrics_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/analysis")
+    target_link_libraries(quality_metrics_tests PRIVATE
+        analysis_lib
+        Catch2::Catch2
+    )
+    add_test(NAME quality_metrics_tests COMMAND quality_metrics_tests)
+    set_tests_properties(quality_metrics_tests PROPERTIES
+        LABELS "analysis;quality;contract")
+endif()
+
 message(STATUS "")
 message(STATUS "=== VoidPlayer Native Build ===")
 message(STATUS "  Generator: ${CMAKE_GENERATOR}")
 message(STATUS "  FFmpeg: ${FFMPEG_ROOT}")
 message(STATUS "  Test videos: ${VIDEO_TEST_DIR}")
 message(STATUS "  Analysis: ${BUILD_ANALYSIS}")
+message(STATUS "  Quality backend: CPU/SIMD")
 message(STATUS "")

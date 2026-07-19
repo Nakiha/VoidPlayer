@@ -84,7 +84,7 @@ bool DecodeThread::drain_codec_at_eof(
     AVFrame* frame,
     const std::function<void(AVFrame*)>& rescale_ts,
     DecodedFramePublisher& publisher) {
-    int send_ret = send_codec_packet_seh_guarded(codec_ctx_.get(), nullptr);
+    int send_ret = decoder_.send_packet(nullptr);
     const auto send_action = choose_eof_codec_send_action(send_ret);
     if (send_action != EofCodecSendAction::ReceiveFrames) {
         if (send_action == EofCodecSendAction::StopWithError) {
@@ -93,7 +93,7 @@ bool DecodeThread::drain_codec_at_eof(
         return true;
     }
     while (true) {
-        int ret = receive_codec_frame_seh_guarded(codec_ctx_.get(), frame);
+        int ret = decoder_.receive_frame(frame);
         const auto receive_action = choose_eof_codec_receive_action(ret);
         if (receive_action == DecodeDrainReceiveAction::StopWithError) {
             stop_decode_loop_with_error();
@@ -113,8 +113,9 @@ bool DecodeThread::drain_codec_at_eof(
     }
     // Flush decode device after EOF drain to ensure shared NV12 textures are
     // visible to the render device.
-    if (hw_enabled_ && hw_provider_) {
-        hw_provider_->flush();
+    if (decoder_.hardware_enabled() &&
+        decoder_.hardware_provider()) {
+        decoder_.hardware_provider()->flush();
     }
     eof_flushed_ = true;
     return false;
@@ -123,8 +124,8 @@ bool DecodeThread::drain_codec_at_eof(
 DecodedFramePublisher DecodeThread::make_frame_publisher() {
     return DecodedFramePublisher(output_buffer_,
                                  converter_,
-                                 hw_enabled_,
-                                 hw_provider_,
+                                 decoder_.hardware_enabled_flag(),
+                                 decoder_.hardware_provider_owner(),
                                  hw_visibility_flush_pending_,
                                  decode_paused_,
                                  running_,
@@ -138,7 +139,8 @@ struct DecodeThread::DecodeLoopScratch {
 };
 
 void DecodeThread::run() {
-    spdlog::info("[DecodeThread] Decode loop started (hw={})", hw_enabled_);
+    spdlog::info("[DecodeThread] Decode loop started (hw={})",
+                 decoder_.hardware_enabled());
 
     auto frame_owner = AvFrameOwner::allocate();
     if (!frame_owner) {
@@ -258,8 +260,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::drain_before_next_packet(
                     output_buffer_.state());
             },
             [this](AVFrame* frame_to_receive) {
-                return receive_codec_frame_seh_guarded(
-                    codec_ctx_.get(), frame_to_receive, hw_enabled_, device_mutex_);
+                return decoder_.receive_frame(frame_to_receive);
             },
             rescale_ts,
             [this](const AVFrame* ready_frame) {
@@ -320,8 +321,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
                     cancelled_.load(std::memory_order_acquire));
             },
             [this](AVPacket* packet_to_send) {
-                return send_codec_packet_seh_guarded(
-                    codec_ctx_.get(), packet_to_send, hw_enabled_, device_mutex_);
+                return decoder_.send_packet(packet_to_send);
             },
             [](int send_ret) {
                 spdlog::error("[DecodeThread] Error sending packet: {:#x}",
@@ -352,8 +352,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
                     cancelled_.load(std::memory_order_acquire));
             },
             [this](AVFrame* frame_to_receive) {
-                return receive_codec_frame_seh_guarded(
-                    codec_ctx_.get(), frame_to_receive, hw_enabled_, device_mutex_);
+                return decoder_.receive_frame(frame_to_receive);
             },
             rescale_ts,
             [this](const AVFrame* ready_frame) {
@@ -380,7 +379,8 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
                 // visible HW frame on startup and after seek/add-track
                 // transitions. Without this, the render device can sample
                 // a partially-written NV12 surface.
-                hw_visibility_flush_pending_ = hw_enabled_;
+                hw_visibility_flush_pending_ =
+                    decoder_.hardware_enabled();
             },
             [&publisher](AVFrame* frame_to_publish) {
                 // The flush must happen before push_frame() publishes this
@@ -463,8 +463,9 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
     // paused. Playback naturally paces this path through render/clock
     // consumption; mirror a tiny amount of that pacing during drain mode.
     const bool hevc_hardware_decode =
-        hw_enabled_ && codec_params_ &&
-        codec_params_->codec_id == AV_CODEC_ID_HEVC;
+        decoder_.hardware_enabled() &&
+        decoder_.codec_parameters() &&
+        decoder_.codec_parameters()->codec_id == AV_CODEC_ID_HEVC;
     if (should_pace_hevc_hardware_exact_seek_decode(
             exact_seek_target_us_ >= 0, hevc_hardware_decode)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));

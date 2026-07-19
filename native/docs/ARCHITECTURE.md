@@ -42,7 +42,7 @@ contract.
 ```text
 native/
 ├── common/              # platform-neutral logging and helpers
-├── media/               # demux, packet queue, seek controller
+├── media/               # demux, packet queue, seek controller, shared video decode session
 ├── audio/               # shared audio engine / miniaudio output
 ├── playback/            # playback controller and clock/audio coordination
 ├── renderer/            # shared scheduler, decode, buffer, render contracts
@@ -66,6 +66,7 @@ native/
 | `RendererDrawSnapshot` | renderer 到 native video backend 的 immutable draw input |
 | `PresentationBackend` | native video texture/layer writer；不控制 Flutter 上屏 |
 | `TrackPipeline` | 每轨 demux/decode/buffer state |
+| `VideoDecodeSession` | 播放与离线 CLI 共用的 codec/hardware-device 生命周期、open fallback 和 send/receive；不拥有 seek、buffer 或 presentation state |
 | `FrameConverter` | AVFrame 到 native-target frame storage；硬解 import 只在已实现 backend 上启用 |
 
 ### Exact playback pacing
@@ -104,6 +105,7 @@ Media file
   -> DemuxThread
   -> PacketQueue
   -> DecodeThread
+  -> VideoDecodeSession
   -> FrameConverter
   -> TextureFrame
   -> TrackBuffer / BidiRingBuffer
@@ -117,6 +119,12 @@ Media file
 
 Windows 和 macOS 共用从 demux 到 `RendererDrawSnapshot` 的主路径。差异从
 hardware decode provider 和 presentation backend 开始：
+
+`DecodeThread` 是实时播放 adapter：它保留 packet queue、seek/preroll、backpressure 和
+`TrackBuffer` 状态，但 codec context 与硬解 provider 由 `VideoDecodeSession` 持有。
+离线 quality CLI 使用自己的顺序 demux 和抽样策略，同时调用同一个
+`VideoDecodeSession`。因此 CLI 不依赖 renderer/Flutter，播放与分析也不会再各自维护
+一套 codec open、AV1 software fallback 或 guarded send/receive 实现。
 
 | 平台 | 硬解 provider | presentation backend |
 | --- | --- | --- |

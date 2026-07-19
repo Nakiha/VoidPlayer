@@ -33,6 +33,7 @@ add_executable(video_renderer_tests
     media/test_demux_thread.cpp
     decode/test_av_frame_lifetime.cpp
     decode/test_codec_loop.cpp
+    decode/test_video_decode_session.cpp
     decode/test_decode_drain_policy.cpp
     decode/test_decode_exact_seek_reorder.cpp
     decode/test_decode_frame_drainer.cpp

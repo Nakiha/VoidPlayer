@@ -333,7 +333,37 @@ int main(int argc, char** argv) {
                     fixture.dir / L"generated-cache" /
                     L"cli_generated" / L"base.vac"),
                 "--json",
-            });
+            }) &&
+            run_cli(cli_path, {
+                "score-quality",
+                "--input", video_path,
+                "--backend", "cpu",
+                "--decode-threads", "2",
+                "--cpu-workers", "2",
+                "--cpu-in-flight", "2",
+                "--sample-interval-ms", "250",
+                "--max-samples", "2",
+                "--json",
+            }) &&
+            run_cli(cli_path, {
+                "score-quality",
+                "--input", video_path,
+                "--backend", "cpu",
+                "--max-samples", "1",
+                "--json",
+                "--summary-only",
+            }) &&
+            run_cli(cli_path, {
+                "score-quality",
+                "--input", video_path,
+                "--backend", "cpu",
+                "--max-samples", "2",
+                "--jsonl",
+            }) &&
+            run_cli_expect_exit(cli_path, {
+                "score-quality",
+                "--json",
+            }, 1);
     }
 
     std::error_code ec;

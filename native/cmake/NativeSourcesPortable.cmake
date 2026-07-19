@@ -34,7 +34,6 @@ set(VOID_PLAYER_PORTABLE_CORE_SOURCES
 
 set(VOID_MEDIA_FFMPEG_SOURCES
     "${VOID_NATIVE_DIR}/media/av_packet_lifetime.cpp"
-    "${VOID_NATIVE_DIR}/media/ffmpeg_lifetime.cpp"
     "${VOID_NATIVE_DIR}/audio/audio_decode_thread.cpp"
     "${VOID_NATIVE_DIR}/audio/audio_engine.cpp"
     "${VOID_NATIVE_DIR}/audio/audio_mixer.cpp"
@@ -46,7 +45,6 @@ set(VOID_MEDIA_FFMPEG_SOURCES
     "${VOID_NATIVE_DIR}/media/private_cdn_flv_demuxer.cpp"
     "${VOID_NATIVE_DIR}/media/source_packet_identity.cpp"
     "${VOID_NATIVE_DIR}/renderer/decode/av_frame_lifetime.cpp"
-    "${VOID_NATIVE_DIR}/renderer/decode/codec_loop.cpp"
     "${VOID_NATIVE_DIR}/renderer/decode/decoded_frame_publisher.cpp"
     "${VOID_NATIVE_DIR}/renderer/decode/decode_drain_policy.cpp"
     "${VOID_NATIVE_DIR}/renderer/decode/decode_exact_seek_reorder.cpp"
@@ -67,7 +65,6 @@ set(VOID_MEDIA_FFMPEG_SOURCES
     "${VOID_NATIVE_DIR}/renderer/decode/frame_identity.cpp"
     "${VOID_NATIVE_DIR}/renderer/decode/frame_timestamp_rescaler.cpp"
     "${VOID_NATIVE_DIR}/renderer/decode/hardware_frame_converter.cpp"
-    "${VOID_NATIVE_DIR}/renderer/decode/hw/hw_decode_provider.cpp"
     "${VOID_NATIVE_DIR}/renderer/decode/software_bgra_converter.cpp"
     "${VOID_NATIVE_DIR}/renderer/decode/software_frame_packer.cpp"
     "${VOID_NATIVE_DIR}/renderer/decode/software_frame_publisher.cpp"

@@ -32,6 +32,7 @@ target_include_directories(void_media_ffmpeg SYSTEM PUBLIC
 )
 
 target_link_libraries(void_media_ffmpeg PUBLIC
+    void_video_decode_core
     void_player_portable_core
     spdlog::spdlog_header_only
     ${AVCODEC_LIBRARY}

@@ -143,7 +143,44 @@ struct NakiAnalysisGenerationServiceStats {
     uint64_t submitted_jobs;
 };
 
+struct NakiQualityDistribution {
+    uint64_t count;
+    double mean;
+    double p95;
+    double maximum;
+};
+
+struct NakiQualitySummary {
+    uint32_t schema_version;
+    int32_t video_width;
+    int32_t video_height;
+    int32_t bit_depth;
+    int64_t sample_interval_us;
+    uint32_t max_samples;
+    int32_t truncated;
+    uint64_t unsupported_pixel_frames;
+    uint64_t sample_count;
+    NakiQualityDistribution blockiness;
+    NakiQualityDistribution banding;
+    NakiQualityDistribution blur;
+    NakiQualityDistribution noise;
+    NakiQualityDistribution flicker;
+};
+
+struct NakiQualitySample {
+    uint64_t sample_index;
+    uint64_t decoded_frame_index;
+    int64_t pts_us;
+    double blockiness;
+    double banding;
+    double blur;
+    double noise;
+    double flicker;
+    double average_qp;
+};
+
 using NakiAnalysisHandle = void*;
+using NakiQualityHandle = void*;
 using NakiAnalysisPtsCallback = int64_t (*)();
 
 extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_abi_version();
@@ -158,6 +195,8 @@ extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_sizeof_frame_info_v2()
 extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_sizeof_nalu_info_v2();
 extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_sizeof_frame_bucket_v2();
 extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_sizeof_overlay_state_v2();
+extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_sizeof_quality_summary();
+extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_sizeof_quality_sample();
 
 extern "C" NAKI_ANALYSIS_FFI_EXPORT void naki_analysis_set_overlay(const NakiOverlayState* state);
 extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_set_overlay_track(int32_t track_file_id, const char* analysis_path);
@@ -185,3 +224,18 @@ extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_generate_vac2_overlay_
 extern "C" NAKI_ANALYSIS_FFI_EXPORT uint64_t naki_analysis_submit_vac2_overlay_chunk(const char* video_path, const char* hash, const char* cache_root, int32_t start_frame, int32_t end_frame, int64_t max_cache_bytes, int32_t priority);
 extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_poll_generation_jobs(NakiAnalysisGenerationJobResult* out, int32_t max_count);
 extern "C" NAKI_ANALYSIS_FFI_EXPORT void naki_analysis_get_generation_service_stats(NakiAnalysisGenerationServiceStats* out);
+
+extern "C" NAKI_ANALYSIS_FFI_EXPORT NakiQualityHandle naki_analysis_quality_analyze(
+    const char* video_path,
+    int64_t sample_interval_us,
+    uint32_t max_samples);
+extern "C" NAKI_ANALYSIS_FFI_EXPORT void naki_analysis_quality_close(
+    NakiQualityHandle handle);
+extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_quality_get_summary(
+    NakiQualityHandle handle,
+    NakiQualitySummary* out);
+extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_quality_get_samples(
+    NakiQualityHandle handle,
+    int32_t start,
+    NakiQualitySample* out,
+    int32_t max_count);

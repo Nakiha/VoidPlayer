@@ -1,6 +1,7 @@
 import 'dart:isolate';
 
 import 'analysis_ffi.dart';
+import 'analysis_manager.dart';
 
 class AnalysisQualityRequest {
   final String videoPath;
@@ -18,7 +19,15 @@ abstract interface class AnalysisQualityDataSource {
   Future<AnalysisQualityReport> analyze(AnalysisQualityRequest request);
 }
 
-class NativeAnalysisQualityService implements AnalysisQualityDataSource {
+abstract interface class AnalysisQualityFrameDataSource {
+  Future<Map<int, FrameInfo>> readCachedFrames(
+    String videoPath,
+    List<AnalysisQualitySample> samples,
+  );
+}
+
+class NativeAnalysisQualityService
+    implements AnalysisQualityDataSource, AnalysisQualityFrameDataSource {
   const NativeAnalysisQualityService();
 
   @override
@@ -29,6 +38,20 @@ class NativeAnalysisQualityService implements AnalysisQualityDataSource {
         sampleIntervalUs: request.sampleIntervalUs,
         maxSamples: request.maxSamples,
       ),
+    );
+  }
+
+  @override
+  Future<Map<int, FrameInfo>> readCachedFrames(
+    String videoPath,
+    List<AnalysisQualitySample> samples,
+  ) {
+    return AnalysisManager.instance.readCachedFrames(
+      videoPath: videoPath,
+      frameIndices: samples.map((sample) => sample.decodedFrameIndex),
+      ptsUsByFrameIndex: {
+        for (final sample in samples) sample.decodedFrameIndex: sample.ptsUs,
+      },
     );
   }
 }

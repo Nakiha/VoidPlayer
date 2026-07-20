@@ -4,6 +4,7 @@ import '../../../analysis/analysis_ffi.dart';
 import '../../../analysis/nalu_types.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../widgets/axtree_region.dart';
+import '../../../widgets/panel_search_field.dart';
 import 'analysis_frame_utils.dart';
 
 // ===========================================================================
@@ -160,40 +161,11 @@ class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
             padding: const EdgeInsets.all(4),
             child: TextField(
               onChanged: widget.onFilterChanged,
+              textInputAction: TextInputAction.search,
               style: theme.textTheme.bodySmall,
-              decoration: InputDecoration(
+              decoration: panelSearchInputDecoration(
+                context,
                 hintText: AppLocalizations.of(context)!.analysisFilterHint,
-                hintStyle: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant.withValues(
-                    alpha: 0.5,
-                  ),
-                ),
-                prefixIcon: Icon(
-                  Icons.search,
-                  size: 14,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                prefixIconConstraints: const BoxConstraints(
-                  minWidth: 20,
-                  minHeight: 0,
-                ),
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 4,
-                  vertical: 6,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.outlineVariant,
-                  ),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.outlineVariant,
-                  ),
-                ),
               ),
             ),
           ),

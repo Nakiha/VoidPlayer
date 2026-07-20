@@ -5,6 +5,7 @@ import '../../../analysis/analysis_ffi.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../widgets/axtree_region.dart';
 import 'analysis_chart_common.dart';
+import 'analysis_frame_style.dart';
 import 'reference_edge_index.dart';
 
 // Reference pyramid chart: circle nodes plus reference arrows.
@@ -638,8 +639,8 @@ class _RefPyramidPainter extends CustomPainter {
     final levelLabelStep = rowH >= 16 ? 1 : (16 / rowH).ceil();
     for (var tid = 0; tid <= maxLayer; tid++) {
       final top = chartH - (tid + 1) * rowH;
-      final alpha = 0.03 + (maxLayer - tid) * 0.025;
-      _bgPaint.color = const Color(0xFFFFFFFF).withValues(alpha: alpha);
+      final alpha = 0.035 + (maxLayer - tid) * 0.012;
+      _bgPaint.color = analysisTemporalLayerColor(tid).withValues(alpha: alpha);
       canvas.drawRect(Rect.fromLTWH(0, top, size.width, rowH), _bgPaint);
       final showLevelLabel =
           tid == 0 || tid == maxLayer || tid % levelLabelStep == 0;
@@ -703,14 +704,6 @@ class _RefPyramidPainter extends CustomPainter {
     }
 
     // Helper: get fill color for a frame's circle (same logic as circle drawing)
-    Color frameFillColor(FrameInfo f) {
-      if (f.sliceType == 2) return const Color(0xFFFF4D4F); // I: red
-      if (f.sliceType == 0 && f.numRefL1 > 0) {
-        return const Color(0xFF1890FF); // B bidir: blue
-      }
-      return const Color(0xFF52C41A); // B uni / P: green
-    }
-
     final candidateEdges = referenceCache.edgeSpanIndex.query(
       start: viewStart.floor().clamp(windowStart, windowEnd - 1).toInt(),
       end: viewEnd.ceil().clamp(windowStart, windowEnd - 1).toInt(),
@@ -744,7 +737,7 @@ class _RefPyramidPainter extends CustomPainter {
       final arrowAlpha = isSelLine
           ? 1.0
           : (selectedFrameIdx != null ? baseAlpha * 0.4 : baseAlpha);
-      final arrowColor = frameFillColor(
+      final arrowColor = analysisFrameTypeColor(
         frames[ri - frameIndexBase],
       ).withValues(alpha: arrowAlpha);
       _drawArrow(canvas, from, to, arrowColor, lineW.toDouble(), circleR);
@@ -804,18 +797,18 @@ class _RefPyramidPainter extends CustomPainter {
       // B with l1=0 (unidirectional) uses green color but still labeled B
       final Color fill, stroke;
       if (f.sliceType == 2) {
-        fill = const Color(0xFFFF4D4F);
+        fill = analysisIFrameColor;
         stroke = const Color(0xFFCF1322);
       } else if (f.sliceType == 0 && f.numRefL1 > 0) {
         fill = const Color(0xFFE6F7FF);
-        stroke = const Color(0xFF1890FF);
+        stroke = analysisBFrameColor;
       } else if (f.sliceType == 0) {
         // B with l1==0 (unidirectional): green color
-        fill = const Color(0xFF52C41A);
+        fill = analysisPFrameColor;
         stroke = const Color(0xFF389E0D);
       } else {
         // P (sliceType==1)
-        fill = const Color(0xFF52C41A);
+        fill = analysisPFrameColor;
         stroke = const Color(0xFF389E0D);
       }
 

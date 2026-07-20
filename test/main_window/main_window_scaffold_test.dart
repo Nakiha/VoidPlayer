@@ -39,6 +39,7 @@ import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/viewport/display_geometry.dart';
 import 'package:void_player/viewport/viewport_display_state.dart';
 import 'package:void_player/widgets/analysis_overlay_controls.dart';
+import 'package:void_player/widgets/loop_range_bar.dart';
 import 'package:void_player/widgets/quick_mark_sidebar.dart';
 import 'package:void_player/widgets/timeline_area.dart';
 import 'package:void_player/widgets/viewport_panel.dart';
@@ -138,7 +139,7 @@ void main() {
   );
 
   testWidgets(
-    'analysis dock keeps the bottom timeline compact and preserves playback',
+    'analysis deck replaces the compact timeline and preserves playback',
     (tester) async {
       final feedback = AppFeedbackController();
       addTearDown(feedback.dispose);
@@ -179,19 +180,24 @@ void main() {
       final analysisViewport = tester.getRect(find.byType(ViewportPanel));
       final analysisChrome = tester.getRect(find.byType(PinnedPlaybackChrome));
       final analysisDeck = tester.getRect(find.byType(MainWindowDeck));
-      final naluSidebar = tester.getRect(
-        find.byKey(mainWindowAnalysisNaluSidebarKey),
+      final chartShelf = tester.getRect(
+        find.byKey(mainWindowAnalysisChartShelfKey),
       );
+      final playbackAreaHeight =
+          timelineViewport.height + timelineChrome.height + timelineDeck.height;
 
       expect(timelineDeck.height, timelineTrackRowHeight * 2);
-      expect(analysisDeck.height, timelineDeck.height);
+      expect(analysisDeck.height, closeTo(playbackAreaHeight * 0.42, 0.1));
       expect(analysisViewport.height, lessThan(timelineViewport.height));
-      expect(analysisViewport.width, lessThan(timelineViewport.width));
+      expect(analysisViewport.width, timelineViewport.width);
       expect(analysisChrome.height, timelineChrome.height);
-      expect(analysisChrome.width, lessThan(timelineChrome.width));
-      expect(naluSidebar.left, greaterThanOrEqualTo(analysisViewport.right));
+      expect(analysisChrome.width, timelineChrome.width);
+      expect(chartShelf.width, analysisDeck.width);
       expect(find.byType(AnalysisWorkspacePage), findsOneWidget);
       expect(find.byKey(mainWindowAnalysisChartShelfKey), findsOneWidget);
+      expect(find.byKey(mainWindowAnalysisNaluSidebarKey), findsNothing);
+      expect(find.byType(LoopRangeBar), findsNothing);
+      expect(find.byType(TimelineArea), findsNothing);
     },
   );
 
@@ -228,20 +234,16 @@ void main() {
         ),
       );
 
-      final analysisButton = tester.widget<TextButton>(
-        find.descendant(
-          of: find.byKey(const ValueKey('main-window-deck-tab-analysis')),
-          matching: find.byType(TextButton),
-        ),
+      final analysisTabs = tester.widget<SegmentedButton<int>>(
+        find
+            .ancestor(
+              of: find.byKey(const ValueKey('main-window-deck-tab-analysis')),
+              matching: find.byType(SegmentedButton<int>),
+            )
+            .first,
       );
-      final colors = Theme.of(
-        tester.element(find.byType(MainWindowDeck)),
-      ).colorScheme;
-      expect(
-        analysisButton.style?.backgroundColor?.resolve(const {}),
-        colors.primaryContainer,
-      );
-      expect(analysisButton.onPressed, isNotNull);
+      expect(analysisTabs.selected, {0});
+      expect(analysisTabs.onSelectionChanged, isNotNull);
 
       await tester.tap(
         find.byKey(const ValueKey('main-window-deck-tab-analysis')),
@@ -308,6 +310,7 @@ void main() {
               tracks: tracks,
               analysisEntries: entries,
               deckTab: MainWindowDeckTab.analysis,
+              marksSidebarVisible: true,
             ),
             handles: _handles(),
             actions: _noop,
@@ -315,8 +318,11 @@ void main() {
         ),
       ),
     );
+    await tester.pump();
 
     final selector = find.byKey(mainWindowAnalysisTrackSelectorKey);
+    expect(find.byKey(mainWindowListNaluTabKey), findsOneWidget);
+    expect(find.byKey(mainWindowAnalysisNaluSidebarKey), findsOneWidget);
     expect(selector, findsOneWidget);
     expect(find.text('1. first.mp4'), findsWidgets);
 
@@ -325,8 +331,192 @@ void main() {
     await tester.tap(find.text('2. second.mp4').last);
     await tester.pumpAndSettle();
 
-    expect(tester.widget<DropdownButton<int>>(selector).value, 1);
+    expect(tester.widget<DropdownMenu<int>>(selector).initialSelection, 1);
     expect(find.text('2. second.mp4'), findsWidgets);
+  });
+
+  testWidgets('analysis split keeps its pair and changes focused entry', (
+    tester,
+  ) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+    const tracks = [
+      TrackEntry(
+        TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: 'first.mp4',
+          width: 1920,
+          height: 1080,
+        ),
+      ),
+      TrackEntry(
+        TrackInfo(
+          fileId: 2,
+          slot: 1,
+          path: 'second.mp4',
+          width: 1280,
+          height: 720,
+        ),
+      ),
+      TrackEntry(
+        TrackInfo(
+          fileId: 3,
+          slot: 2,
+          path: 'third.mp4',
+          width: 640,
+          height: 360,
+        ),
+      ),
+    ];
+    const entries = [
+      AnalysisWorkspaceEntry(
+        fileId: 1,
+        path: 'first.mp4',
+        fileName: 'first.mp4',
+        hash: null,
+        generationStatus: null,
+      ),
+      AnalysisWorkspaceEntry(
+        fileId: 2,
+        path: 'second.mp4',
+        fileName: 'second.mp4',
+        hash: null,
+        generationStatus: null,
+      ),
+      AnalysisWorkspaceEntry(
+        fileId: 3,
+        path: 'third.mp4',
+        fileName: 'third.mp4',
+        hash: null,
+        generationStatus: null,
+      ),
+    ];
+
+    await tester.pumpWidget(
+      _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              tracks: tracks,
+              analysisEntries: entries,
+              deckTab: MainWindowDeckTab.analysis,
+              marksSidebarVisible: true,
+            ),
+            handles: _handles(),
+            actions: _noop,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final modeToggle = find.byKey(mainWindowAnalysisViewModeToggleKey);
+    expect(modeToggle, findsOneWidget);
+    await tester.tap(
+      find.descendant(of: modeToggle, matching: find.text('Split')),
+    );
+    await tester.pump();
+
+    final firstCell = find.byKey(analysisWorkspaceSplitCellKey(1));
+    final secondCell = find.byKey(analysisWorkspaceSplitCellKey(2));
+    expect(firstCell, findsOneWidget);
+    expect(secondCell, findsOneWidget);
+    expect(find.byKey(analysisWorkspaceSplitCellKey(3)), findsNothing);
+    expect(find.byKey(analysisWorkspaceSplitDividerKey), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(analysisWorkspaceFocusedSplitCellKey),
+        matching: firstCell,
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(secondCell);
+    await tester.pump();
+    await tester.pump();
+
+    expect(firstCell, findsOneWidget);
+    expect(secondCell, findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(analysisWorkspaceFocusedSplitCellKey),
+        matching: secondCell,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<DropdownMenu<int>>(
+            find.byKey(mainWindowAnalysisTrackSelectorKey),
+          )
+          .initialSelection,
+      1,
+    );
+  });
+
+  testWidgets('left sidebar follows analysis context and restores its tab', (
+    tester,
+  ) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+    const track = TrackEntry(
+      TrackInfo(
+        fileId: 1,
+        slot: 0,
+        path: 'track.mp4',
+        width: 1920,
+        height: 1080,
+      ),
+    );
+    const entry = AnalysisWorkspaceEntry(
+      fileId: 1,
+      path: 'track.mp4',
+      fileName: 'track.mp4',
+      hash: null,
+      generationStatus: null,
+    );
+
+    Widget build(MainWindowDeckTab tab) => _localized(
+      AppFeedbackScope(
+        controller: feedback,
+        child: MainWindowScaffold(
+          model: _model(
+            settingsVisible: false,
+            tracks: const [track],
+            analysisEntries: const [entry],
+            deckTab: tab,
+            marksSidebarVisible: true,
+          ),
+          handles: _handles(),
+          actions: _noop,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(build(MainWindowDeckTab.timeline));
+    await tester.tap(find.byKey(mainWindowListTracksTabKey));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('main-window-track-row-1')),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(build(MainWindowDeckTab.analysis));
+    await tester.pump();
+    expect(find.byKey(mainWindowAnalysisNaluSidebarKey), findsOneWidget);
+    expect(find.byKey(mainWindowAnalysisTrackSelectorKey), findsOneWidget);
+    expect(find.byKey(const ValueKey('main-window-track-row-1')), findsNothing);
+
+    await tester.pumpWidget(build(MainWindowDeckTab.timeline));
+    await tester.pump();
+    expect(find.byKey(mainWindowAnalysisNaluSidebarKey), findsNothing);
+    expect(
+      find.byKey(const ValueKey('main-window-track-row-1')),
+      findsOneWidget,
+    );
   });
 
   testWidgets(
@@ -373,18 +563,50 @@ void main() {
       );
 
       expect(find.text('Quality'), findsOneWidget);
-      expect(find.textContaining('experimental no-reference'), findsOneWidget);
+      expect(find.textContaining('Experimental proxies'), findsOneWidget);
+      expect(find.byKey(mainWindowAnalysisNaluSidebarKey), findsNothing);
+      expect(find.byType(DropdownMenu<int>), findsOneWidget);
 
       await tester.tap(find.byKey(mainWindowQualityAnalyzeButtonKey));
       await tester.pump();
 
       expect(find.byKey(mainWindowQualityChartKey), findsOneWidget);
       expect(find.textContaining('3 samples'), findsOneWidget);
-      expect(find.textContaining('p95 0.300'), findsOneWidget);
       expect(find.text('Create 1 mark'), findsOneWidget);
 
+      final blockingLegend = find.byKey(
+        const ValueKey('main-window-quality-metric-blockiness'),
+      );
+      expect(
+        tester.widget<Semantics>(blockingLegend).properties.toggled,
+        isTrue,
+      );
+      final blockingRect = tester.getRect(blockingLegend);
+      await tester.tapAt(
+        Offset(blockingRect.left + 10, blockingRect.center.dy),
+      );
+      await tester.pump();
+      expect(
+        tester.widget<Semantics>(blockingLegend).properties.toggled,
+        isFalse,
+      );
+      await tester.tapAt(
+        Offset(blockingRect.left + 40, blockingRect.center.dy),
+      );
+      await tester.pump();
+      expect(
+        tester.widget<Semantics>(blockingLegend).properties.toggled,
+        isTrue,
+      );
+
+      await tester.drag(
+        find.byKey(mainWindowQualityThresholdDragKey),
+        const Offset(0, 24),
+      );
+      await tester.pump();
+
       final chartRect = tester.getRect(find.byKey(mainWindowQualityChartKey));
-      await tester.tapAt(Offset(chartRect.right - 2, chartRect.center.dy));
+      await tester.tapAt(Offset(chartRect.right - 14, chartRect.center.dy));
       await tester.pump();
       expect(seeks, [(7, 2000000)]);
 
@@ -393,8 +615,7 @@ void main() {
       expect(markRequests, hasLength(1));
       expect(markRequests.single.fileId, 7);
       expect(markRequests.single.metric, AnalysisQualityMetric.blockiness);
-      expect(markRequests.single.threshold, closeTo(0.3, 0.0001));
-      expect(find.textContaining('Created 1 metric mark'), findsOneWidget);
+      expect(markRequests.single.threshold, lessThan(0.3));
     },
   );
 
@@ -413,6 +634,7 @@ void main() {
       ),
     );
     final tabs = <MainWindowDeckTab>[];
+    final heights = <double>[];
 
     await tester.pumpWidget(
       _localized(
@@ -425,7 +647,10 @@ void main() {
               deckTab: MainWindowDeckTab.analysis,
             ),
             handles: _handles(),
-            actions: _actionsWithDeck(onTabChanged: tabs.add),
+            actions: _actionsWithDeck(
+              onTabChanged: tabs.add,
+              onHeightChanged: heights.add,
+            ),
           ),
         ),
       ),
@@ -433,7 +658,33 @@ void main() {
 
     expect(find.byKey(mainWindowAnalysisChartShelfKey), findsOneWidget);
     expect(find.byKey(mainWindowDeckResizeHandleKey), findsOneWidget);
-    expect(tester.getSize(find.byType(MainWindowDeck)).height, 64);
+    final initialHeight = tester.getSize(find.byType(MainWindowDeck)).height;
+    final availableHeight =
+        tester.getSize(find.byType(ViewportPanel)).height +
+        tester.getSize(find.byType(PinnedPlaybackChrome)).height +
+        initialHeight;
+    expect(initialHeight, closeTo(availableHeight * 0.42, 0.1));
+
+    await tester.drag(
+      find.byKey(mainWindowDeckResizeHandleKey),
+      const Offset(0, -80),
+    );
+    await tester.pump();
+    expect(
+      tester.getSize(find.byType(MainWindowDeck)).height,
+      closeTo(initialHeight + 80, 0.1),
+    );
+    expect(heights, isNotEmpty);
+
+    await tester.drag(
+      find.byKey(mainWindowDeckResizeHandleKey),
+      const Offset(0, 1000),
+    );
+    await tester.pump();
+    expect(
+      tester.getSize(find.byType(MainWindowDeck)).height,
+      closeTo(availableHeight * 0.25, 0.1),
+    );
 
     await tester.tap(find.byKey(mainWindowDeckCollapseButtonKey));
     expect(tabs, [MainWindowDeckTab.timeline]);
@@ -1256,7 +1507,8 @@ MainWindowViewActions _actionsWithDeck({
   );
 }
 
-class _FakeQualityDataSource implements AnalysisQualityDataSource {
+class _FakeQualityDataSource
+    implements AnalysisQualityDataSource, AnalysisQualityFrameDataSource {
   const _FakeQualityDataSource();
 
   @override
@@ -1338,6 +1590,31 @@ class _FakeQualityDataSource implements AnalysisQualityDataSource {
         ),
       ],
     );
+  }
+
+  @override
+  Future<Map<int, FrameInfo>> readCachedFrames(
+    String videoPath,
+    List<AnalysisQualitySample> samples,
+  ) async {
+    return {
+      for (final sample in samples)
+        sample.decodedFrameIndex: FrameInfo(
+          poc: sample.decodedFrameIndex,
+          temporalId: sample.sampleIndex % 2,
+          sliceType: sample.sampleIndex == 0 ? 2 : 1,
+          nalType: 1,
+          avgQp: 22 + sample.sampleIndex,
+          numRefL0: 0,
+          numRefL1: 0,
+          refPocsL0: const [],
+          refPocsL1: const [],
+          pts: sample.ptsUs,
+          dts: sample.ptsUs,
+          packetSize: 1000 + sample.sampleIndex * 250,
+          keyframe: sample.sampleIndex == 0 ? 1 : 0,
+        ),
+    };
   }
 }
 

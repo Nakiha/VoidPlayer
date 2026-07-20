@@ -311,6 +311,59 @@ class AnalysisManager extends ChangeNotifier
   static Future<String> computeHash(String videoPath) =>
       _computeHash(videoPath);
 
+  /// Read frame summaries from an existing base VAC without generating one.
+  ///
+  /// The returned map keeps the requested decoded-frame indices as keys. When
+  /// an index is unavailable, [ptsUsByFrameIndex] is used as a timestamp
+  /// fallback. Missing or unreadable caches deliberately produce an empty map.
+  Future<Map<int, FrameInfo>> readCachedFrames({
+    required String videoPath,
+    required Iterable<int> frameIndices,
+    Map<int, int> ptsUsByFrameIndex = const {},
+  }) async {
+    final hash = await _cache.findHashForUnchangedVideo(videoPath);
+    if (hash == null || !_cache.hasEntry(hash, videoPath: videoPath)) {
+      return const {};
+    }
+
+    AnalysisSession? session;
+    try {
+      session = _native.openSession(_cache.analysisPath(hash));
+      final summary = session?.summary;
+      if (session == null ||
+          !session.isOpen ||
+          summary == null ||
+          summary.loaded == 0 ||
+          summary.frameCount <= 0) {
+        return const {};
+      }
+
+      final result = <int, FrameInfo>{};
+      for (final requestedIndex in frameIndices.toSet()) {
+        var frameIndex = requestedIndex;
+        if (frameIndex < 0 || frameIndex >= summary.frameCount) {
+          final ptsUs = ptsUsByFrameIndex[requestedIndex];
+          frameIndex = ptsUs == null
+              ? -1
+              : session.frameIndexForTimestamp(ptsUs: ptsUs, dtsUs: ptsUs);
+        }
+        if (frameIndex < 0 || frameIndex >= summary.frameCount) continue;
+        final frames = session.framesRange(frameIndex, 1);
+        if (frames.isNotEmpty) result[requestedIndex] = frames.first;
+      }
+      return result;
+    } catch (error, stack) {
+      log.fine(
+        '[Analysis] cached frame summary read failed for $videoPath: $error',
+        error,
+        stack,
+      );
+      return const {};
+    } finally {
+      session?.close();
+    }
+  }
+
   /// Ensure the cache files for [videoPath] exist.
   ///
   /// Generation is deduplicated by path and is intentionally independent from

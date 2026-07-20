@@ -17,6 +17,7 @@ import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/widgets/analysis_overlay_controls.dart';
 import 'package:void_player/widgets/controls_bar.dart';
 import 'package:void_player/widgets/media_header.dart';
+import 'package:void_player/widgets/segmented_widget.dart';
 import 'package:void_player/widgets/toolbar.dart';
 
 class _FakeAnalysisToolbarDataSource extends ChangeNotifier
@@ -285,7 +286,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('marks sidebar toggle invokes the toolbar action', (
+  testWidgets('left panel toggle leads the toolbar and invokes its action', (
     tester,
   ) async {
     var toggleTaps = 0;
@@ -298,7 +299,12 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byTooltip('Marks sidebar'));
+    final toggle = find.byTooltip('Left panel');
+    expect(
+      tester.getRect(toggle).right,
+      lessThanOrEqualTo(tester.getRect(find.byType(ViewModeSelector)).left),
+    );
+    await tester.tap(toggle);
     expect(toggleTaps, 1);
   });
 

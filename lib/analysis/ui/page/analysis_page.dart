@@ -22,6 +22,7 @@ class AnalysisPage extends StatefulWidget {
   final AnalysisTestHostRegistry testHosts;
   final bool pollSummary;
   final AnalysisSplitLayoutController? splitLayoutController;
+  final bool splitLayoutPrimary;
   final ValueChanged<AnalysisUiSelection?>? onSelectionChanged;
   final AnalysisPlaybackPosition? currentPlaybackPosition;
   final ValueChanged<AnalysisFrameSeekRequest>? onFrameSeekRequested;
@@ -34,6 +35,7 @@ class AnalysisPage extends StatefulWidget {
     required this.testHosts,
     this.pollSummary = true,
     this.splitLayoutController,
+    this.splitLayoutPrimary = false,
     this.onSelectionChanged,
     this.currentPlaybackPosition,
     this.onFrameSeekRequested,
@@ -48,6 +50,8 @@ class AnalysisPageState extends State<AnalysisPage>
     implements AnalysisTestHost {
   late AnalysisPageController _controller;
   Object? _lastPublishedSelectionIdentity;
+  int _lastSplitChartWindowRevision = 0;
+  int _lastSplitViewStateRevision = 0;
 
   @override
   void initState() {
@@ -56,6 +60,7 @@ class AnalysisPageState extends State<AnalysisPage>
     _controller.addListener(_publishSelection);
     widget.testHosts.register(widget.fileId, this);
     widget.splitLayoutController?.addListener(_onSplitLayoutChanged);
+    _scheduleInitialSplitStatePublication();
   }
 
   @override
@@ -64,6 +69,13 @@ class AnalysisPageState extends State<AnalysisPage>
     if (oldWidget.splitLayoutController != widget.splitLayoutController) {
       oldWidget.splitLayoutController?.removeListener(_onSplitLayoutChanged);
       widget.splitLayoutController?.addListener(_onSplitLayoutChanged);
+      _lastSplitChartWindowRevision = 0;
+      _lastSplitViewStateRevision = 0;
+      _applySplitChartWindow();
+      _scheduleInitialSplitStatePublication();
+    }
+    if (!oldWidget.splitLayoutPrimary && widget.splitLayoutPrimary) {
+      _scheduleInitialSplitStatePublication();
     }
     if (oldWidget.fileId != widget.fileId ||
         oldWidget.testHosts != widget.testHosts) {
@@ -101,15 +113,11 @@ class AnalysisPageState extends State<AnalysisPage>
       builder: (context, _) {
         final contentBuilder = widget.contentBuilder;
         if (contentBuilder != null) {
-          return contentBuilder(
-            context,
-            _controller.viewModel,
-            _controller.actions,
-          );
+          return contentBuilder(context, _controller.viewModel, _pageActions);
         }
         return AnalysisPageView(
           model: _controller.viewModel,
-          actions: _controller.actions,
+          actions: _pageActions,
           splitLayoutController: widget.splitLayoutController,
         );
       },
@@ -128,7 +136,103 @@ class AnalysisPageState extends State<AnalysisPage>
   }
 
   void _onSplitLayoutChanged() {
-    if (mounted) setState(() {});
+    _applySplitChartWindow();
+    _applySplitViewState();
+    _controller.refreshExternalLayout();
+  }
+
+  AnalysisPageActions get _pageActions {
+    final actions = _controller.actions;
+    if (widget.splitLayoutController == null) return actions;
+    return AnalysisPageActions(
+      onOrderChanged: (ptsOrder) {
+        actions.onOrderChanged(ptsOrder);
+        _publishSplitViewState();
+      },
+      onTabChanged: (tab) {
+        actions.onTabChanged(tab);
+        _publishSplitViewState();
+      },
+      onReferencePyramidLayerModeChanged:
+          actions.onReferencePyramidLayerModeChanged,
+      onChartZoom: (delta) {
+        actions.onChartZoom(delta);
+        _publishSplitChartWindow();
+      },
+      onChartPan: (offset) {
+        actions.onChartPan(offset);
+        _publishSplitChartWindow();
+      },
+      onAxisZoom: actions.onAxisZoom,
+      onChartFrameSelected: actions.onChartFrameSelected,
+      onChartFrameActivated: actions.onChartFrameActivated,
+      onNaluSelected: actions.onNaluSelected,
+      onNaluWindowRequested: actions.onNaluWindowRequested,
+      onChartWindowSetForTest: (offset, visibleFrameCount) {
+        actions.onChartWindowSetForTest(offset, visibleFrameCount);
+        _publishSplitChartWindow();
+      },
+      onNaluFilterChanged: actions.onNaluFilterChanged,
+      onNaluBrowserWidthChanged: actions.onNaluBrowserWidthChanged,
+      onTopPanelFractionChanged: actions.onTopPanelFractionChanged,
+    );
+  }
+
+  void _publishSplitChartWindow() {
+    widget.splitLayoutController?.setChartWindow(
+      sourceFileId: widget.fileId,
+      offset: _controller.chartOffset,
+      visibleFrameCount: _controller.visibleFrameCount,
+    );
+  }
+
+  void _applySplitChartWindow() {
+    final layout = widget.splitLayoutController;
+    if (layout == null ||
+        layout.chartWindowRevision == _lastSplitChartWindowRevision) {
+      return;
+    }
+    _lastSplitChartWindowRevision = layout.chartWindowRevision;
+    if (layout.chartWindowSourceFileId == widget.fileId) return;
+    final offset = layout.chartOffset;
+    final visibleFrameCount = layout.visibleFrameCount;
+    if (offset == null || visibleFrameCount == null) return;
+    _controller.setChartWindowForTest(offset, visibleFrameCount);
+  }
+
+  void _publishSplitViewState() {
+    widget.splitLayoutController?.setViewState(
+      sourceFileId: widget.fileId,
+      selectedTab: _controller.selectedTab,
+      ptsOrder: _controller.ptsOrder,
+    );
+  }
+
+  void _applySplitViewState() {
+    final layout = widget.splitLayoutController;
+    if (layout == null ||
+        layout.viewStateRevision == _lastSplitViewStateRevision) {
+      return;
+    }
+    _lastSplitViewStateRevision = layout.viewStateRevision;
+    if (layout.viewStateSourceFileId == widget.fileId) return;
+    final selectedTab = layout.selectedTab;
+    final ptsOrder = layout.ptsOrder;
+    if (selectedTab != null) _controller.setTab(selectedTab);
+    if (ptsOrder != null) _controller.setPtsOrder(ptsOrder);
+  }
+
+  void _scheduleInitialSplitStatePublication() {
+    if (widget.splitLayoutController == null || !widget.splitLayoutPrimary) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.splitLayoutController == null) return;
+      _publishSplitViewState();
+      if (_controller.viewModel.totalFrameCount > 0) {
+        _publishSplitChartWindow();
+      }
+    });
   }
 
   void _publishSelection() {

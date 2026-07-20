@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../analysis/ui/workspace/analysis_workspace_page.dart';
 import '../app_log.dart';
 import '../native_compositor_flags.dart';
 import '../performance/performance_health.dart';
@@ -12,7 +11,6 @@ import '../widgets/axtree_region.dart';
 import '../widgets/resizable_divider.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/viewport_panel.dart';
-import 'main_window_analysis_dock.dart';
 import 'main_window_deck.dart';
 import 'main_window_inspector.dart';
 import 'main_window_list_sidebar.dart';
@@ -22,7 +20,7 @@ import 'main_window_state.dart';
 import 'main_window_view_handles.dart';
 import 'main_window_view_model.dart';
 
-class MainWindowScaffold extends StatelessWidget {
+class MainWindowScaffold extends StatefulWidget {
   final MainWindowViewModel model;
   final MainWindowViewHandles handles;
   final MainWindowViewActions actions;
@@ -37,7 +35,24 @@ class MainWindowScaffold extends StatelessWidget {
   });
 
   @override
+  State<MainWindowScaffold> createState() => _MainWindowScaffoldState();
+}
+
+class _MainWindowScaffoldState extends State<MainWindowScaffold> {
+  final _analysisFocus = ValueNotifier<MainWindowAnalysisFocus?>(null);
+
+  @override
+  void dispose() {
+    _analysisFocus.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final model = widget.model;
+    final handles = widget.handles;
+    final actions = widget.actions;
+    final pointerButtonStateProvider = widget.pointerButtonStateProvider;
     final viewport = model.viewport;
     final media = model.media;
     final overlays = model.overlays;
@@ -157,90 +172,22 @@ class MainWindowScaffold extends StatelessWidget {
                                 width: overlays.marksSidebarWidth,
                                 model: model,
                                 actions: actions,
+                                analysisFocus: _analysisFocus,
                                 onClose: overlayActions.onCloseMarksSidebar,
                               ),
                             ),
                           Expanded(
-                            child:
-                                model.deck.tab == MainWindowDeckTab.timeline ||
-                                    overlays.fullScreen
-                                ? _MainPlaybackArea(
-                                    model: model,
-                                    handles: handles,
-                                    actions: actions,
-                                    pointerButtonStateProvider:
-                                        pointerButtonStateProvider,
-                                    nativeCompositorViewportActive:
-                                        nativeCompositorViewportActive,
-                                    shellBackgroundColor: shellBackgroundColor,
-                                  )
-                                : AnalysisWorkspacePage(
-                                    entries: model.deck.analysisEntries,
-                                    testHosts: model.deck.analysisTestHosts,
-                                    onSelectionChanged:
-                                        actions.deck.onAnalysisSelectionChanged,
-                                    currentPlaybackByFileId:
-                                        model.deck.analysisPlaybackByFileId,
-                                    onFrameSeekRequested: actions
-                                        .deck
-                                        .onAnalysisFrameSeekRequested,
-                                    contentBuilder:
-                                        (
-                                          context,
-                                          entry,
-                                          entries,
-                                          selectedIndex,
-                                          onSelected,
-                                          analysisModel,
-                                          analysisActions,
-                                        ) => MainWindowAnalysisDock(
-                                          entry: entry,
-                                          entries: entries,
-                                          selectedIndex: selectedIndex,
-                                          onSelected: onSelected,
-                                          analysisModel: analysisModel,
-                                          analysisActions: analysisActions,
-                                          model: model,
-                                          actions: actions,
-                                          center: _MainPlaybackArea(
-                                            model: model,
-                                            handles: handles,
-                                            actions: actions,
-                                            pointerButtonStateProvider:
-                                                pointerButtonStateProvider,
-                                            nativeCompositorViewportActive:
-                                                nativeCompositorViewportActive,
-                                            shellBackgroundColor:
-                                                shellBackgroundColor,
-                                          ),
-                                        ),
-                                    fallbackBuilder:
-                                        (
-                                          context,
-                                          entries,
-                                          selectedIndex,
-                                          onSelected,
-                                          entry,
-                                        ) => MainWindowAnalysisPendingDock(
-                                          entry: entry,
-                                          entries: entries,
-                                          selectedIndex: selectedIndex,
-                                          onSelected: onSelected,
-                                          model: model,
-                                          actions: actions,
-                                          center: _MainPlaybackArea(
-                                            model: model,
-                                            handles: handles,
-                                            actions: actions,
-                                            pointerButtonStateProvider:
-                                                pointerButtonStateProvider,
-                                            nativeCompositorViewportActive:
-                                                nativeCompositorViewportActive,
-                                            shellBackgroundColor:
-                                                shellBackgroundColor,
-                                          ),
-                                        ),
-                                  ),
+                            child: _MainPlaybackArea(
+                              model: model,
+                              handles: handles,
+                              actions: actions,
+                              pointerButtonStateProvider:
+                                  pointerButtonStateProvider,
+                              analysisFocus: _analysisFocus,
+                              nativeCompositorViewportActive:
+                                  nativeCompositorViewportActive,
+                              shellBackgroundColor: shellBackgroundColor,
+                            ),
                           ),
                           if (rightPanelVisible)
                             _NativeCompositorOpaqueRegion(
@@ -326,6 +273,7 @@ class _MainPlaybackArea extends StatelessWidget {
   final MainWindowViewHandles handles;
   final MainWindowViewActions actions;
   final PointerButtonStateProvider pointerButtonStateProvider;
+  final ValueNotifier<MainWindowAnalysisFocus?> analysisFocus;
   final bool nativeCompositorViewportActive;
   final Color shellBackgroundColor;
 
@@ -334,6 +282,7 @@ class _MainPlaybackArea extends StatelessWidget {
     required this.handles,
     required this.actions,
     required this.pointerButtonStateProvider,
+    required this.analysisFocus,
     required this.nativeCompositorViewportActive,
     required this.shellBackgroundColor,
   });
@@ -344,64 +293,68 @@ class _MainPlaybackArea extends StatelessWidget {
     final media = model.media;
     final overlays = model.overlays;
     final viewportActions = actions.viewport;
-    return Column(
-      children: [
-        Expanded(
-          child: ViewportPanel(
-            key: handles.viewportKey,
-            textureId: viewport.textureId,
-            viewportState: viewport.viewportState,
-            errorText: viewport.viewportState.errorText,
-            layout: viewport.layout,
-            onPan: viewportActions.onPan,
-            onSplit: viewportActions.onSplit,
-            onZoom: viewportActions.onZoom,
-            onPointerButton: viewportActions.onPointerButton,
-            onResize: viewportActions.onResize,
-            onNativeCompositorViewportRect:
-                viewportActions.onNativeCompositorViewportRect,
-            trackGeometry: viewport.tracks,
-            quickMarks: viewport.quickMarks,
-            quickMarkDraft: viewport.quickMarkDraft,
-            selectedQuickMarkId: viewport.selectedQuickMarkId,
-            onQuickMarkStart: viewportActions.onQuickMarkStart,
-            onQuickMarkUpdate: viewportActions.onQuickMarkUpdate,
-            onQuickMarkInteraction: viewportActions.onQuickMarkInteraction,
-            onQuickMarkEnd: viewportActions.onQuickMarkEnd,
-            onQuickMarkCancel: viewportActions.onQuickMarkCancel,
-            onQuickMarkSelect: viewportActions.onQuickMarkSelect,
-            onQuickMarkChanged: viewportActions.onQuickMarkChanged,
-            onQuickMarkDeleted: viewportActions.onQuickMarkDeleted,
-            onQuickMarkFocus: viewportActions.onQuickMarkFocus,
-            pointerButtonStateProvider: pointerButtonStateProvider,
-            nativePlaybackAvailable: media.nativePlaybackAvailable,
-            nativeCompositorHole: nativeCompositorViewportActive,
-          ),
-        ),
-        if (!overlays.fullScreen && media.tracks.isNotEmpty)
-          AxTreeRegion(
-            label: 'Playback timeline',
-            child: _NativeCompositorOpaqueRegion(
-              enabled: nativeCompositorViewportActive,
-              color: shellBackgroundColor,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  PinnedPlaybackChrome(
-                    model: model,
-                    handles: handles,
-                    actions: actions,
-                  ),
-                  MainWindowDeck(
-                    model: model,
-                    handles: handles,
-                    actions: actions,
-                  ),
-                ],
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) => Column(
+        children: [
+          Expanded(
+            child: ViewportPanel(
+              key: handles.viewportKey,
+              textureId: viewport.textureId,
+              viewportState: viewport.viewportState,
+              errorText: viewport.viewportState.errorText,
+              layout: viewport.layout,
+              onPan: viewportActions.onPan,
+              onSplit: viewportActions.onSplit,
+              onZoom: viewportActions.onZoom,
+              onPointerButton: viewportActions.onPointerButton,
+              onResize: viewportActions.onResize,
+              onNativeCompositorViewportRect:
+                  viewportActions.onNativeCompositorViewportRect,
+              trackGeometry: viewport.tracks,
+              quickMarks: viewport.quickMarks,
+              quickMarkDraft: viewport.quickMarkDraft,
+              selectedQuickMarkId: viewport.selectedQuickMarkId,
+              onQuickMarkStart: viewportActions.onQuickMarkStart,
+              onQuickMarkUpdate: viewportActions.onQuickMarkUpdate,
+              onQuickMarkInteraction: viewportActions.onQuickMarkInteraction,
+              onQuickMarkEnd: viewportActions.onQuickMarkEnd,
+              onQuickMarkCancel: viewportActions.onQuickMarkCancel,
+              onQuickMarkSelect: viewportActions.onQuickMarkSelect,
+              onQuickMarkChanged: viewportActions.onQuickMarkChanged,
+              onQuickMarkDeleted: viewportActions.onQuickMarkDeleted,
+              onQuickMarkFocus: viewportActions.onQuickMarkFocus,
+              pointerButtonStateProvider: pointerButtonStateProvider,
+              nativePlaybackAvailable: media.nativePlaybackAvailable,
+              nativeCompositorHole: nativeCompositorViewportActive,
             ),
           ),
-      ],
+          if (!overlays.fullScreen && media.tracks.isNotEmpty)
+            AxTreeRegion(
+              label: 'Playback timeline',
+              child: _NativeCompositorOpaqueRegion(
+                enabled: nativeCompositorViewportActive,
+                color: shellBackgroundColor,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    PinnedPlaybackChrome(
+                      model: model,
+                      handles: handles,
+                      actions: actions,
+                    ),
+                    MainWindowDeck(
+                      model: model,
+                      handles: handles,
+                      actions: actions,
+                      availableHeight: constraints.maxHeight,
+                      analysisFocus: analysisFocus,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

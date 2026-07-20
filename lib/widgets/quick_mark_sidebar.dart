@@ -10,6 +10,7 @@ import '../marks/quick_mark.dart';
 import '../marks/quick_mark_thumbnail.dart';
 import '../utils/time_format.dart';
 import 'app_menu_combo.dart';
+import 'panel_search_field.dart';
 
 class QuickMarkSidebar extends StatefulWidget {
   final MainWindowMarksVm marks;
@@ -318,12 +319,9 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
                   onChanged: (_) => setState(() {}),
                   textInputAction: TextInputAction.search,
                   style: Theme.of(context).textTheme.bodySmall,
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search, size: 15),
-                    prefixIconConstraints: const BoxConstraints.tightFor(
-                      width: 28,
-                      height: 28,
-                    ),
+                  decoration: panelSearchInputDecoration(
+                    context,
+                    hintText: l.quickMarkSidebarSearchHint,
                     suffixIcon: _query.isEmpty
                         ? null
                         : IconButton(
@@ -338,18 +336,6 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
                               height: 26,
                             ),
                           ),
-                    hintText: l.quickMarkSidebarSearchHint,
-                    hintStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 7,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(5),
-                    ),
                   ),
                 ),
               ),

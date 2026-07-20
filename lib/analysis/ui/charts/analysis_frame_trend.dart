@@ -6,11 +6,23 @@ import '../../../l10n/app_localizations.dart';
 import '../../../widgets/axtree_region.dart';
 import '../page/analysis_page_state.dart';
 import 'analysis_chart_common.dart';
+import 'analysis_frame_style.dart';
 
 // Frame Trend — zoomable / pannable bar chart
 // ===========================================================================
 
 const double _frameTrendLabelW = analysisChartLabelW;
+const Key analysisFrameTrendModeToggleKey = ValueKey(
+  'analysis-frame-trend-mode-toggle',
+);
+const Key analysisFrameTrendLineModeKey = ValueKey(
+  'analysis-frame-trend-mode-line',
+);
+const Key analysisFrameTrendBarcodeModeKey = ValueKey(
+  'analysis-frame-trend-mode-barcode',
+);
+
+enum AnalysisFrameTrendMode { line, barcode }
 
 class AnalysisFrameTrendView extends StatefulWidget {
   final List<FrameInfo> frames;
@@ -60,6 +72,7 @@ class AnalysisFrameTrendView extends StatefulWidget {
 
 class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
   double? _hoverX; // null = not hovering
+  AnalysisFrameTrendMode _mode = AnalysisFrameTrendMode.barcode;
   double _lastPanZoomScale = 1.0;
   double _scaleZoomAccumulator = 0.0;
   bool _panZoomHasScaleIntent = false;
@@ -201,58 +214,105 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
                     _handlePanZoomUpdate(chartContext, event);
                   },
                   onPointerPanZoomEnd: (_) => _resetPanZoomScale(),
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    excludeFromSemantics: true,
-                    onTapUp: (details) {
-                      final idx = _frameIndexAtPosition(
-                        chartContext,
-                        details.globalPosition,
-                      );
-                      if (idx == null) {
-                        w.onFrameSelected(null);
-                        return;
-                      }
-                      w.onFrameSelected(w.selectedFrameIdx == idx ? null : idx);
-                    },
-                    onDoubleTapDown: (details) {
-                      final idx = _frameIndexAtPosition(
-                        chartContext,
-                        details.globalPosition,
-                      );
-                      if (idx != null) w.onFrameActivated(idx);
-                    },
-                    onPanUpdate: (details) {
-                      final box = chartContext.findRenderObject() as RenderBox;
-                      final local = box.globalToLocal(details.globalPosition);
-                      setState(() => _hoverX = local.dx);
-                    },
-                    child: MouseRegion(
-                      onHover: (e) {
-                        final box =
-                            chartContext.findRenderObject() as RenderBox;
-                        final local = box.globalToLocal(e.position);
-                        setState(() => _hoverX = local.dx);
-                      },
-                      child: CustomPaint(
-                        painter: _FrameTrendPainter(
-                          frames: w.frames,
-                          frameIndexBase: w.frameIndexBase,
-                          totalFrames: w.totalFrames,
-                          frameBuckets: w.frameBuckets,
-                          frameBucketSize: w.frameBucketSize,
-                          currentIdx: w.currentIdx,
-                          selectedFrameIdx: w.selectedFrameIdx,
-                          viewStart: w.viewStart,
-                          viewEnd: w.viewEnd,
-                          frameSizeAxisZoom: w.frameSizeAxisZoom,
-                          qpAxisZoom: w.qpAxisZoom,
-                          ptsOrder: w.ptsOrder,
-                          hoverX: _hoverX,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          excludeFromSemantics: true,
+                          onTapUp: (details) {
+                            final idx = _frameIndexAtPosition(
+                              chartContext,
+                              details.globalPosition,
+                            );
+                            if (idx == null) {
+                              w.onFrameSelected(null);
+                              return;
+                            }
+                            w.onFrameSelected(
+                              w.selectedFrameIdx == idx ? null : idx,
+                            );
+                          },
+                          onDoubleTapDown: (details) {
+                            final idx = _frameIndexAtPosition(
+                              chartContext,
+                              details.globalPosition,
+                            );
+                            if (idx != null) w.onFrameActivated(idx);
+                          },
+                          onPanUpdate: (details) {
+                            final box =
+                                chartContext.findRenderObject() as RenderBox;
+                            final local = box.globalToLocal(
+                              details.globalPosition,
+                            );
+                            setState(() => _hoverX = local.dx);
+                          },
+                          child: MouseRegion(
+                            onHover: (e) {
+                              final box =
+                                  chartContext.findRenderObject() as RenderBox;
+                              final local = box.globalToLocal(e.position);
+                              setState(() => _hoverX = local.dx);
+                            },
+                            child: CustomPaint(
+                              painter: _FrameTrendPainter(
+                                frames: w.frames,
+                                frameIndexBase: w.frameIndexBase,
+                                totalFrames: w.totalFrames,
+                                frameBuckets: w.frameBuckets,
+                                frameBucketSize: w.frameBucketSize,
+                                currentIdx: w.currentIdx,
+                                selectedFrameIdx: w.selectedFrameIdx,
+                                viewStart: w.viewStart,
+                                viewEnd: w.viewEnd,
+                                frameSizeAxisZoom: w.frameSizeAxisZoom,
+                                qpAxisZoom: w.qpAxisZoom,
+                                ptsOrder: w.ptsOrder,
+                                mode: _mode,
+                                hoverX: _hoverX,
+                              ),
+                              size: Size.infinite,
+                            ),
+                          ),
                         ),
-                        size: Size.infinite,
                       ),
-                    ),
+                      Positioned(
+                        top: 4,
+                        right: 8,
+                        child: SegmentedButton<AnalysisFrameTrendMode>(
+                          key: analysisFrameTrendModeToggleKey,
+                          showSelectedIcon: false,
+                          segments: [
+                            ButtonSegment(
+                              value: AnalysisFrameTrendMode.line,
+                              label: Text(
+                                w.l.analysisFrameTrendLineMode,
+                                key: analysisFrameTrendLineModeKey,
+                              ),
+                            ),
+                            ButtonSegment(
+                              value: AnalysisFrameTrendMode.barcode,
+                              label: Text(
+                                w.l.analysisFrameTrendBarcodeMode,
+                                key: analysisFrameTrendBarcodeModeKey,
+                              ),
+                            ),
+                          ],
+                          selected: {_mode},
+                          onSelectionChanged: (selection) {
+                            setState(() => _mode = selection.first);
+                          },
+                          style: const ButtonStyle(
+                            visualDensity: VisualDensity.compact,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            padding: WidgetStatePropertyAll(
+                              EdgeInsets.symmetric(horizontal: 7),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -297,6 +357,7 @@ class _FrameTrendPainter extends CustomPainter {
   final double frameSizeAxisZoom;
   final double qpAxisZoom;
   final bool ptsOrder;
+  final AnalysisFrameTrendMode mode;
   final double? hoverX;
 
   _FrameTrendPainter({
@@ -312,6 +373,7 @@ class _FrameTrendPainter extends CustomPainter {
     required this.frameSizeAxisZoom,
     required this.qpAxisZoom,
     required this.ptsOrder,
+    required this.mode,
     this.hoverX,
   });
 
@@ -342,9 +404,6 @@ class _FrameTrendPainter extends CustomPainter {
         : const <FrameBucket>[];
     if (bucketMode && visibleBuckets.isEmpty) return;
 
-    final count = bucketMode
-        ? visibleBuckets.length
-        : visibleEnd - visibleStart;
     final span = viewEnd - viewStart;
 
     final axisH = size.height >= 96 ? analysisChartXAxisH : 0.0;
@@ -354,13 +413,14 @@ class _FrameTrendPainter extends CustomPainter {
     if (chartW <= 0) return;
     final contentPad = analysisChartSelectedFramePadding;
     final contentW = (chartW - contentPad * 2).clamp(1.0, double.infinity);
-    final upperH = chartH * 0.58;
-    final lowerH = chartH * 0.32;
-    final gapH = chartH * 0.05;
+    final barcodeMode = mode == AnalysisFrameTrendMode.barcode;
+    final upperH = barcodeMode ? chartH : chartH * 0.58;
+    final lowerH = barcodeMode ? 0.0 : chartH * 0.32;
+    final gapH = barcodeMode ? 0.0 : chartH * 0.05;
     final lowerTop = upperH + gapH;
     final plotRect = Rect.fromLTWH(labelW, 0, chartW, chartH);
 
-    final barW = (contentW / count).clamp(2.0, 40.0);
+    final barW = contentW / span;
     double xForFrame(double frameIdx) {
       final frac = (frameIdx - viewStart) / span;
       return labelW + contentPad + frac * contentW;
@@ -425,13 +485,15 @@ class _FrameTrendPainter extends CustomPainter {
       ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.06)
       ..strokeWidth = 0.5;
     canvas.drawLine(Offset(labelW, 0), Offset(labelW, chartH), axisPaint);
-    canvas.drawLine(
-      Offset(0, upperH + gapH / 2),
-      Offset(size.width, upperH + gapH / 2),
-      Paint()
-        ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.14)
-        ..strokeWidth = 1.0,
-    );
+    if (!barcodeMode) {
+      canvas.drawLine(
+        Offset(0, upperH + gapH / 2),
+        Offset(size.width, upperH + gapH / 2),
+        Paint()
+          ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.14)
+          ..strokeWidth = 1.0,
+      );
+    }
 
     // --- Packet size axis labels (upper) ---
     for (final yFrac in axisTickFractionsForHeight(upperH, maxTicks: 4)) {
@@ -449,7 +511,10 @@ class _FrameTrendPainter extends CustomPainter {
     }
 
     // --- QP axis labels (lower) ---
-    for (final yFrac in axisTickFractionsForHeight(lowerH, maxTicks: 4)) {
+    for (final yFrac
+        in barcodeMode
+            ? const <double>[]
+            : axisTickFractionsForHeight(lowerH, maxTicks: 4)) {
       final value = qpLow + effectiveQpRange * yFrac;
       final y = lowerTop + lowerH * (1 - yFrac);
       canvas.drawLine(Offset(labelW, y), Offset(size.width, y), gridPaint);
@@ -467,13 +532,48 @@ class _FrameTrendPainter extends CustomPainter {
     canvas.save();
     canvas.clipRect(plotRect);
 
-    // --- Frame size bars ---
+    // --- Frame size line / barcode ---
     final barPaint = Paint()..style = PaintingStyle.fill;
     final selStroke = Paint()
       ..color = const Color(0xFFFFFFFF)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
-    if (bucketMode) {
+    if (!barcodeMode) {
+      final sizePath = Path();
+      var firstSizePoint = true;
+      final sizeSamples = bucketMode
+          ? [
+              for (final b in visibleBuckets)
+                (
+                  x: xForFrame(b.startFrame + b.frameCount / 2),
+                  size: b.avgPacketSize,
+                ),
+            ]
+          : [
+              for (var i = visibleStart; i < visibleEnd; i++)
+                (
+                  x: xForFrame(i + 0.5),
+                  size: frames[i - frameIndexBase].packetSize.toDouble(),
+                ),
+            ];
+      for (final sample in sizeSamples) {
+        final y = upperH * (1 - (sample.size / sizeAxisMax).clamp(0.0, 1.0));
+        if (firstSizePoint) {
+          sizePath.moveTo(sample.x, y);
+          firstSizePoint = false;
+        } else {
+          sizePath.lineTo(sample.x, y);
+        }
+      }
+      canvas.drawPath(
+        sizePath,
+        Paint()
+          ..color = analysisBFrameColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.8
+          ..strokeJoin = StrokeJoin.round,
+      );
+    } else if (bucketMode) {
       for (final b in visibleBuckets) {
         final x = xForFrame(b.startFrame.toDouble());
         final x2 = xForFrame((b.startFrame + b.frameCount).toDouble());
@@ -481,9 +581,9 @@ class _FrameTrendPainter extends CustomPainter {
         final h = ((b.avgPacketSize / sizeAxisMax).clamp(0.0, 1.0)) * upperH;
 
         barPaint.color = b.keyframeCount > 0
-            ? const Color(0xFFFF5252)
-            : const Color(0xFF42A5F5);
-        final rect = Rect.fromLTWH(x, upperH - h, w - 1, h);
+            ? analysisIFrameColor
+            : analysisBFrameColor;
+        final rect = Rect.fromLTWH(x, upperH - h, w, h);
         canvas.drawRect(rect, barPaint);
 
         final selected = selectedFrameIdx;
@@ -499,11 +599,15 @@ class _FrameTrendPainter extends CustomPainter {
         final x = xForFrame(i.toDouble());
         final h = ((f.packetSize / sizeAxisMax).clamp(0.0, 1.0)) * upperH;
 
-        barPaint.color = f.keyframe == 1
-            ? const Color(0xFFFF5252)
-            : const Color(0xFF42A5F5);
-        final rect = Rect.fromLTWH(x, upperH - h, barW - 1, h);
+        barPaint.color = analysisFrameTypeColor(f);
+        final rect = Rect.fromLTWH(x, upperH - h, barW + 0.5, h);
         canvas.drawRect(rect, barPaint);
+        if (h >= 3) {
+          canvas.drawRect(
+            Rect.fromLTWH(x, upperH - h, barW + 0.5, h.clamp(3.0, 6.0)),
+            Paint()..color = analysisTemporalLayerColor(f.temporalId),
+          );
+        }
 
         if (i == selectedFrameIdx) {
           canvas.drawRect(rect.inflate(1), selStroke);
@@ -543,12 +647,10 @@ class _FrameTrendPainter extends CustomPainter {
         qpPath.lineTo(sample.x, y);
       }
     }
-    canvas.drawPath(qpPath, qpPaint);
+    if (!barcodeMode) canvas.drawPath(qpPath, qpPaint);
 
     // --- Selection/playback cursor ---
-    final cursorIdx = selectedFrameIdx != null && selectedFrameIdx! >= 0
-        ? selectedFrameIdx!
-        : currentIdx;
+    final cursorIdx = currentIdx;
     if (cursorIdx >= visibleStart && cursorIdx < visibleEnd) {
       final cx = xForFrame(cursorIdx + 0.5);
       canvas.drawLine(
@@ -557,6 +659,17 @@ class _FrameTrendPainter extends CustomPainter {
         Paint()
           ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.5)
           ..strokeWidth = 1,
+      );
+    }
+    final selected = selectedFrameIdx;
+    if (selected != null && selected >= visibleStart && selected < visibleEnd) {
+      final selectedX = xForFrame(selected + 0.5);
+      canvas.drawLine(
+        Offset(selectedX, 0),
+        Offset(selectedX, chartH),
+        Paint()
+          ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.82)
+          ..strokeWidth = 1.8,
       );
     }
 
@@ -776,6 +889,7 @@ class _FrameTrendPainter extends CustomPainter {
       frameSizeAxisZoom != old.frameSizeAxisZoom ||
       qpAxisZoom != old.qpAxisZoom ||
       ptsOrder != old.ptsOrder ||
+      mode != old.mode ||
       hoverX != old.hoverX;
 }
 

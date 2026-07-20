@@ -97,6 +97,13 @@ class AppToolBar extends StatelessWidget {
       padding: const EdgeInsets.all(4),
       child: Row(
         children: [
+          _ToolbarToggleButton(
+            active: marksSidebarActive,
+            onPressed: onMarksSidebarToggle,
+            customIcon: const _LeftSidebarToggleIcon(),
+            tooltip: AppLocalizations.of(context)!.mainWindowLeftPanelToggle,
+          ),
+          const SizedBox(width: 4),
           // View mode selector (240x32)
           Opacity(
             opacity: viewModeEnabled ? 1.0 : 0.5,
@@ -165,13 +172,6 @@ class AppToolBar extends StatelessWidget {
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints.tightFor(width: 32, height: 32),
             ),
-          ),
-          const SizedBox(width: 4),
-          _ToolbarToggleButton(
-            active: marksSidebarActive,
-            onPressed: onMarksSidebarToggle,
-            customIcon: const _SidebarToggleIcon(),
-            tooltip: AppLocalizations.of(context)!.quickMarkSidebarToggle,
           ),
         ],
       ),
@@ -464,13 +464,13 @@ class _ToolbarToggleButton extends StatelessWidget {
   }
 }
 
-class _SidebarToggleIcon extends StatelessWidget {
-  const _SidebarToggleIcon();
+class _LeftSidebarToggleIcon extends StatelessWidget {
+  const _LeftSidebarToggleIcon();
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: _SidebarToggleIconPainter(
+      painter: _LeftSidebarToggleIconPainter(
         color: IconTheme.of(context).color ?? Colors.black,
       ),
       size: const Size(18, 18),
@@ -478,10 +478,10 @@ class _SidebarToggleIcon extends StatelessWidget {
   }
 }
 
-class _SidebarToggleIconPainter extends CustomPainter {
+class _LeftSidebarToggleIconPainter extends CustomPainter {
   final Color color;
 
-  const _SidebarToggleIconPainter({required this.color});
+  const _LeftSidebarToggleIconPainter({required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -500,30 +500,25 @@ class _SidebarToggleIconPainter extends CustomPainter {
     );
     canvas.drawRRect(outer, stroke);
 
-    final sideRect = Rect.fromLTWH(
-      size.width - 7.0,
-      4.8,
-      3.6,
-      size.height - 9.6,
-    );
+    final sideRect = Rect.fromLTWH(3.4, 4.8, 3.6, size.height - 9.6);
     canvas.drawRect(sideRect, fill);
     canvas.drawLine(
-      Offset(size.width - 8.2, 4.2),
-      Offset(size.width - 8.2, size.height - 4.2),
+      const Offset(8.2, 4.2),
+      Offset(8.2, size.height - 4.2),
       stroke,
     );
 
     final arrow = Path()
-      ..moveTo(5.0, size.height / 2)
+      ..moveTo(13.0, size.height / 2)
       ..lineTo(9.0, size.height / 2)
-      ..moveTo(7.4, size.height / 2 - 1.8)
+      ..moveTo(10.6, size.height / 2 - 1.8)
       ..lineTo(9.2, size.height / 2)
-      ..lineTo(7.4, size.height / 2 + 1.8);
+      ..lineTo(10.6, size.height / 2 + 1.8);
     canvas.drawPath(arrow, stroke..strokeCap = StrokeCap.round);
   }
 
   @override
-  bool shouldRepaint(covariant _SidebarToggleIconPainter oldDelegate) {
+  bool shouldRepaint(covariant _LeftSidebarToggleIconPainter oldDelegate) {
     return oldDelegate.color != color;
   }
 }

@@ -89,6 +89,21 @@ void main() {
       ),
     );
 
+    final modeToggle = tester.widget<SegmentedButton<AnalysisFrameTrendMode>>(
+      find.byKey(analysisFrameTrendModeToggleKey),
+    );
+    expect(modeToggle.selected, {AnalysisFrameTrendMode.barcode});
+    await tester.tap(find.byKey(analysisFrameTrendLineModeKey));
+    await tester.pump();
+    expect(
+      tester
+          .widget<SegmentedButton<AnalysisFrameTrendMode>>(
+            find.byKey(analysisFrameTrendModeToggleKey),
+          )
+          .selected,
+      {AnalysisFrameTrendMode.line},
+    );
+
     final position = tester.getCenter(find.byType(AnalysisFrameTrendView));
     await tester.tapAt(position);
     await tester.pump(const Duration(milliseconds: 50));

@@ -17,6 +17,9 @@ const Key mainWindowAnalysisTrackSelectorKey = ValueKey(
 const Key mainWindowAnalysisChartShelfKey = ValueKey(
   'main-window-analysis-chart-shelf',
 );
+const Key mainWindowAnalysisNaluSidebarKey = ValueKey(
+  'main-window-analysis-nalu-sidebar',
+);
 
 class MainWindowAnalysisDock extends StatelessWidget {
   final AnalysisWorkspaceEntry entry;
@@ -53,8 +56,10 @@ class MainWindowAnalysisDock extends StatelessWidget {
           maxSidebar,
         );
         return Row(
+          textDirection: TextDirection.rtl,
           children: [
             SizedBox(
+              key: mainWindowAnalysisNaluSidebarKey,
               width: sidebarWidth,
               child: _AnalysisNaluSidebar(
                 entries: entries,
@@ -69,6 +74,7 @@ class MainWindowAnalysisDock extends StatelessWidget {
               child: ExcludeSemantics(
                 child: AnalysisResizableVDivider(
                   position: sidebarWidth,
+                  deltaScale: -1,
                   onPositionChanged: analysisActions.onNaluBrowserWidthChanged,
                 ),
               ),
@@ -119,14 +125,16 @@ class MainWindowAnalysisPendingDock extends StatelessWidget {
         entry?.fileId ??
         (model.media.tracks.isEmpty ? null : model.media.tracks.first.fileId);
     return Row(
+      textDirection: TextDirection.rtl,
       children: [
         SizedBox(
+          key: mainWindowAnalysisNaluSidebarKey,
           width: 300,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: theme.colorScheme.surfaceContainerLowest,
               border: Border(
-                right: BorderSide(color: theme.colorScheme.outlineVariant),
+                left: BorderSide(color: theme.colorScheme.outlineVariant),
               ),
             ),
             child: Column(
@@ -319,7 +327,7 @@ class _AnalysisNaluSidebar extends StatelessWidget {
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerLowest,
           border: Border(
-            right: BorderSide(color: theme.colorScheme.outlineVariant),
+            left: BorderSide(color: theme.colorScheme.outlineVariant),
           ),
         ),
         child: Column(

@@ -125,18 +125,16 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     final selected = _clampIndex(_selected, entries.length);
     final modeToggleEnabled = entries.length > 1;
     if (widget.contentBuilder != null) {
-      return Scaffold(
-        body: IndexedStack(
-          index: selected,
-          children: [
-            for (var index = 0; index < entries.length; index++)
-              _buildEntry(
-                entries[index],
-                dockActive: index == selected,
-                dockSelectedIndex: selected,
-              ),
-          ],
-        ),
+      return IndexedStack(
+        index: selected,
+        children: [
+          for (var index = 0; index < entries.length; index++)
+            _buildEntry(
+              entries[index],
+              dockActive: index == selected,
+              dockSelectedIndex: selected,
+            ),
+        ],
       );
     }
 

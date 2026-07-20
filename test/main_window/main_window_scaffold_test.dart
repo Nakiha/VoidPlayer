@@ -179,6 +179,9 @@ void main() {
       final analysisViewport = tester.getRect(find.byType(ViewportPanel));
       final analysisChrome = tester.getRect(find.byType(PinnedPlaybackChrome));
       final analysisDeck = tester.getRect(find.byType(MainWindowDeck));
+      final naluSidebar = tester.getRect(
+        find.byKey(mainWindowAnalysisNaluSidebarKey),
+      );
 
       expect(timelineDeck.height, timelineTrackRowHeight * 2);
       expect(analysisDeck.height, timelineDeck.height);
@@ -186,6 +189,7 @@ void main() {
       expect(analysisViewport.width, lessThan(timelineViewport.width));
       expect(analysisChrome.height, timelineChrome.height);
       expect(analysisChrome.width, lessThan(timelineChrome.width));
+      expect(naluSidebar.left, greaterThanOrEqualTo(analysisViewport.right));
       expect(find.byType(AnalysisWorkspacePage), findsOneWidget);
       expect(find.byKey(mainWindowAnalysisChartShelfKey), findsOneWidget);
     },

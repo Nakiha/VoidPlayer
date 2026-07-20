@@ -195,11 +195,13 @@ class _AnalysisViewIconPainter extends CustomPainter {
 
 class AnalysisResizableVDivider extends StatefulWidget {
   final double position;
+  final double deltaScale;
   final ValueChanged<double> onPositionChanged;
 
   const AnalysisResizableVDivider({
     super.key,
     required this.position,
+    this.deltaScale = 1.0,
     required this.onPositionChanged,
   });
 
@@ -231,7 +233,8 @@ class _AnalysisResizableVDividerState extends State<AnalysisResizableVDivider> {
   }
 
   void _onDragUpdate(DragUpdateDetails details) {
-    final desired = _effectivePos + _excess + details.delta.dx;
+    final desired =
+        _effectivePos + _excess + details.delta.dx * widget.deltaScale;
     final clamped = desired.clamp(120.0, double.maxFinite);
     _excess = desired - clamped;
     _effectivePos = clamped;

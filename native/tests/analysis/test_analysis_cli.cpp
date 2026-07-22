@@ -504,6 +504,31 @@ int main(int argc, char** argv) {
                 "score-quality",
                 "--input", video_path,
                 "--backend", "cpu",
+                "--regions", "none",
+                "--events", "none",
+                "--tiles", "full",
+                "--max-samples", "2",
+                "--request-id", "cli-tile-test",
+                "--jsonl",
+            }, 0, {
+                "\"tileOutput\":\"full\"",
+                "\"type\":\"qualityTileSample\"",
+                "\"tileSchemaId\":\"quality-tile-v1\"",
+                "\"tileMetricVersion\":\"quality-tile-metrics-v1\"",
+                "\"partition\":\"balanced\"",
+                "\"columns\":30",
+                "\"rows\":17",
+                "\"blockiness\":{\"available\":true",
+                "\"banding\":{\"available\":true",
+                "\"blur\":{\"available\":true",
+                "\"noise\":{\"available\":true",
+                "\"flicker\":{\"available\":true",
+                "\"tileSampleRecords\":2",
+            }, true) &&
+            run_cli_expect_output(cli_path, {
+                "score-quality",
+                "--input", video_path,
+                "--backend", "cpu",
                 "--metrics", "blockiness",
                 "--regions", "none",
                 "--events", "candidates",
@@ -555,6 +580,24 @@ int main(int argc, char** argv) {
                 "--json",
             }, 1, {
                 "\"code\":\"invalid_regions\"",
+            }) &&
+            run_cli_expect_output(cli_path, {
+                "score-quality",
+                "--input", video_path,
+                "--tiles", "full",
+                "--json",
+            }, 1, {
+                "\"code\":\"invalid_arguments\"",
+                "--tiles full requires --jsonl",
+            }) &&
+            run_cli_expect_output(cli_path, {
+                "score-quality",
+                "--input", video_path,
+                "--backend", "wgpu",
+                "--tiles", "full",
+                "--jsonl",
+            }, 1, {
+                "\"code\":\"unsupported_tile_backend\"",
             }) &&
             run_cli_expect_exit(cli_path, {
                 "score-quality",

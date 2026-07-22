@@ -166,6 +166,8 @@ parameter side-data/QP 汇总，但输入 open/probe/read/seek/interrupt 通过
 - 抽样帧空间指标时间线，以及全解码帧计算的 flicker 分布。
 - sampled frame 的 `spatialRegions`；当前仅 `banding` 输出基于 16×16 luma tile
   聚类的候选区域，同时给出归一化矩形、像素矩形、区域分数、检测阈值和 tile 数。
+- 可选的 `quality-tile-v1` 证据流：五项指标使用同一约 64×64、边缘均衡的 decoded
+  luma 网格，逐 tile 输出 `[0, 1]` 局部分数。
 - 每项 CPU 指标的毫秒耗时分布；schema 中保留的 GPU timing 字段在当前
   CPU-only build 中标记为不可用。
 
@@ -175,8 +177,9 @@ parameter side-data/QP 汇总，但输入 open/probe/read/seek/interrupt 通过
 `spatialRegions` 是辅助定位证据，不替代整帧分数；弱响应、少于四个相邻 tile 的
 孤立响应不会输出区域。banding region 使用 `banding-tile-cc-v2`：除了至少四个相邻
 tile，还要求横纵各跨至少两个 tile、包围盒填充率至少 0.5，以过滤单 tile 厚细条和
-稀疏连通噪声；每个区域输出 `tileSpan` 与 `fillRatio` 供下游审计。当前 blockiness、
-blur、noise 和 flicker 仍只输出整帧分数。
+稀疏连通噪声；每个区域输出 `tileSpan` 与 `fillRatio` 供下游审计。blockiness、blur、
+noise 和 flicker 虽不生成矩形候选，但可通过 tile 证据流提供真实局部分数；GUI 后续可
+自行选择热力图或基于 tile 的区域化呈现，不能把缺失区域伪造成整帧框。
 命令行入口：
 
 ```bash
@@ -189,6 +192,7 @@ VoidPlayerCli score-quality --input input.mp4 --metrics banding,flicker --region
 VoidPlayerCli score-quality --input input.mp4 --metrics blockiness,blur --regions none --jsonl
 VoidPlayerCli score-quality --input input.mp4 --events candidates --regions full --jsonl
 VoidPlayerCli score-quality --input input.mp4 --events none --jsonl
+VoidPlayerCli score-quality --input input.mp4 --tiles full --events none --jsonl
 VoidPlayerCli score-quality --input input.mp4 --json --summary-only
 VoidPlayerCli score-quality --input input.mp4 --jsonl
 ```
@@ -198,6 +202,14 @@ VoidPlayerCli score-quality --input input.mp4 --jsonl
 `--regions none|summary|full` 分别关闭区域计算、仅保留 report 级汇总、或同时输出逐帧
 矩形；默认 `full`。`--summary-only` 会把有效区域模式从 `full` 降为 `summary`，因此省略
 timeline 时仍保留区域数量、出现帧数、分数、面积和帧覆盖率分布。
+
+`--tiles none|full` 默认 `none`；`full` 仅支持 `--jsonl`，并在每个
+`qualityFrameSample` 后输出同 `sampleIndex` 的 `qualityTileSample`。四项空间 proxy
+在统一 tile 内重新计算；flicker 使用同网格的连续三帧局部亮度二阶变化。首两帧、切镜
+或网格不兼容时 flicker 明确为 `available: false` / `values: null`，不会用零分冒充观测。
+帧级 proxy 仍是权威汇总，不能假定它等于 tile 数组的算术平均。tile 协议和算法分别以
+`quality-tile-v1`、`quality-tile-metrics-v1` 独立版本化，正式 schema 为
+[quality-tile-v1.schema.json](quality-tile-v1.schema.json)。
 
 `--events none|candidates` 控制 JSONL 的 `qualityEvent`，默认 `candidates`。候选策略版本
 为 `quality-candidate-policy-v1`：banding 每个检测区域建立独立候选轨道，保留各自峰值帧

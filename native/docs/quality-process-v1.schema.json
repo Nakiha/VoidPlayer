@@ -36,6 +36,7 @@
           "uniqueItems": true
         },
         "regionOutput": {"enum": ["none", "summary", "full"]},
+        "tileOutput": {"enum": ["none", "full"]},
         "events": {"enum": ["none", "candidates"]},
         "eventPolicyVersion": {"const": "quality-candidate-policy-v1"},
         "sampleIntervalUs": {"type": "integer", "minimum": 0},
@@ -97,6 +98,7 @@
         "status": {"const": "success"},
         "reportRecords": {"const": 1},
         "frameSampleRecords": {"type": "integer", "minimum": 0},
+        "tileSampleRecords": {"type": "integer", "minimum": 0},
         "eventRecords": {"type": "integer", "minimum": 0}
       },
       "additionalProperties": false

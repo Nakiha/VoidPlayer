@@ -1,7 +1,8 @@
 # VoidPlayer Quality Analysis Process Protocol v1
 
-Status: **implemented for `score-quality --jsonl` lifecycle records**. The quality
-payload remains defined by `quality-output-v5.schema.json`; this document defines
+Status: **implemented for `score-quality --jsonl` lifecycle records**. The
+frame/report payload remains defined by `quality-output-v5.schema.json`; optional
+tile evidence is defined by `quality-tile-v1.schema.json`. This document defines
 how one CLI process is started, observed, cancelled and terminated.
 
 ## 1. Scope and transport
@@ -22,6 +23,7 @@ Protocol lifecycle and quality payload versions are independent:
 
 - `protocolVersion: 1` governs session/progress/completion sequencing;
 - `schemaId: quality-output-v5` governs report, frame sample and error payloads;
+- `tileSchemaId: quality-tile-v1` governs optional per-sample tile evidence;
 - `metricVersion` governs the numerical algorithm.
 
 Changing progress fields does not by itself require a metric version change.
@@ -35,7 +37,8 @@ A successful stream has this exact grammar:
 qualitySession
 qualityProgress*          # opening/decoding/finalizing, monotonic sequence
 qualityReport             # quality-output-v5
-qualityFrameSample*       # quality-output-v5, ascending sample order
+(qualityFrameSample       # quality-output-v5, ascending sample order
+ qualityTileSample?)*     # quality-tile-v1, same sampleIndex when requested
 qualityEvent*             # quality-event-v1 candidate evidence
 qualityComplete           # the only successful terminal record
 EOF
@@ -80,6 +83,7 @@ labels and a successful stream may emit zero events.
     "metricVersion": "quality-demo-v5",
     "metrics": ["blockiness", "banding"],
     "regionOutput": "summary",
+    "tileOutput": "none",
     "events": "candidates",
     "eventPolicyVersion": "quality-candidate-policy-v1",
     "sampleIntervalUs": 1000000,
@@ -138,6 +142,7 @@ quality-result-v1\n
 <metric version>\n
 <comma-separated canonical metric names>\n
 <region output>\n
+<tile output>\n
 <event mode>\n
 <event policy version>\n
 <sample interval microseconds>\n
@@ -173,6 +178,32 @@ quality-result-v1\n
 - producers SHOULD bound progress frequency; consumers MUST NOT depend on an
   exact record count.
 
+### 4.1 Tile sample records
+
+`--tiles full --jsonl` emits one `qualityTileSample` immediately after every
+`qualityFrameSample`. `--tiles none` is the default. Tile output is deliberately
+JSONL-only so a large video cannot silently inflate the single-object `--json`
+compatibility payload. Explicit `--backend wgpu` is rejected for tile requests;
+`auto` resolves to CPU because the current WGPU backend exposes frame aggregates
+only.
+
+All selected metrics use the same approximately 64 x 64 decoded-luma grid. The
+grid is balanced across each axis: for column `c`, pixel bounds are
+`floor(c * frameWidth / columns)` through
+`floor((c + 1) * frameWidth / columns)`, and rows use the analogous formula.
+Values are row-major and remain in `[0, 1]`, with higher values meaning worse.
+This avoids undersized sliver tiles at the right and bottom edges.
+
+The four spatial proxies are recomputed on each local tile. Flicker values are
+three-frame local luma curvature on the same grid and are `available: false`
+with `values: null` for the first two decoded frames, incompatible geometry, or
+a scene cut. A valid array may contain `null` only when an individual tile is
+too small for that metric. Frame aggregates remain authoritative and are not
+defined as an arithmetic mean of tile values because their robust/global
+aggregation differs.
+
+Formal schema: [quality-tile-v1.schema.json](quality-tile-v1.schema.json).
+
 ## 5. Candidate event records
 
 `--events candidates` (the JSONL default) emits `qualityEvent` records after all
@@ -199,8 +230,8 @@ Formal schema: [quality-event-v1.schema.json](quality-event-v1.schema.json).
 
 ## 6. Completion and error records
 
-`qualityComplete` confirms that every preceding report/sample/event record was
-written successfully:
+`qualityComplete` confirms that every preceding report/frame/tile/event record
+was written successfully:
 
 ```json
 {
@@ -210,9 +241,13 @@ written successfully:
   "status": "success",
   "reportRecords": 1,
   "frameSampleRecords": 10,
+  "tileSampleRecords": 10,
   "eventRecords": 0
 }
 ```
+
+`tileSampleRecords` is zero when tile output is disabled and otherwise MUST equal
+`frameSampleRecords`.
 
 The consumer MUST NOT commit a streamed result to cache until it receives a
 matching `qualityComplete`. EOF after a report but before completion is an
@@ -268,4 +303,5 @@ non-cacheable transaction. Hard termination is not reported as `analysis_failed`
 Formal lifecycle-record schema:
 [quality-process-v1.schema.json](quality-process-v1.schema.json). Quality report,
 frame sample and error records continue to use
-[quality-output-v5.schema.json](quality-output-v5.schema.json).
+[quality-output-v5.schema.json](quality-output-v5.schema.json). Tile records use
+[quality-tile-v1.schema.json](quality-tile-v1.schema.json).

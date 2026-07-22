@@ -243,6 +243,7 @@ struct MetricTaskResult {
     double score = 0.0;
     double elapsed_ms = 0.0;
     std::vector<QualitySpatialRegion> spatial_regions;
+    QualityTileMeasurement tile_measurement;
 };
 
 class QualityThreadPool {
@@ -392,6 +393,11 @@ bool analyze_video_quality(const std::string& video_path,
         error = "quality metric mask is empty or contains unknown metrics";
         return false;
     }
+    if (options.collect_tile_metrics &&
+        options.backend == QualityComputeBackend::Wgpu) {
+        error = "tile metrics require the CPU backend";
+        return false;
+    }
     report.sample_interval_us = std::max<int64_t>(
         0, options.sample_interval_us);
     report.max_samples = options.max_samples;
@@ -499,6 +505,9 @@ bool analyze_video_quality(const std::string& video_path,
     LumaTemporalSignature previous_previous_signature;
     LumaTemporalSignature previous_signature;
     uint32_t temporal_signature_count = 0;
+    LumaTemporalSignature previous_previous_tile_signature;
+    LumaTemporalSignature previous_tile_signature;
+    uint32_t temporal_tile_signature_count = 0;
     bool stop = false;
     bool decode_failed = false;
     bool quality_backend_failed = false;
@@ -562,7 +571,8 @@ bool analyze_video_quality(const std::string& video_path,
     };
 
     std::unique_ptr<WgpuQualityBackend> wgpu_backend;
-    if (options.backend == QualityComputeBackend::Cpu) {
+    if (options.backend == QualityComputeBackend::Cpu ||
+        options.collect_tile_metrics) {
         if (has_spatial_metrics && !ensure_cpu_pool()) {
             cleanup();
             return false;
@@ -578,7 +588,10 @@ bool analyze_video_quality(const std::string& video_path,
             "; scheduling=multi-frame+four-metric-tasks"
             "; avx2Kernels=u8,u16,p010"
             "(blockiness,banding,blur,noise); "
-            "scalarFallback=unsupported-layouts-and-temporal";
+            "scalarFallback=unsupported-layouts-and-temporal" +
+            (options.collect_tile_metrics
+                 ? "; tileMetrics=balanced-64px-cpu"
+                 : "");
         report.execution.resolved_backend = report.backend;
     } else if (!has_spatial_metrics) {
         report.backend = kQualityBackendName;
@@ -733,6 +746,28 @@ bool analyze_video_quality(const std::string& video_path,
         return true;
     };
 
+    auto assign_tile_measurement = [](
+        FrameQualitySample::TileGrid& grid,
+        QualityTileMeasurement measurement,
+        std::vector<double>& destination) {
+        if (measurement.columns <= 0 || measurement.rows <= 0 ||
+            measurement.scores.empty()) {
+            return;
+        }
+        if (grid.columns == 0 && grid.rows == 0) {
+            grid.target_tile_width = measurement.target_tile_width;
+            grid.target_tile_height = measurement.target_tile_height;
+            grid.columns = measurement.columns;
+            grid.rows = measurement.rows;
+        }
+        if (grid.columns != measurement.columns ||
+            grid.rows != measurement.rows) {
+            throw std::runtime_error(
+                "quality tile metric grid mismatch");
+        }
+        destination = std::move(measurement.scores);
+    };
+
     auto collect_oldest_cpu = [&](bool wait) {
         if (pending_cpu_samples.empty()) {
             return true;
@@ -762,20 +797,36 @@ bool analyze_video_quality(const std::string& video_path,
                 switch (index) {
                 case 0:
                     pending.sample.blockiness = result.score;
+                    assign_tile_measurement(
+                        pending.sample.tile_grid,
+                        std::move(result.tile_measurement),
+                        pending.sample.tile_grid.blockiness);
                     blockiness_timings.push_back(result.elapsed_ms);
                     break;
                 case 1:
                     pending.sample.banding = result.score;
                     pending.sample.spatial_regions =
                         std::move(result.spatial_regions);
+                    assign_tile_measurement(
+                        pending.sample.tile_grid,
+                        std::move(result.tile_measurement),
+                        pending.sample.tile_grid.banding);
                     banding_timings.push_back(result.elapsed_ms);
                     break;
                 case 2:
                     pending.sample.blur = result.score;
+                    assign_tile_measurement(
+                        pending.sample.tile_grid,
+                        std::move(result.tile_measurement),
+                        pending.sample.tile_grid.blur);
                     blur_timings.push_back(result.elapsed_ms);
                     break;
                 case 3:
                     pending.sample.noise = result.score;
+                    assign_tile_measurement(
+                        pending.sample.tile_grid,
+                        std::move(result.tile_measurement),
+                        pending.sample.tile_grid.noise);
                     noise_timings.push_back(result.elapsed_ms);
                     break;
                 default:
@@ -843,6 +894,9 @@ bool analyze_video_quality(const std::string& video_path,
         LumaPlaneView luma;
         const bool supported_luma = make_luma_view(decoded, luma);
         double flicker = -1.0;
+        int flicker_tile_columns = 0;
+        int flicker_tile_rows = 0;
+        std::vector<double> flicker_tile_scores;
         if (supported_luma && quality_metric_enabled(
                 options.metric_mask, QualityMetricFlicker)) {
             const auto temporal_start = std::chrono::steady_clock::now();
@@ -861,6 +915,27 @@ bool analyze_video_quality(const std::string& video_path,
                     std::move(previous_signature);
                 previous_signature = std::move(current_signature);
                 ++temporal_signature_count;
+            }
+            if (options.collect_tile_metrics) {
+                LumaTemporalSignature current_tile_signature;
+                if (make_temporal_tile_signature(
+                        luma, current_tile_signature)) {
+                    flicker_tile_columns =
+                        current_tile_signature.columns;
+                    flicker_tile_rows = current_tile_signature.rows;
+                    if (temporal_tile_signature_count >= 2) {
+                        measure_flicker_proxy_with_tiles(
+                            previous_previous_tile_signature,
+                            previous_tile_signature,
+                            current_tile_signature,
+                            flicker_tile_scores);
+                    }
+                    previous_previous_tile_signature =
+                        std::move(previous_tile_signature);
+                    previous_tile_signature =
+                        std::move(current_tile_signature);
+                    ++temporal_tile_signature_count;
+                }
             }
             temporal_timings.push_back(
                 std::chrono::duration<double, std::milli>(
@@ -896,6 +971,13 @@ bool analyze_video_quality(const std::string& video_path,
         sample_result.pts_us = pts_us;
         sample_result.flicker = flicker;
         sample_result.average_qp = average_qp;
+        if (options.collect_tile_metrics && flicker_tile_columns > 0 &&
+            flicker_tile_rows > 0) {
+            sample_result.tile_grid.columns = flicker_tile_columns;
+            sample_result.tile_grid.rows = flicker_tile_rows;
+            sample_result.tile_grid.flicker =
+                std::move(flicker_tile_scores);
+        }
         bool submitted_to_gpu = false;
         if (wgpu_backend && has_spatial_metrics) {
             while (pending_gpu_samples.size() >=
@@ -951,11 +1033,13 @@ bool analyze_video_quality(const std::string& video_path,
                 auto metric_task =
                     [owned_luma,
                      cpu_mode = options.cpu_mode,
-                     collect_regions = options.collect_spatial_regions](
+                     collect_regions = options.collect_spatial_regions,
+                     collect_tiles = options.collect_tile_metrics](
                         int metric) {
                         return [owned_luma,
                                 cpu_mode,
                                 collect_regions,
+                                collect_tiles,
                                 metric]() {
                             const auto start =
                                 std::chrono::steady_clock::now();
@@ -964,11 +1048,19 @@ bool analyze_video_quality(const std::string& video_path,
                             double score = 0.0;
                             std::vector<QualitySpatialRegion>
                                 spatial_regions;
+                            QualityTileMeasurement tile_measurement;
                             switch (metric) {
                             case 0:
                                 score =
                                     measure_blockiness(
                                         view, cpu_mode);
+                                if (collect_tiles) {
+                                    tile_measurement =
+                                        measure_quality_tiles(
+                                            view,
+                                            QualityTileMetric::Blockiness,
+                                            cpu_mode);
+                                }
                                 break;
                             case 1:
                                 {
@@ -983,17 +1075,38 @@ bool analyze_video_quality(const std::string& video_path,
                                         score = measure_banding_proxy(
                                             view, cpu_mode);
                                     }
+                                    if (collect_tiles) {
+                                        tile_measurement =
+                                            measure_quality_tiles(
+                                                view,
+                                                QualityTileMetric::Banding,
+                                                cpu_mode);
+                                    }
                                 }
                                 break;
                             case 2:
                                 score =
                                     measure_blur_proxy(
                                         view, cpu_mode);
+                                if (collect_tiles) {
+                                    tile_measurement =
+                                        measure_quality_tiles(
+                                            view,
+                                            QualityTileMetric::Blur,
+                                            cpu_mode);
+                                }
                                 break;
                             case 3:
                                 score =
                                     measure_noise_proxy(
                                         view, cpu_mode);
+                                if (collect_tiles) {
+                                    tile_measurement =
+                                        measure_quality_tiles(
+                                            view,
+                                            QualityTileMetric::Noise,
+                                            cpu_mode);
+                                }
                                 break;
                             default:
                                 throw std::runtime_error(
@@ -1008,6 +1121,7 @@ bool analyze_video_quality(const std::string& video_path,
                                     start)
                                     .count(),
                                 std::move(spatial_regions),
+                                std::move(tile_measurement),
                             };
                         };
                 };

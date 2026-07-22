@@ -802,6 +802,82 @@ TEST_CASE("flicker proxy detects alternating exposure but ignores linear fades",
     REQUIRE(scene_cut < 0.0);
 }
 
+TEST_CASE("quality tile metrics share a balanced row-major grid",
+          "[analysis][quality][tiles]") {
+    using namespace vr::analysis::quality;
+    constexpr int width = 130;
+    constexpr int height = 70;
+    std::vector<uint8_t> luma(
+        static_cast<size_t>(width * height));
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            luma[static_cast<size_t>(y * width + x)] =
+                static_cast<uint8_t>(
+                    (x * 5 + y * 3 + ((x / 8 + y / 8) % 2) * 47) &
+                    0xff);
+        }
+    }
+    const LumaPlaneView view = make_u8_view(luma, width, height);
+    constexpr std::array<QualityTileMetric, 4> metrics{
+        QualityTileMetric::Blockiness,
+        QualityTileMetric::Banding,
+        QualityTileMetric::Blur,
+        QualityTileMetric::Noise,
+    };
+    for (const QualityTileMetric metric : metrics) {
+        const QualityTileMeasurement measurement =
+            measure_quality_tiles(
+                view, metric, QualityCpuMode::Scalar);
+        REQUIRE(measurement.columns == 3);
+        REQUIRE(measurement.rows == 2);
+        REQUIRE(measurement.scores.size() == 6);
+        for (const double score : measurement.scores) {
+            REQUIRE(score >= 0.0);
+            REQUIRE(score <= 1.0);
+        }
+    }
+}
+
+TEST_CASE("flicker tile metrics preserve local temporal curvature",
+          "[analysis][quality][tiles]") {
+    using namespace vr::analysis::quality;
+    constexpr int width = 128;
+    constexpr int height = 64;
+    auto frame = [](uint8_t left, uint8_t right) {
+        std::vector<uint8_t> pixels(
+            static_cast<size_t>(width * height));
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                pixels[static_cast<size_t>(y * width + x)] =
+                    x < width / 2 ? left : right;
+            }
+        }
+        return pixels;
+    };
+    const auto first = frame(100, 100);
+    const auto middle = frame(120, 100);
+    const auto last = frame(100, 100);
+    LumaTemporalSignature first_signature;
+    LumaTemporalSignature middle_signature;
+    LumaTemporalSignature last_signature;
+    REQUIRE(make_temporal_tile_signature(
+        make_u8_view(first, width, height), first_signature));
+    REQUIRE(make_temporal_tile_signature(
+        make_u8_view(middle, width, height), middle_signature));
+    REQUIRE(make_temporal_tile_signature(
+        make_u8_view(last, width, height), last_signature));
+
+    std::vector<double> tile_scores;
+    const double frame_score = measure_flicker_proxy_with_tiles(
+        first_signature, middle_signature, last_signature, tile_scores);
+    REQUIRE(first_signature.columns == 2);
+    REQUIRE(first_signature.rows == 1);
+    REQUIRE(tile_scores.size() == 2);
+    REQUIRE(frame_score > 0.0);
+    REQUIRE(tile_scores[0] > 0.50);
+    REQUIRE(tile_scores[1] == Catch::Approx(0.0));
+}
+
 TEST_CASE("wgpu quality backend matches CPU reference for 8 and 10 bit luma",
           "[analysis][quality][wgpu]") {
     std::string error;

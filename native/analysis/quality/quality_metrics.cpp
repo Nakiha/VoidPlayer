@@ -229,6 +229,8 @@ struct NoiseTile {
 double signature_distance(const LumaTemporalSignature& left,
                           const LumaTemporalSignature& right) {
     if (left.tile_means.empty() ||
+        left.columns != right.columns ||
+        left.rows != right.rows ||
         left.tile_means.size() != right.tile_means.size()) {
         return std::numeric_limits<double>::infinity();
     }
@@ -239,6 +241,82 @@ double signature_distance(const LumaTemporalSignature& left,
     }
     return sum /
            (static_cast<double>(left.tile_means.size()) * 255.0);
+}
+
+int balanced_tile_count(int extent) {
+    return std::max(
+        1, (extent + kQualityTileTargetSize - 1) /
+               kQualityTileTargetSize);
+}
+
+LumaPlaneView make_subview(const LumaPlaneView& plane,
+                           int x,
+                           int y,
+                           int width,
+                           int height) {
+    LumaPlaneView view = plane;
+    view.data = plane.data +
+        static_cast<ptrdiff_t>(y) * plane.stride_bytes +
+        static_cast<ptrdiff_t>(x) * plane.sample_step_bytes;
+    view.width = width;
+    view.height = height;
+    return view;
+}
+
+bool make_temporal_signature_grid(const LumaPlaneView& plane,
+                                  int columns,
+                                  int rows,
+                                  LumaTemporalSignature& signature) {
+    signature = LumaTemporalSignature{};
+    if (!is_valid_luma_plane(plane) || columns <= 0 || rows <= 0 ||
+        columns > plane.width || rows > plane.height) {
+        return false;
+    }
+
+    signature.columns = columns;
+    signature.rows = rows;
+    signature.tile_means.reserve(
+        static_cast<size_t>(columns * rows));
+    double frame_sum = 0.0;
+    uint64_t frame_count = 0;
+    for (int row = 0; row < rows; ++row) {
+        const int y0 = row * plane.height / rows;
+        const int y1 = (row + 1) * plane.height / rows;
+        for (int column = 0; column < columns; ++column) {
+            const int x0 = column * plane.width / columns;
+            const int x1 = (column + 1) * plane.width / columns;
+            double tile_sum = 0.0;
+            uint64_t tile_count = 0;
+            const int sample_rows = std::min(8, y1 - y0);
+            const int sample_columns = std::min(8, x1 - x0);
+            for (int sample_y = 0; sample_y < sample_rows; ++sample_y) {
+                const int sample_y_position = y0 +
+                    (2 * sample_y + 1) * (y1 - y0) /
+                        (2 * sample_rows);
+                for (int sample_x = 0;
+                     sample_x < sample_columns;
+                     ++sample_x) {
+                    const int sample_x_position = x0 +
+                        (2 * sample_x + 1) * (x1 - x0) /
+                            (2 * sample_columns);
+                    tile_sum += read_sample_u8(
+                        plane, sample_x_position, sample_y_position);
+                    ++tile_count;
+                }
+            }
+            if (tile_count == 0) {
+                signature = LumaTemporalSignature{};
+                return false;
+            }
+            signature.tile_means.push_back(
+                tile_sum / static_cast<double>(tile_count));
+            frame_sum += tile_sum;
+            frame_count += tile_count;
+        }
+    }
+    signature.mean_luma =
+        frame_sum / static_cast<double>(frame_count);
+    return true;
 }
 
 double quantile(const std::vector<double>& sorted, double fraction) {
@@ -790,63 +868,97 @@ double measure_noise_proxy(const LumaPlaneView& plane,
     return clamp_unit(sigma / 24.0);
 }
 
-bool make_temporal_signature(const LumaPlaneView& plane,
-                             LumaTemporalSignature& signature) {
-    signature = LumaTemporalSignature{};
+QualityTileMeasurement measure_quality_tiles(
+    const LumaPlaneView& plane,
+    QualityTileMetric metric,
+    QualityCpuMode mode) {
+    QualityTileMeasurement measurement;
     if (!is_valid_luma_plane(plane)) {
-        return false;
+        return measurement;
     }
 
-    const int columns = std::min(16, plane.width);
-    const int rows = std::min(9, plane.height);
-    signature.tile_means.reserve(
-        static_cast<size_t>(columns * rows));
-    double frame_sum = 0.0;
-    uint64_t frame_count = 0;
-    for (int row = 0; row < rows; ++row) {
-        const int y0 = row * plane.height / rows;
-        const int y1 = (row + 1) * plane.height / rows;
-        for (int column = 0; column < columns; ++column) {
-            const int x0 = column * plane.width / columns;
-            const int x1 = (column + 1) * plane.width / columns;
-            double tile_sum = 0.0;
-            uint64_t tile_count = 0;
-            const int sample_rows = std::min(8, y1 - y0);
-            const int sample_columns = std::min(8, x1 - x0);
-            for (int sample_y = 0; sample_y < sample_rows; ++sample_y) {
-                const int y = y0 +
-                    (2 * sample_y + 1) * (y1 - y0) /
-                        (2 * sample_rows);
-                for (int sample_x = 0;
-                     sample_x < sample_columns;
-                     ++sample_x) {
-                    const int x = x0 +
-                        (2 * sample_x + 1) * (x1 - x0) /
-                            (2 * sample_columns);
-                    tile_sum += read_sample_u8(plane, x, y);
-                    ++tile_count;
-                }
+    measurement.columns = balanced_tile_count(plane.width);
+    measurement.rows = balanced_tile_count(plane.height);
+    measurement.scores.reserve(static_cast<size_t>(
+        measurement.columns * measurement.rows));
+    for (int row = 0; row < measurement.rows; ++row) {
+        const int y0 = row * plane.height / measurement.rows;
+        const int y1 = (row + 1) * plane.height / measurement.rows;
+        for (int column = 0; column < measurement.columns; ++column) {
+            const int x0 = column * plane.width / measurement.columns;
+            const int x1 = (column + 1) * plane.width / measurement.columns;
+            const int width = x1 - x0;
+            const int height = y1 - y0;
+            const int minimum_extent =
+                metric == QualityTileMetric::Blockiness ? 24 : 8;
+            if (width < minimum_extent || height < minimum_extent) {
+                measurement.scores.push_back(-1.0);
+                continue;
             }
-            if (tile_count == 0) {
-                signature = LumaTemporalSignature{};
-                return false;
+            const LumaPlaneView tile =
+                make_subview(plane, x0, y0, width, height);
+            double score = -1.0;
+            switch (metric) {
+            case QualityTileMetric::Blockiness:
+                score = measure_blockiness(tile, mode);
+                break;
+            case QualityTileMetric::Banding:
+                score = measure_banding_proxy(tile, mode);
+                break;
+            case QualityTileMetric::Blur:
+                score = measure_blur_proxy(tile, mode);
+                break;
+            case QualityTileMetric::Noise:
+                score = measure_noise_proxy(tile, mode);
+                break;
             }
-            signature.tile_means.push_back(
-                tile_sum / static_cast<double>(tile_count));
-            frame_sum += tile_sum;
-            frame_count += tile_count;
+            measurement.scores.push_back(score);
         }
     }
-    signature.mean_luma =
-        frame_sum / static_cast<double>(frame_count);
-    return true;
+    return measurement;
+}
+
+bool make_temporal_signature(const LumaPlaneView& plane,
+                             LumaTemporalSignature& signature) {
+    const int columns = std::min(16, plane.width);
+    const int rows = std::min(9, plane.height);
+    return make_temporal_signature_grid(
+        plane, columns, rows, signature);
+}
+
+bool make_temporal_tile_signature(const LumaPlaneView& plane,
+                                  LumaTemporalSignature& signature) {
+    if (!is_valid_luma_plane(plane)) {
+        signature = LumaTemporalSignature{};
+        return false;
+    }
+    return make_temporal_signature_grid(
+        plane,
+        balanced_tile_count(plane.width),
+        balanced_tile_count(plane.height),
+        signature);
 }
 
 double measure_flicker_proxy(
     const LumaTemporalSignature& previous_previous,
     const LumaTemporalSignature& previous,
     const LumaTemporalSignature& current) {
+    std::vector<double> ignored_tile_scores;
+    return measure_flicker_proxy_with_tiles(
+        previous_previous, previous, current, ignored_tile_scores);
+}
+
+double measure_flicker_proxy_with_tiles(
+    const LumaTemporalSignature& previous_previous,
+    const LumaTemporalSignature& previous,
+    const LumaTemporalSignature& current,
+    std::vector<double>& tile_scores) {
+    tile_scores.clear();
     if (previous_previous.tile_means.empty() ||
+        previous_previous.columns != previous.columns ||
+        previous.columns != current.columns ||
+        previous_previous.rows != previous.rows ||
+        previous.rows != current.rows ||
         previous_previous.tile_means.size() != previous.tile_means.size() ||
         previous.tile_means.size() != current.tile_means.size()) {
         return -1.0;
@@ -863,14 +975,17 @@ double measure_flicker_proxy(
         std::abs(current.mean_luma - 2.0 * previous.mean_luma +
                  previous_previous.mean_luma) /
         255.0;
+    tile_scores.reserve(current.tile_means.size());
     std::vector<double> local_curvature;
     local_curvature.reserve(current.tile_means.size());
     for (size_t index = 0; index < current.tile_means.size(); ++index) {
-        local_curvature.push_back(
+        const double curvature =
             std::abs(current.tile_means[index] -
                      2.0 * previous.tile_means[index] +
                      previous_previous.tile_means[index]) /
-            255.0);
+            255.0;
+        local_curvature.push_back(curvature);
+        tile_scores.push_back(clamp_unit(4.0 * curvature));
     }
     const double local_median = median(local_curvature);
     return clamp_unit(

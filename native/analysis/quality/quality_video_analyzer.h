@@ -66,6 +66,7 @@ struct QualityVideoAnalyzerOptions {
     uint32_t cpu_in_flight = 0;
     uint32_t metric_mask = kQualityAllMetricMask;
     bool collect_spatial_regions = true;
+    bool collect_tile_metrics = false;
     std::function<bool()> cancel_requested;
     std::function<void(const QualityAnalysisProgress&)> progress_callback;
 };

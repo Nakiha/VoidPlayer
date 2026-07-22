@@ -163,6 +163,7 @@ struct CliOptions {
     std::string quality_cpu_mode = "auto";
     std::string quality_metrics = "all";
     std::string quality_regions = "full";
+    std::string quality_tiles = "none";
     std::string quality_events = "candidates";
     std::string quality_request_id;
     bool quality_summary_only = false;
@@ -432,6 +433,7 @@ void write_quality_progress_json(
 
 void write_quality_complete_json(const std::string& request_id,
                                  size_t frame_sample_records,
+                                 size_t tile_sample_records,
                                  size_t event_records) {
     std::cout << "{"
               << "\"type\":\"qualityComplete\","
@@ -441,6 +443,7 @@ void write_quality_complete_json(const std::string& request_id,
               << "\"status\":\"success\","
               << "\"reportRecords\":1,"
               << "\"frameSampleRecords\":" << frame_sample_records << ","
+              << "\"tileSampleRecords\":" << tile_sample_records << ","
               << "\"eventRecords\":" << event_records
               << "}\n" << std::flush;
 }
@@ -880,6 +883,109 @@ void write_quality_sample_json(
     out << "}";
 }
 
+void write_quality_tile_values_json(
+    std::ostream& out,
+    const std::vector<double>& values,
+    size_t expected_count) {
+    if (values.size() != expected_count) {
+        out << "null";
+        return;
+    }
+    out << "[";
+    for (size_t index = 0; index < values.size(); ++index) {
+        if (index != 0) {
+            out << ",";
+        }
+        if (values[index] >= 0.0 && std::isfinite(values[index])) {
+            out << values[index];
+        } else {
+            out << "null";
+        }
+    }
+    out << "]";
+}
+
+void write_quality_tile_metric_json(
+    std::ostream& out,
+    const char* algorithm,
+    const std::vector<double>& values,
+    size_t expected_count) {
+    const bool available =
+        values.size() == expected_count &&
+        std::any_of(values.begin(), values.end(), [](double value) {
+            return value >= 0.0 && std::isfinite(value);
+        });
+    out << "{\"available\":" << (available ? "true" : "false")
+        << ",\"algorithm\":\"" << algorithm << "\",\"values\":";
+    if (available) {
+        write_quality_tile_values_json(out, values, expected_count);
+    } else {
+        out << "null";
+    }
+    out << "}";
+}
+
+void write_quality_tile_sample_json(
+    std::ostream& out,
+    const std::string& request_id,
+    const vr::analysis::quality::FrameQualitySample& sample,
+    int video_width,
+    int video_height,
+    uint32_t metric_mask) {
+    using namespace vr::analysis::quality;
+    const auto& grid = sample.tile_grid;
+    const size_t tile_count = static_cast<size_t>(
+        std::max(0, grid.columns) * std::max(0, grid.rows));
+    out << "{"
+        << "\"type\":\"qualityTileSample\","
+        << "\"tileSchemaVersion\":" << kQualityTileSchemaVersion << ","
+        << "\"tileSchemaId\":\"" << kQualityTileSchemaId << "\","
+        << "\"tileMetricVersion\":\"" << kQualityTileMetricVersion << "\","
+        << "\"metricVersion\":\"" << kQualityMetricVersion << "\","
+        << "\"requestId\":\"" << json_escape(request_id) << "\","
+        << "\"sampleIndex\":" << sample.sample_index << ","
+        << "\"decodedFrameIndex\":" << sample.decoded_frame_index << ","
+        << "\"ptsUs\":" << sample.pts_us << ","
+        << "\"grid\":{"
+        << "\"coordinateSpace\":\"decodedLumaPixels\","
+        << "\"order\":\"rowMajor\","
+        << "\"partition\":\"balanced\","
+        << "\"frameWidth\":" << video_width << ","
+        << "\"frameHeight\":" << video_height << ","
+        << "\"targetTileWidth\":" << grid.target_tile_width << ","
+        << "\"targetTileHeight\":" << grid.target_tile_height << ","
+        << "\"columns\":" << grid.columns << ","
+        << "\"rows\":" << grid.rows << "},"
+        << "\"metrics\":{";
+    bool first = true;
+    auto write_metric = [&](QualityMetricFlag flag,
+                            const char* name,
+                            const char* algorithm,
+                            const std::vector<double>& values) {
+        if (!quality_metric_enabled(metric_mask, flag)) {
+            return;
+        }
+        if (!first) {
+            out << ",";
+        }
+        first = false;
+        out << "\"" << name << "\":";
+        write_quality_tile_metric_json(
+            out, algorithm, values, tile_count);
+    };
+    write_metric(QualityMetricBlockiness, "blockiness",
+                 "blockiness-period-8-16-local-v1", grid.blockiness);
+    write_metric(QualityMetricBanding, "banding",
+                 "banding-proxy-local-v1", grid.banding);
+    write_metric(QualityMetricBlur, "blur",
+                 "reblur-edge-loss-local-v1", grid.blur);
+    write_metric(QualityMetricNoise, "noise",
+                 "low-texture-residual-local-v1", grid.noise);
+    write_metric(QualityMetricFlicker, "flicker",
+                 "three-frame-luma-curvature-local-v1", grid.flicker);
+    out << "}}";
+}
+
 std::string codec_name(uint16_t codec) {
     switch (static_cast<AnalysisCodec>(codec)) {
     case AnalysisCodec::H264: return "h264";
@@ -1011,7 +1117,7 @@ void print_usage(std::ostream& out) {
         "  VoidPlayerCli benchmark-overlay-gpu <chunk.vck> --frame N [--width N] [--height N] [--iterations N] [--mode bitrate|qp] [--with-grid] [--json]\n\n"
         "  VoidPlayerCli generate-base --input <video> --cache-root <dir> --hash <hash> [--json]\n"
         "  VoidPlayerCli generate-overlay --input <video> --cache-root <dir> --hash <hash> --start-frame N --end-frame N [--codec h264|hevc|vvc] [--analyzer <exe>] [--json]\n\n"
-        "  VoidPlayerCli score-quality --input <video> [--metrics all|blockiness,banding,blur,noise,flicker] [--regions none|summary|full] [--events none|candidates] [--backend auto|cpu|wgpu] [--cpu-mode auto|scalar] [--decode-threads N] [--cpu-workers N] [--cpu-in-flight N] [--sample-interval-ms N] [--max-samples N] [--request-id ID] [--json [--summary-only] | --jsonl]\n\n"
+        "  VoidPlayerCli score-quality --input <video> [--metrics all|blockiness,banding,blur,noise,flicker] [--regions none|summary|full] [--tiles none|full] [--events none|candidates] [--backend auto|cpu|wgpu] [--cpu-mode auto|scalar] [--decode-threads N] [--cpu-workers N] [--cpu-in-flight N] [--sample-interval-ms N] [--max-samples N] [--request-id ID] [--json [--summary-only] | --jsonl]\n\n"
         "Examples:\n"
         "  VoidPlayerCli inspect \"%APPDATA%\\VoidPlayer\\cache\\<hash>\\base.vac\"\n"
         "  VoidPlayerCli chunk-frame \"overlay.vck\" --frame 128 --json\n"
@@ -1081,6 +1187,8 @@ bool parse_args(const std::vector<std::string>& args, CliOptions& options) {
             options.quality_metrics = args[++i];
         } else if (arg == "--regions" && i + 1 < args.size()) {
             options.quality_regions = args[++i];
+        } else if (arg == "--tiles" && i + 1 < args.size()) {
+            options.quality_tiles = args[++i];
         } else if (arg == "--events" && i + 1 < args.size()) {
             options.quality_events = args[++i];
         } else if (arg == "--request-id" && i + 1 < args.size()) {
@@ -2121,6 +2229,19 @@ int score_quality(const CliOptions& options) {
             "invalid_arguments",
             "score-quality --summary-only requires --json");
     }
+    if (options.quality_tiles != "none" &&
+        options.quality_tiles != "full") {
+        return fail(
+            1,
+            "invalid_tiles",
+            "score-quality --tiles must be none or full");
+    }
+    if (options.quality_tiles == "full" && !options.quality_jsonl) {
+        return fail(
+            1,
+            "invalid_arguments",
+            "score-quality --tiles full requires --jsonl");
+    }
     const std::string input =
         !options.input.empty() ? options.input : options.path;
     if (input.empty()) {
@@ -2176,6 +2297,8 @@ int score_quality(const CliOptions& options) {
         options.quality_cpu_in_flight;
     analyzer_options.metric_mask = metric_mask;
     analyzer_options.collect_spatial_regions = collect_regions;
+    analyzer_options.collect_tile_metrics =
+        options.quality_tiles == "full";
     if (options.quality_backend == "cpu") {
         analyzer_options.backend =
             vr::analysis::quality::QualityComputeBackend::Cpu;
@@ -2190,6 +2313,14 @@ int score_quality(const CliOptions& options) {
             1,
             "invalid_backend",
             "score-quality --backend must be auto, cpu, or wgpu");
+    }
+    if (analyzer_options.collect_tile_metrics &&
+        analyzer_options.backend ==
+            vr::analysis::quality::QualityComputeBackend::Wgpu) {
+        return fail(
+            1,
+            "unsupported_tile_backend",
+            "score-quality --tiles full requires --backend auto or cpu");
     }
     if (options.quality_cpu_mode == "auto") {
         analyzer_options.cpu_mode =
@@ -2227,6 +2358,7 @@ int score_quality(const CliOptions& options) {
             vr::analysis::quality::kQualityMetricVersion + "\n" +
             selected_metrics_canonical(metric_mask) + "\n" +
             effective_region_output + "\n" +
+            options.quality_tiles + "\n" +
             options.quality_events + "\n" +
             vr::analysis::quality::kQualityEventPolicyVersion + "\n" +
             std::to_string(analyzer_options.sample_interval_us) + "\n" +
@@ -2254,6 +2386,8 @@ int score_quality(const CliOptions& options) {
         write_selected_metrics_json(std::cout, metric_mask);
         std::cout << ",\"regionOutput\":\""
                   << effective_region_output << "\","
+                  << "\"tileOutput\":\""
+                  << options.quality_tiles << "\","
                   << "\"events\":\"" << options.quality_events << "\","
                   << "\"eventPolicyVersion\":\""
                   << vr::analysis::quality::kQualityEventPolicyVersion << "\","
@@ -2562,6 +2696,16 @@ int score_quality(const CliOptions& options) {
                     report.height,
                     include_region_details);
                 std::cout << "}\n";
+                if (options.quality_tiles == "full") {
+                    write_quality_tile_sample_json(
+                        std::cout,
+                        request_id,
+                        sample,
+                        report.width,
+                        report.height,
+                        metric_mask);
+                    std::cout << "\n";
+                }
             }
             for (size_t index = 0; index < quality_events.size(); ++index) {
                 write_quality_event_json(
@@ -2574,6 +2718,9 @@ int score_quality(const CliOptions& options) {
             write_quality_complete_json(
                 request_id,
                 report.timeline.size(),
+                options.quality_tiles == "full"
+                    ? report.timeline.size()
+                    : 0,
                 quality_events.size());
         }
         return 0;

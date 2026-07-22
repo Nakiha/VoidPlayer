@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voidplayer.local/schemas/quality-event-v1.schema.json",
+  "title": "VoidPlayer experimental quality candidate event v1",
+  "type": "object",
+  "required": [
+    "type", "eventSchemaVersion", "eventSchemaId", "policyVersion",
+    "metricVersion", "requestId", "eventId", "metric", "classification",
+    "calibrated", "direction", "startPtsUs", "endPtsUs", "peakPtsUs",
+    "startSampleIndex", "endSampleIndex", "peakSampleIndex", "peakScore",
+    "evidenceSampleCount", "threshold", "region"
+  ],
+  "properties": {
+    "type": {"const": "qualityEvent"},
+    "eventSchemaVersion": {"const": 1},
+    "eventSchemaId": {"const": "quality-event-v1"},
+    "policyVersion": {"const": "quality-candidate-policy-v1"},
+    "metricVersion": {"type": "string", "minLength": 1},
+    "requestId": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!-~]+$"},
+    "eventId": {"type": "string", "pattern": "^qe-[0-9]{6}$"},
+    "metric": {"enum": ["blockiness", "banding", "blur", "noise", "flicker"]},
+    "classification": {"enum": ["relativeOutlier", "spatialCandidate"]},
+    "calibrated": {"const": false},
+    "direction": {"const": "higherIsWorse"},
+    "startPtsUs": {"type": "integer"},
+    "endPtsUs": {"type": "integer"},
+    "peakPtsUs": {"type": "integer"},
+    "startSampleIndex": {"type": "integer", "minimum": 0},
+    "endSampleIndex": {"type": "integer", "minimum": 0},
+    "peakSampleIndex": {"type": "integer", "minimum": 0},
+    "peakScore": {"type": "number", "minimum": 0, "maximum": 1},
+    "evidenceSampleCount": {"type": "integer", "minimum": 1},
+    "threshold": {
+      "type": "object",
+      "required": ["kind", "appliesTo", "value", "median", "mad", "p90", "robustSigma", "sigmaMultiplier"],
+      "properties": {
+        "kind": {"enum": ["robustRelative", "spatialDetection"]},
+        "appliesTo": {"enum": ["frameMetric", "regionScore"]},
+        "value": {"type": "number", "minimum": 0, "maximum": 1},
+        "median": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "mad": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "p90": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "robustSigma": {"type": ["number", "null"], "minimum": 0},
+        "sigmaMultiplier": {"type": ["number", "null"], "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "region": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/spatialRegion"}
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"classification": {"const": "spatialCandidate"}},
+        "required": ["classification"]
+      },
+      "then": {
+        "properties": {
+          "metric": {"const": "banding"},
+          "region": {"$ref": "#/$defs/spatialRegion"},
+          "threshold": {
+            "properties": {
+              "kind": {"const": "spatialDetection"},
+              "appliesTo": {"const": "regionScore"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"classification": {"const": "relativeOutlier"}},
+        "required": ["classification"]
+      },
+      "then": {
+        "properties": {
+          "region": {"type": "null"},
+          "threshold": {
+            "properties": {
+              "kind": {"const": "robustRelative"},
+              "appliesTo": {"const": "frameMetric"},
+              "median": {"type": "number", "minimum": 0, "maximum": 1},
+              "mad": {"type": "number", "minimum": 0, "maximum": 1},
+              "p90": {"type": "number", "minimum": 0, "maximum": 1},
+              "robustSigma": {"type": "number", "minimum": 0},
+              "sigmaMultiplier": {"type": "number", "minimum": 0}
+            }
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "spatialRegion": {
+      "type": "object",
+      "required": ["metric", "score", "detectionThreshold", "rect", "pixelRect", "tileCount", "tileSpan", "fillRatio"],
+      "properties": {
+        "metric": {"const": "banding"},
+        "score": {"type": "number", "minimum": 0, "maximum": 1},
+        "detectionThreshold": {"type": "number", "minimum": 0, "maximum": 1},
+        "rect": {
+          "type": "object",
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": {"type": "number", "minimum": 0, "maximum": 1},
+            "y": {"type": "number", "minimum": 0, "maximum": 1},
+            "width": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+            "height": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}
+          },
+          "additionalProperties": false
+        },
+        "pixelRect": {
+          "type": "object",
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": {"type": "integer", "minimum": 0},
+            "y": {"type": "integer", "minimum": 0},
+            "width": {"type": "integer", "minimum": 1},
+            "height": {"type": "integer", "minimum": 1}
+          },
+          "additionalProperties": false
+        },
+        "tileCount": {"type": "integer", "minimum": 1},
+        "tileSpan": {
+          "type": "object",
+          "required": ["columns", "rows"],
+          "properties": {
+            "columns": {"type": "integer", "minimum": 2},
+            "rows": {"type": "integer", "minimum": 2}
+          },
+          "additionalProperties": false
+        },
+        "fillRatio": {"type": "number", "minimum": 0.5, "maximum": 1}
+      },
+      "additionalProperties": false
+    }
+  }
+}

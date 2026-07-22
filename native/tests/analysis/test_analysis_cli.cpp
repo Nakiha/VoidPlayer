@@ -282,7 +282,8 @@ bool run_cli_expect_output(
     const std::string& cli_path,
     const std::vector<std::string>& args,
     int expected_exit_code,
-    const std::vector<std::string>& expected_fragments) {
+    const std::vector<std::string>& expected_fragments,
+    bool require_order = false) {
     std::string command = quote_command_arg(cli_path);
     for (const auto& arg : args) {
         command += " " + quote_command_arg(arg);
@@ -305,11 +306,17 @@ bool run_cli_expect_output(
                   << command << "\n";
         return false;
     }
+    size_t search_from = 0;
     for (const auto& fragment : expected_fragments) {
-        if (output.find(fragment) == std::string::npos) {
+        const size_t found = output.find(
+            fragment, require_order ? search_from : 0);
+        if (found == std::string::npos) {
             std::cerr << "CLI output missing " << fragment << ": "
                       << output << "\n";
             return false;
+        }
+        if (require_order) {
+            search_from = found + fragment.size();
         }
     }
     return true;
@@ -362,7 +369,21 @@ int main(int argc, char** argv) {
             "\"type\":\"qualityError\"",
             "\"code\":\"invalid_arguments\"",
             "\"message\":\"failed to parse score-quality arguments\"",
-        });
+        }) &&
+        run_cli_expect_output(cli_path, {
+            "score-quality",
+            "--input", fixture.vac_path,
+            "--backend", "cpu",
+            "--request-id", "cli-error-test",
+            "--jsonl",
+        }, 2, {
+            "\"type\":\"qualitySession\"",
+            "\"requestId\":\"cli-error-test\"",
+            "\"type\":\"qualityError\"",
+            "\"protocolVersion\":1",
+            "\"requestId\":\"cli-error-test\"",
+            "\"code\":\"analysis_failed\"",
+        }, true);
 
     bool generation_ok = true;
     if (!analyzer_path.empty() && !video_path.empty()) {
@@ -394,7 +415,7 @@ int main(int argc, char** argv) {
                     L"cli_generated" / L"base.vac"),
                 "--json",
             }) &&
-            run_cli(cli_path, {
+            run_cli_expect_output(cli_path, {
                 "score-quality",
                 "--input", video_path,
                 "--backend", "cpu",
@@ -404,6 +425,36 @@ int main(int argc, char** argv) {
                 "--sample-interval-ms", "250",
                 "--max-samples", "2",
                 "--json",
+            }, 0, {
+                "\"schemaVersion\":5",
+                "\"schemaId\":\"quality-output-v5\"",
+                "\"metricVersion\":\"quality-demo-v5\"",
+                "\"spatialRegionsIncluded\":true",
+                "\"spatialRegionSummaryIncluded\":true",
+                "\"selectedMetrics\":[\"blockiness\",\"banding\",\"blur\",\"noise\",\"flicker\"]",
+                "\"regionSummary\":{",
+                "\"spatialRegionMetrics\":[\"banding\"]",
+                "\"spatialRegions\":[",
+                "\"spatialRegionAlgorithm\":\"banding-tile-cc-v2\"",
+            }) &&
+            run_cli_expect_output(cli_path, {
+                "score-quality",
+                "--input", video_path,
+                "--backend", "cpu",
+                "--metrics", "banding,flicker",
+                "--regions", "summary",
+                "--max-samples", "2",
+                "--json",
+            }, 0, {
+                "\"selectedMetrics\":[\"banding\",\"flicker\"]",
+                "\"requestedRegionOutput\":\"summary\"",
+                "\"effectiveRegionOutput\":\"summary\"",
+                "\"spatialRegionsIncluded\":false",
+                "\"spatialRegionSummaryIncluded\":true",
+                "\"blockiness\":{\"selected\":false",
+                "\"banding\":{\"selected\":true",
+                "\"blockiness\":null",
+                "\"spatialRegions\":[]",
             }) &&
             run_cli_expect_output(cli_path, {
                 "score-quality",
@@ -416,13 +467,94 @@ int main(int argc, char** argv) {
                 "\"maxSamples\":1",
                 "\"truncated\":true",
                 "\"sampledFrames\":1",
+                "\"effectiveRegionOutput\":\"summary\"",
+                "\"regionSummary\":{",
             }) &&
-            run_cli(cli_path, {
+            run_cli_expect_output(cli_path, {
                 "score-quality",
                 "--input", video_path,
                 "--backend", "cpu",
                 "--max-samples", "2",
+                "--events", "none",
+                "--request-id", "cli-protocol-test",
                 "--jsonl",
+            }, 0, {
+                "\"type\":\"qualitySession\"",
+                "\"protocolVersion\":1",
+                "\"requestId\":\"cli-protocol-test\"",
+                "\"inputIdentity\":{",
+                "\"resultConfig\":{",
+                "\"events\":\"none\"",
+                "\"eventPolicyVersion\":\"quality-candidate-policy-v1\"",
+                "\"executionConfig\":{",
+                "\"resultKey\":\"fnv1a64:",
+                "\"type\":\"qualityProgress\"",
+                "\"phase\":\"opening\"",
+                "\"type\":\"qualityProgress\"",
+                "\"phase\":\"decoding\"",
+                "\"type\":\"qualityProgress\"",
+                "\"phase\":\"finalizing\"",
+                "\"type\":\"qualityReport\"",
+                "\"type\":\"qualityFrameSample\"",
+                "\"type\":\"qualityComplete\"",
+                "\"frameSampleRecords\":2",
+                "\"eventRecords\":0",
+            }, true) &&
+            run_cli_expect_output(cli_path, {
+                "score-quality",
+                "--input", video_path,
+                "--backend", "cpu",
+                "--metrics", "blockiness",
+                "--regions", "none",
+                "--events", "candidates",
+                "--max-samples", "10",
+                "--request-id", "cli-event-test",
+                "--jsonl",
+            }, 0, {
+                "\"type\":\"qualitySession\"",
+                "\"type\":\"qualityReport\"",
+                "\"type\":\"qualityFrameSample\"",
+                "\"type\":\"qualityEvent\"",
+                "\"eventSchemaId\":\"quality-event-v1\"",
+                "\"policyVersion\":\"quality-candidate-policy-v1\"",
+                "\"metric\":\"blockiness\"",
+                "\"classification\":\"relativeOutlier\"",
+                "\"calibrated\":false",
+                "\"region\":null",
+                "\"type\":\"qualityComplete\"",
+                "\"eventRecords\":1",
+            }, true) &&
+            run_cli_expect_output(cli_path, {
+                "score-quality",
+                "--input", video_path,
+                "--request-id", "bad request id",
+                "--jsonl",
+            }, 1, {
+                "\"code\":\"invalid_request_id\"",
+            }) &&
+            run_cli_expect_output(cli_path, {
+                "score-quality",
+                "--input", video_path,
+                "--events", "labels",
+                "--jsonl",
+            }, 1, {
+                "\"code\":\"invalid_events\"",
+            }) &&
+            run_cli_expect_output(cli_path, {
+                "score-quality",
+                "--input", video_path,
+                "--metrics", "banding,banding",
+                "--json",
+            }, 1, {
+                "\"code\":\"invalid_metrics\"",
+            }) &&
+            run_cli_expect_output(cli_path, {
+                "score-quality",
+                "--input", video_path,
+                "--regions", "tiles",
+                "--json",
+            }, 1, {
+                "\"code\":\"invalid_regions\"",
             }) &&
             run_cli_expect_exit(cli_path, {
                 "score-quality",

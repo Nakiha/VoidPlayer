@@ -8,7 +8,7 @@
 namespace vr::analysis::quality {
 
 constexpr uint32_t kQualityReportSchemaVersion = 4;
-constexpr const char* kQualityMetricVersion = "quality-demo-v3";
+constexpr const char* kQualityMetricVersion = "quality-demo-v5";
 constexpr const char* kQualityBackendName = "cpu-reference";
 
 struct LumaPlaneView {
@@ -37,16 +37,42 @@ struct DistributionSummary {
     double maximum = 0.0;
 };
 
+/// An experimental defect region in the decoded luma coordinate space.
+///
+/// The frame-level proxy remains authoritative. Regions are supporting
+/// evidence produced only by metrics that have a spatial implementation.
+struct QualitySpatialRegion {
+    std::string metric;
+    double score = 0.0;
+    double detection_threshold = 0.0;
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+    uint32_t tile_count = 0;
+    uint32_t tile_span_columns = 0;
+    uint32_t tile_span_rows = 0;
+    double fill_ratio = 0.0;
+};
+
+struct BandingMeasurement {
+    double score = 0.0;
+    std::vector<QualitySpatialRegion> regions;
+};
+
 struct FrameQualitySample {
     uint64_t sample_index = 0;
     uint64_t decoded_frame_index = 0;
     int64_t pts_us = 0;
-    double blockiness = 0.0;
-    double banding = 0.0;
-    double blur = 0.0;
-    double noise = 0.0;
+    // Negative means that the metric was not requested. A valid metric score
+    // is always in [0, 1].
+    double blockiness = -1.0;
+    double banding = -1.0;
+    double blur = -1.0;
+    double noise = -1.0;
     double flicker = -1.0;
     double average_qp = -1.0;
+    std::vector<QualitySpatialRegion> spatial_regions;
 };
 
 struct QualityExecutionInfo {
@@ -128,6 +154,15 @@ const char* quality_cpu_dispatch_name();
 double measure_banding_proxy(const LumaPlaneView& plane);
 double measure_banding_proxy(const LumaPlaneView& plane,
                              QualityCpuMode mode);
+BandingMeasurement measure_banding_with_regions(
+    const LumaPlaneView& plane);
+BandingMeasurement measure_banding_with_regions(
+    const LumaPlaneView& plane,
+    QualityCpuMode mode);
+BandingMeasurement measure_banding_with_regions(
+    const LumaPlaneView& plane,
+    QualityCpuMode mode,
+    bool collect_spatial_regions);
 double measure_blur_proxy(const LumaPlaneView& plane);
 double measure_blur_proxy(const LumaPlaneView& plane,
                           QualityCpuMode mode);

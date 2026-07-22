@@ -242,6 +242,7 @@ std::shared_ptr<OwnedLumaPlane> copy_luma_plane(
 struct MetricTaskResult {
     double score = 0.0;
     double elapsed_ms = 0.0;
+    std::vector<QualitySpatialRegion> spatial_regions;
 };
 
 class QualityThreadPool {
@@ -354,6 +355,43 @@ bool analyze_video_quality(const std::string& video_path,
                            QualityReport& report,
                            std::string& error) {
     report = QualityReport{};
+    auto cancellation_requested = [&]() {
+        return options.cancel_requested && options.cancel_requested();
+    };
+    int64_t progress_duration_us = 0;
+    int64_t progress_pts_us = 0;
+    uint64_t progress_sampled_frames = 0;
+    bool progress_has_pts = false;
+    auto emit_progress = [&](QualityAnalysisPhase phase) {
+        if (!options.progress_callback) {
+            return;
+        }
+        QualityAnalysisProgress progress;
+        progress.phase = phase;
+        progress.packet_count = report.stream.packet_count;
+        progress.packet_bytes = report.stream.packet_bytes;
+        progress.decoded_frames = report.stream.decoded_frames;
+        progress.sampled_frames = progress_sampled_frames;
+        progress.pts_us = progress_pts_us;
+        progress.duration_us = progress_duration_us;
+        progress.has_pts = progress_has_pts;
+        progress.has_duration = progress_duration_us > 0;
+        try {
+            options.progress_callback(progress);
+        } catch (...) {
+            // Observability must never change the analysis result.
+        }
+    };
+    if (cancellation_requested()) {
+        error = kQualityAnalysisCancelledError;
+        return false;
+    }
+    emit_progress(QualityAnalysisPhase::Opening);
+    if (options.metric_mask == 0 ||
+        (options.metric_mask & ~kQualityAllMetricMask) != 0) {
+        error = "quality metric mask is empty or contains unknown metrics";
+        return false;
+    }
     report.sample_interval_us = std::max<int64_t>(
         0, options.sample_interval_us);
     report.max_samples = options.max_samples;
@@ -375,7 +413,17 @@ bool analyze_video_quality(const std::string& video_path,
     };
 
     MediaInputOpenOptions input_options;
+    input_options.interrupt_requested = options.cancel_requested;
     if (!input_session.open(video_path, input_options, error)) {
+        if (cancellation_requested()) {
+            error = kQualityAnalysisCancelledError;
+        }
+        cleanup();
+        return false;
+    }
+    progress_duration_us = input_session.stats().duration_us;
+    if (cancellation_requested()) {
+        error = kQualityAnalysisCancelledError;
         cleanup();
         return false;
     }
@@ -455,7 +503,9 @@ bool analyze_video_quality(const std::string& video_path,
     bool decode_failed = false;
     bool quality_backend_failed = false;
     bool cpu_backend_failed = false;
+    bool cancelled = false;
     uint64_t accepted_samples = 0;
+    uint64_t last_progress_decoded_frames = 0;
     const AVRational frame_rate =
         input_session.frame_rate_for_stream(stream_index);
     const uint32_t cpu_worker_count =
@@ -463,6 +513,8 @@ bool analyze_video_quality(const std::string& video_path,
     const uint32_t cpu_in_flight =
         resolve_cpu_in_flight(
             options.cpu_in_flight, cpu_worker_count);
+    const bool has_spatial_metrics =
+        (options.metric_mask & kQualitySpatialMetricMask) != 0;
     report.execution.cpu_dispatch =
         options.cpu_mode == QualityCpuMode::Scalar
             ? "scalar-forced"
@@ -476,7 +528,7 @@ bool analyze_video_quality(const std::string& video_path,
     report.execution.cpu_workers = cpu_worker_count;
     report.execution.cpu_in_flight = cpu_in_flight;
     report.execution.scheduling =
-        "bounded-multi-frame-four-metric-tasks";
+        "bounded-multi-frame-selected-metric-tasks";
     const std::string decode_diagnostic =
         std::string("inputCore=shared-native; inputBackend=") +
         input_session.backend_name() +
@@ -511,7 +563,7 @@ bool analyze_video_quality(const std::string& video_path,
 
     std::unique_ptr<WgpuQualityBackend> wgpu_backend;
     if (options.backend == QualityComputeBackend::Cpu) {
-        if (!ensure_cpu_pool()) {
+        if (has_spatial_metrics && !ensure_cpu_pool()) {
             cleanup();
             return false;
         }
@@ -527,6 +579,12 @@ bool analyze_video_quality(const std::string& video_path,
             "; avx2Kernels=u8,u16,p010"
             "(blockiness,banding,blur,noise); "
             "scalarFallback=unsupported-layouts-and-temporal";
+        report.execution.resolved_backend = report.backend;
+    } else if (!has_spatial_metrics) {
+        report.backend = kQualityBackendName;
+        report.backend_diagnostic =
+            "temporal-only metric selection; compute backend not required; " +
+            decode_diagnostic;
         report.execution.resolved_backend = report.backend;
     } else {
         std::string wgpu_error;
@@ -581,23 +639,44 @@ bool analyze_video_quality(const std::string& video_path,
     struct PendingCpuSample {
         FrameQualitySample sample;
         std::array<std::future<MetricTaskResult>, 4> metrics;
+        std::array<bool, 4> active{};
     };
     std::deque<PendingCpuSample> pending_cpu_samples;
 
     auto commit_sample = [&](FrameQualitySample sample) {
-        blockiness_values.push_back(sample.blockiness);
-        banding_values.push_back(sample.banding);
-        blur_values.push_back(sample.blur);
-        noise_values.push_back(sample.noise);
+        if (sample.blockiness >= 0.0) {
+            blockiness_values.push_back(sample.blockiness);
+        }
+        if (sample.banding >= 0.0) {
+            banding_values.push_back(sample.banding);
+        }
+        if (sample.blur >= 0.0) {
+            blur_values.push_back(sample.blur);
+        }
+        if (sample.noise >= 0.0) {
+            noise_values.push_back(sample.noise);
+        }
         report.timeline.push_back(std::move(sample));
     };
 
     auto commit_gpu_sample = [&](PendingGpuSample pending,
                                  const WgpuQualityScores& scores) {
-        pending.sample.blockiness = scores.blockiness;
-        pending.sample.banding = scores.banding;
-        pending.sample.blur = scores.blur;
-        pending.sample.noise = scores.noise;
+        if (quality_metric_enabled(
+                options.metric_mask, QualityMetricBlockiness)) {
+            pending.sample.blockiness = scores.blockiness;
+        }
+        if (quality_metric_enabled(
+                options.metric_mask, QualityMetricBanding)) {
+            pending.sample.banding = scores.banding;
+        }
+        if (quality_metric_enabled(
+                options.metric_mask, QualityMetricBlur)) {
+            pending.sample.blur = scores.blur;
+        }
+        if (quality_metric_enabled(
+                options.metric_mask, QualityMetricNoise)) {
+            pending.sample.noise = scores.noise;
+        }
         gpu_pack_timings.push_back(scores.pack_ms);
         gpu_submit_timings.push_back(scores.submit_ms);
         gpu_wait_timings.push_back(scores.wait_ms);
@@ -659,8 +738,12 @@ bool analyze_video_quality(const std::string& video_path,
             return true;
         }
         if (!wait) {
-            for (auto& metric :
-                 pending_cpu_samples.front().metrics) {
+            auto& pending = pending_cpu_samples.front();
+            for (size_t index = 0; index < pending.metrics.size(); ++index) {
+                if (!pending.active[index]) {
+                    continue;
+                }
+                auto& metric = pending.metrics[index];
                 if (metric.wait_for(std::chrono::seconds(0)) !=
                     std::future_status::ready) {
                     return true;
@@ -671,23 +754,34 @@ bool analyze_video_quality(const std::string& video_path,
             std::move(pending_cpu_samples.front());
         pending_cpu_samples.pop_front();
         try {
-            const MetricTaskResult blockiness =
-                pending.metrics[0].get();
-            const MetricTaskResult banding =
-                pending.metrics[1].get();
-            const MetricTaskResult blur =
-                pending.metrics[2].get();
-            const MetricTaskResult noise =
-                pending.metrics[3].get();
-            pending.sample.blockiness = blockiness.score;
-            pending.sample.banding = banding.score;
-            pending.sample.blur = blur.score;
-            pending.sample.noise = noise.score;
-            blockiness_timings.push_back(
-                blockiness.elapsed_ms);
-            banding_timings.push_back(banding.elapsed_ms);
-            blur_timings.push_back(blur.elapsed_ms);
-            noise_timings.push_back(noise.elapsed_ms);
+            for (size_t index = 0; index < pending.metrics.size(); ++index) {
+                if (!pending.active[index]) {
+                    continue;
+                }
+                MetricTaskResult result = pending.metrics[index].get();
+                switch (index) {
+                case 0:
+                    pending.sample.blockiness = result.score;
+                    blockiness_timings.push_back(result.elapsed_ms);
+                    break;
+                case 1:
+                    pending.sample.banding = result.score;
+                    pending.sample.spatial_regions =
+                        std::move(result.spatial_regions);
+                    banding_timings.push_back(result.elapsed_ms);
+                    break;
+                case 2:
+                    pending.sample.blur = result.score;
+                    blur_timings.push_back(result.elapsed_ms);
+                    break;
+                case 3:
+                    pending.sample.noise = result.score;
+                    noise_timings.push_back(result.elapsed_ms);
+                    break;
+                default:
+                    throw std::runtime_error("invalid metric result index");
+                }
+            }
             commit_sample(std::move(pending.sample));
             return true;
         } catch (const std::exception& exception) {
@@ -719,6 +813,11 @@ bool analyze_video_quality(const std::string& video_path,
     };
 
     auto process_frame = [&](AVFrame* decoded) {
+        if (cancellation_requested()) {
+            cancelled = true;
+            stop = true;
+            return;
+        }
         if (!collect_ready_gpu() || !collect_ready_cpu()) {
             return;
         }
@@ -734,10 +833,18 @@ bool analyze_video_quality(const std::string& video_path,
             stream_time_base,
             decoded_index,
             frame_rate);
+        progress_pts_us = pts_us;
+        progress_has_pts = true;
+        if (report.stream.decoded_frames == 1 ||
+            report.stream.decoded_frames - last_progress_decoded_frames >= 60) {
+            emit_progress(QualityAnalysisPhase::Decoding);
+            last_progress_decoded_frames = report.stream.decoded_frames;
+        }
         LumaPlaneView luma;
         const bool supported_luma = make_luma_view(decoded, luma);
         double flicker = -1.0;
-        if (supported_luma) {
+        if (supported_luma && quality_metric_enabled(
+                options.metric_mask, QualityMetricFlicker)) {
             const auto temporal_start = std::chrono::steady_clock::now();
             LumaTemporalSignature current_signature;
             if (make_temporal_signature(luma, current_signature)) {
@@ -790,7 +897,7 @@ bool analyze_video_quality(const std::string& video_path,
         sample_result.flicker = flicker;
         sample_result.average_qp = average_qp;
         bool submitted_to_gpu = false;
-        if (wgpu_backend) {
+        if (wgpu_backend && has_spatial_metrics) {
             while (pending_gpu_samples.size() >=
                    wgpu_backend->max_in_flight()) {
                 if (!collect_oldest_gpu(true)) {
@@ -829,7 +936,7 @@ bool analyze_video_quality(const std::string& video_path,
                 wgpu_backend.reset();
             }
         }
-        if (!submitted_to_gpu) {
+        if (!submitted_to_gpu && has_spatial_metrics) {
             if (!ensure_cpu_pool()) {
                 return;
             }
@@ -843,15 +950,20 @@ bool analyze_video_quality(const std::string& video_path,
                 const auto owned_luma = copy_luma_plane(luma);
                 auto metric_task =
                     [owned_luma,
-                     cpu_mode = options.cpu_mode](int metric) {
+                     cpu_mode = options.cpu_mode,
+                     collect_regions = options.collect_spatial_regions](
+                        int metric) {
                         return [owned_luma,
                                 cpu_mode,
+                                collect_regions,
                                 metric]() {
                             const auto start =
                                 std::chrono::steady_clock::now();
                             const LumaPlaneView view =
                                 owned_luma->view();
                             double score = 0.0;
+                            std::vector<QualitySpatialRegion>
+                                spatial_regions;
                             switch (metric) {
                             case 0:
                                 score =
@@ -859,9 +971,19 @@ bool analyze_video_quality(const std::string& video_path,
                                         view, cpu_mode);
                                 break;
                             case 1:
-                                score =
-                                    measure_banding_proxy(
-                                        view, cpu_mode);
+                                {
+                                    if (collect_regions) {
+                                        BandingMeasurement measurement =
+                                            measure_banding_with_regions(
+                                                view, cpu_mode);
+                                        score = measurement.score;
+                                        spatial_regions = std::move(
+                                            measurement.regions);
+                                    } else {
+                                        score = measure_banding_proxy(
+                                            view, cpu_mode);
+                                    }
+                                }
                                 break;
                             case 2:
                                 score =
@@ -885,14 +1007,28 @@ bool analyze_video_quality(const std::string& video_path,
                                     std::chrono::steady_clock::now() -
                                     start)
                                     .count(),
+                                std::move(spatial_regions),
                             };
                         };
-                    };
+                };
                 PendingCpuSample pending;
                 pending.sample = std::move(sample_result);
-                for (int metric = 0; metric < 4; ++metric) {
-                    pending.metrics[static_cast<size_t>(metric)] =
-                        cpu_pool->submit(metric_task(metric));
+                constexpr std::array<QualityMetricFlag, 4> kSpatialMetrics{
+                    QualityMetricBlockiness,
+                    QualityMetricBanding,
+                    QualityMetricBlur,
+                    QualityMetricNoise,
+                };
+                for (size_t metric = 0; metric < kSpatialMetrics.size();
+                     ++metric) {
+                    if (!quality_metric_enabled(
+                            options.metric_mask,
+                            kSpatialMetrics[metric])) {
+                        continue;
+                    }
+                    pending.active[metric] = true;
+                    pending.metrics[metric] = cpu_pool->submit(
+                        metric_task(static_cast<int>(metric)));
                 }
                 pending_cpu_samples.push_back(
                     std::move(pending));
@@ -904,9 +1040,15 @@ bool analyze_video_quality(const std::string& video_path,
                 stop = true;
                 return;
             }
+        } else if (!has_spatial_metrics) {
+            commit_sample(std::move(sample_result));
         }
 
         ++accepted_samples;
+        progress_sampled_frames = accepted_samples;
+        if (accepted_samples == 1) {
+            emit_progress(QualityAnalysisPhase::Decoding);
+        }
         if (options.max_samples > 0 &&
             accepted_samples >= options.max_samples) {
             report.truncated = true;
@@ -916,6 +1058,11 @@ bool analyze_video_quality(const std::string& video_path,
 
     auto receive_frames = [&]() {
         while (!stop) {
+            if (cancellation_requested()) {
+                cancelled = true;
+                stop = true;
+                return true;
+            }
             const int receive_result =
                 decoder_session.receive_frame(frame);
             if (receive_result == AVERROR(EAGAIN) ||
@@ -934,6 +1081,7 @@ bool analyze_video_quality(const std::string& video_path,
     };
 
     int read_result = 0;
+    emit_progress(QualityAnalysisPhase::Decoding);
     while (!stop &&
            (read_result = input_session.read_packet(packet)) >= 0) {
         if (packet->stream_index == stream_index) {
@@ -967,6 +1115,14 @@ bool analyze_video_quality(const std::string& video_path,
         if (decode_failed) {
             break;
         }
+        if (cancellation_requested()) {
+            cancelled = true;
+            stop = true;
+        }
+    }
+    if (cancellation_requested()) {
+        cancelled = true;
+        stop = true;
     }
     if (!stop && !decode_failed &&
         read_result < 0 && read_result != AVERROR_EOF) {
@@ -985,17 +1141,42 @@ bool analyze_video_quality(const std::string& video_path,
         }
     }
 
+    emit_progress(QualityAnalysisPhase::Finalizing);
+
+    if (cancelled) {
+        pending_gpu_samples.clear();
+        pending_cpu_samples.clear();
+        error = kQualityAnalysisCancelledError;
+        cleanup();
+        return false;
+    }
+
     while (!pending_gpu_samples.empty() &&
            !quality_backend_failed) {
         if (!collect_oldest_gpu(true)) {
             break;
         }
+        if (cancellation_requested()) {
+            cancelled = true;
+            break;
+        }
     }
     while (!pending_cpu_samples.empty() &&
-           !cpu_backend_failed) {
+           !cpu_backend_failed && !cancelled) {
         if (!collect_oldest_cpu(true)) {
             break;
         }
+        if (cancellation_requested()) {
+            cancelled = true;
+            break;
+        }
+    }
+    if (cancelled) {
+        pending_gpu_samples.clear();
+        pending_cpu_samples.clear();
+        error = kQualityAnalysisCancelledError;
+        cleanup();
+        return false;
     }
     std::stable_sort(
         report.timeline.begin(),
@@ -1044,12 +1225,22 @@ bool analyze_video_quality(const std::string& video_path,
     report.timings.gpu_latency_ms =
         summarize_distribution(std::move(gpu_latency_timings));
 
-    if (quality_backend_failed &&
+    if (cancellation_requested()) {
+        error = kQualityAnalysisCancelledError;
+        cleanup();
+        return false;
+    }
+
+    if (!cancelled && quality_backend_failed &&
         options.backend == QualityComputeBackend::Auto) {
         const std::string gpu_failure = error;
         cleanup();
         QualityVideoAnalyzerOptions cpu_options = options;
         cpu_options.backend = QualityComputeBackend::Cpu;
+        // Preserve one monotonic lifecycle stream for the outer request. A
+        // backend restart is recorded in the final report diagnostic rather
+        // than resetting progress counters/phases mid-stream.
+        cpu_options.progress_callback = {};
         QualityReport cpu_report;
         std::string cpu_error;
         if (analyze_video_quality(

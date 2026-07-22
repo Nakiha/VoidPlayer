@@ -31,6 +31,7 @@ endif()
 
 add_library(analysis_lib STATIC
     ${VOID_ANALYSIS_SOURCES}
+    "${CMAKE_CURRENT_SOURCE_DIR}/quality/quality_event_aggregator.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/quality/quality_video_analyzer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/quality/quality_wgpu_backend_stub.cpp"
 )

@@ -310,32 +310,54 @@ const char* quality_cpu_dispatch_name() {
 }
 
 double measure_banding_proxy(const LumaPlaneView& plane) {
-    return measure_banding_proxy(plane, QualityCpuMode::Auto);
+    return measure_banding_with_regions(plane, QualityCpuMode::Auto).score;
 }
 
-double measure_banding_proxy(const LumaPlaneView& plane,
-                             QualityCpuMode mode) {
-    if (!is_valid_luma_plane(plane) || plane.width < 8 ||
-        plane.height < 8) {
-        return 0.0;
+double measure_banding_proxy(const LumaPlaneView& plane, QualityCpuMode mode) {
+    return measure_banding_with_regions(plane, mode, false).score;
+}
+
+BandingMeasurement measure_banding_with_regions(const LumaPlaneView& plane) {
+    return measure_banding_with_regions(plane, QualityCpuMode::Auto);
+}
+
+BandingMeasurement measure_banding_with_regions(const LumaPlaneView& plane,
+                                                QualityCpuMode mode) {
+    return measure_banding_with_regions(plane, mode, true);
+}
+
+BandingMeasurement measure_banding_with_regions(
+    const LumaPlaneView& plane,
+    QualityCpuMode mode,
+    bool collect_spatial_regions) {
+    BandingMeasurement measurement;
+    if (!is_valid_luma_plane(plane) || plane.width < 8 || plane.height < 8) {
+        return measurement;
     }
 
     constexpr int kTileSize = 16;
+    constexpr double kMinimumRegionScore = 0.20;
+    constexpr uint32_t kMinimumRegionTiles = 4;
+    constexpr uint32_t kMinimumRegionTileSpan = 2;
+    constexpr double kMinimumRegionFillRatio = 0.50;
+    constexpr size_t kMaximumRegions = 8;
     const bool use_avx2 =
-        mode == QualityCpuMode::Auto &&
-        cpu::avx2_is_available();
+        mode == QualityCpuMode::Auto && cpu::avx2_is_available();
     double weighted_score = 0.0;
     uint64_t weighted_pixels = 0;
+    const int tile_columns = (plane.width + kTileSize - 1) / kTileSize;
+    const int tile_rows = (plane.height + kTileSize - 1) / kTileSize;
+    std::vector<double> tile_scores(
+        static_cast<size_t>(tile_columns * tile_rows), -1.0);
+    double maximum_tile_score = 0.0;
 
     for (int tile_y = 0; tile_y < plane.height; tile_y += kTileSize) {
-        const int tile_height =
-            std::min(kTileSize, plane.height - tile_y);
+        const int tile_height = std::min(kTileSize, plane.height - tile_y);
         if (tile_height < 8) {
             continue;
         }
         for (int tile_x = 0; tile_x < plane.width; tile_x += kTileSize) {
-            const int tile_width =
-                std::min(kTileSize, plane.width - tile_x);
+            const int tile_width = std::min(kTileSize, plane.width - tile_x);
             if (tile_width < 8) {
                 continue;
             }
@@ -349,21 +371,15 @@ double measure_banding_proxy(const LumaPlaneView& plane,
             cpu::BandingTileStats avx2_stats;
             const bool used_avx2 =
                 use_avx2 &&
-                cpu::banding_tile_avx2_u8(
-                    plane,
-                    tile_x,
-                    tile_y,
-                    tile_width,
-                    tile_height,
-                    avx2_stats);
+                cpu::banding_tile_avx2_u8(plane, tile_x, tile_y, tile_width,
+                                          tile_height, avx2_stats);
             int unique_values = 0;
             if (used_avx2) {
                 minimum = avx2_stats.minimum;
                 maximum = avx2_stats.maximum;
                 weak_contours = avx2_stats.weak_contours;
                 edge_count = avx2_stats.edge_count;
-                gradient_sum =
-                    static_cast<double>(avx2_stats.gradient_sum);
+                gradient_sum = static_cast<double>(avx2_stats.gradient_sum);
                 for (uint64_t bits : avx2_stats.present) {
                     while (bits != 0) {
                         bits &= bits - 1;
@@ -373,37 +389,29 @@ double measure_banding_proxy(const LumaPlaneView& plane,
             } else {
                 for (int y = 0; y < tile_height; ++y) {
                     for (int x = 0; x < tile_width; ++x) {
-                        const int value = read_sample_u8(
-                            plane, tile_x + x, tile_y + y);
+                        const int value =
+                            read_sample_u8(plane, tile_x + x, tile_y + y);
                         present[static_cast<size_t>(value)] = true;
                         minimum = std::min(minimum, value);
                         maximum = std::max(maximum, value);
 
                         if (x + 1 < tile_width) {
                             const int next = read_sample_u8(
-                                plane,
-                                tile_x + x + 1,
-                                tile_y + y);
-                            const int difference =
-                                std::abs(value - next);
+                                plane, tile_x + x + 1, tile_y + y);
+                            const int difference = std::abs(value - next);
                             gradient_sum += difference;
                             ++edge_count;
-                            if (difference >= 1 &&
-                                difference <= 8) {
+                            if (difference >= 1 && difference <= 8) {
                                 ++weak_contours;
                             }
                         }
                         if (y + 1 < tile_height) {
-                            const int next = read_sample_u8(
-                                plane,
-                                tile_x + x,
-                                tile_y + y + 1);
-                            const int difference =
-                                std::abs(value - next);
+                            const int next = read_sample_u8(plane, tile_x + x,
+                                                            tile_y + y + 1);
+                            const int difference = std::abs(value - next);
                             gradient_sum += difference;
                             ++edge_count;
-                            if (difference >= 1 &&
-                                difference <= 8) {
+                            if (difference >= 1 && difference <= 8) {
                                 ++weak_contours;
                             }
                         }
@@ -415,8 +423,8 @@ double measure_banding_proxy(const LumaPlaneView& plane,
                 }
             }
             const int dynamic_range = maximum - minimum;
-            if (unique_values < 2 || dynamic_range < 2 ||
-                dynamic_range > 32 || edge_count == 0) {
+            if (unique_values < 2 || dynamic_range < 2 || dynamic_range > 32 ||
+                edge_count == 0) {
                 continue;
             }
 
@@ -428,15 +436,17 @@ double measure_banding_proxy(const LumaPlaneView& plane,
 
             const double quantization =
                 clamp_unit((12.0 - unique_values) / 10.0);
-            const double range_weight =
-                clamp_unit(dynamic_range / 16.0);
-            const double contour_density =
-                static_cast<double>(weak_contours) /
-                static_cast<double>(edge_count);
-            const double contour_weight =
-                clamp_unit(contour_density * 8.0);
+            const double range_weight = clamp_unit(dynamic_range / 16.0);
+            const double contour_density = static_cast<double>(weak_contours) /
+                                           static_cast<double>(edge_count);
+            const double contour_weight = clamp_unit(contour_density * 8.0);
             const double tile_score =
                 quantization * range_weight * contour_weight;
+            const int tile_column = tile_x / kTileSize;
+            const int tile_row = tile_y / kTileSize;
+            tile_scores[static_cast<size_t>(tile_row * tile_columns +
+                                            tile_column)] = tile_score;
+            maximum_tile_score = std::max(maximum_tile_score, tile_score);
             const uint64_t pixels =
                 static_cast<uint64_t>(tile_width) * tile_height;
             weighted_score += tile_score * static_cast<double>(pixels);
@@ -445,10 +455,146 @@ double measure_banding_proxy(const LumaPlaneView& plane,
     }
 
     if (weighted_pixels == 0) {
-        return 0.0;
+        return measurement;
     }
-    return clamp_unit(weighted_score /
-                      static_cast<double>(weighted_pixels));
+    measurement.score =
+        clamp_unit(weighted_score / static_cast<double>(weighted_pixels));
+
+    if (!collect_spatial_regions) {
+        return measurement;
+    }
+
+    if (maximum_tile_score < kMinimumRegionScore) {
+        return measurement;
+    }
+    const double detection_threshold =
+        std::max(kMinimumRegionScore, maximum_tile_score * 0.55);
+    std::vector<uint8_t> visited(tile_scores.size(), 0);
+    const std::array<std::array<int, 2>, 4> neighbors{{
+        {{-1, 0}},
+        {{1, 0}},
+        {{0, -1}},
+        {{0, 1}},
+    }};
+    for (int start_row = 0; start_row < tile_rows; ++start_row) {
+        for (int start_column = 0; start_column < tile_columns;
+             ++start_column) {
+            const size_t start_index =
+                static_cast<size_t>(start_row * tile_columns + start_column);
+            if (visited[start_index] != 0 ||
+                tile_scores[start_index] < detection_threshold) {
+                continue;
+            }
+
+            std::vector<std::array<int, 2>> pending{{
+                {start_column, start_row},
+            }};
+            visited[start_index] = 1;
+            int minimum_column = start_column;
+            int maximum_column = start_column;
+            int minimum_row = start_row;
+            int maximum_row = start_row;
+            double component_weighted_score = 0.0;
+            uint64_t component_pixels = 0;
+            uint32_t component_tiles = 0;
+
+            while (!pending.empty()) {
+                const std::array<int, 2> tile = pending.back();
+                pending.pop_back();
+                const int column = tile[0];
+                const int row = tile[1];
+                const size_t index =
+                    static_cast<size_t>(row * tile_columns + column);
+                const int tile_x = column * kTileSize;
+                const int tile_y = row * kTileSize;
+                const int tile_width =
+                    std::min(kTileSize, plane.width - tile_x);
+                const int tile_height =
+                    std::min(kTileSize, plane.height - tile_y);
+                const uint64_t pixels =
+                    static_cast<uint64_t>(tile_width) * tile_height;
+                component_weighted_score +=
+                    tile_scores[index] * static_cast<double>(pixels);
+                component_pixels += pixels;
+                ++component_tiles;
+                minimum_column = std::min(minimum_column, column);
+                maximum_column = std::max(maximum_column, column);
+                minimum_row = std::min(minimum_row, row);
+                maximum_row = std::max(maximum_row, row);
+
+                for (const auto& neighbor : neighbors) {
+                    const int next_column = column + neighbor[0];
+                    const int next_row = row + neighbor[1];
+                    if (next_column < 0 || next_column >= tile_columns ||
+                        next_row < 0 || next_row >= tile_rows) {
+                        continue;
+                    }
+                    const size_t next_index = static_cast<size_t>(
+                        next_row * tile_columns + next_column);
+                    if (visited[next_index] != 0 ||
+                        tile_scores[next_index] < detection_threshold) {
+                        continue;
+                    }
+                    visited[next_index] = 1;
+                    pending.push_back({next_column, next_row});
+                }
+            }
+
+            const uint32_t span_columns = static_cast<uint32_t>(
+                maximum_column - minimum_column + 1);
+            const uint32_t span_rows = static_cast<uint32_t>(
+                maximum_row - minimum_row + 1);
+            const uint64_t bounding_tiles =
+                static_cast<uint64_t>(span_columns) * span_rows;
+            const double fill_ratio =
+                bounding_tiles == 0
+                    ? 0.0
+                    : static_cast<double>(component_tiles) /
+                          static_cast<double>(bounding_tiles);
+            if (component_tiles < kMinimumRegionTiles ||
+                span_columns < kMinimumRegionTileSpan ||
+                span_rows < kMinimumRegionTileSpan ||
+                fill_ratio < kMinimumRegionFillRatio ||
+                component_pixels == 0) {
+                continue;
+            }
+            QualitySpatialRegion region;
+            region.metric = "banding";
+            region.score = clamp_unit(component_weighted_score /
+                                      static_cast<double>(component_pixels));
+            region.detection_threshold = detection_threshold;
+            region.x = minimum_column * kTileSize;
+            region.y = minimum_row * kTileSize;
+            region.width =
+                std::min(plane.width, (maximum_column + 1) * kTileSize) -
+                region.x;
+            region.height =
+                std::min(plane.height, (maximum_row + 1) * kTileSize) -
+                region.y;
+            region.tile_count = component_tiles;
+            region.tile_span_columns = span_columns;
+            region.tile_span_rows = span_rows;
+            region.fill_ratio = fill_ratio;
+            measurement.regions.push_back(std::move(region));
+        }
+    }
+
+    std::sort(measurement.regions.begin(), measurement.regions.end(),
+              [](const QualitySpatialRegion& left,
+                 const QualitySpatialRegion& right) {
+                  if (left.score != right.score) {
+                      return left.score > right.score;
+                  }
+                  const int64_t left_area =
+                      static_cast<int64_t>(left.width) * left.height;
+                  const int64_t right_area =
+                      static_cast<int64_t>(right.width) * right.height;
+                  return left_area > right_area;
+              });
+    if (measurement.regions.size() > kMaximumRegions) {
+        measurement.regions.resize(kMaximumRegions);
+    }
+    return measurement;
 }
 
 double measure_blur_proxy(const LumaPlaneView& plane) {

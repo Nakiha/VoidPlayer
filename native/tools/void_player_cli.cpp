@@ -5,6 +5,7 @@
 #include "analysis/parsers/binary_types.h"
 #include "analysis/parsers/vac2_parser.h"
 #include "analysis/parsers/vachunk_parser.h"
+#include "analysis/quality/quality_event_aggregator.h"
 #include "analysis/quality/quality_video_analyzer.h"
 #include "common/win_utf8.h"
 #include "tools/analysis_overlay_gpu_benchmark.h"
@@ -13,13 +14,17 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
+#include <csignal>
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -29,6 +34,13 @@
 #include <vector>
 
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <Windows.h>
 #include <process.h>
 #else
 #include <sys/wait.h>
@@ -43,6 +55,69 @@ void configure_cli_logging() {
     spdlog::set_default_logger(
         spdlog::stderr_logger_mt("void_player_cli"));
 }
+
+constexpr uint32_t kQualityCliSchemaVersion = 5;
+constexpr const char* kQualityCliSchemaId = "quality-output-v5";
+constexpr uint32_t kQualityProcessProtocolVersion = 1;
+
+volatile std::sig_atomic_t g_quality_cancel_requested = 0;
+
+#ifdef _WIN32
+BOOL WINAPI quality_console_control_handler(DWORD control_type) {
+    if (control_type == CTRL_C_EVENT ||
+        control_type == CTRL_BREAK_EVENT) {
+        g_quality_cancel_requested = 1;
+        return TRUE;
+    }
+    return FALSE;
+}
+#else
+void quality_signal_handler(int) {
+    g_quality_cancel_requested = 1;
+}
+#endif
+
+class QualityCancellationScope {
+public:
+    QualityCancellationScope() {
+        g_quality_cancel_requested = 0;
+#ifdef _WIN32
+        installed_ = SetConsoleCtrlHandler(
+            quality_console_control_handler, TRUE) != FALSE;
+#else
+        previous_int_ = std::signal(SIGINT, quality_signal_handler);
+        previous_term_ = std::signal(SIGTERM, quality_signal_handler);
+        installed_ = previous_int_ != SIG_ERR && previous_term_ != SIG_ERR;
+#endif
+    }
+
+    ~QualityCancellationScope() {
+#ifdef _WIN32
+        if (installed_) {
+            SetConsoleCtrlHandler(quality_console_control_handler, FALSE);
+        }
+#else
+        if (previous_int_ != SIG_ERR) {
+            std::signal(SIGINT, previous_int_);
+        }
+        if (previous_term_ != SIG_ERR) {
+            std::signal(SIGTERM, previous_term_);
+        }
+#endif
+    }
+
+    bool requested() const noexcept {
+        return g_quality_cancel_requested != 0;
+    }
+
+private:
+    bool installed_ = false;
+#ifndef _WIN32
+    using SignalHandler = void (*)(int);
+    SignalHandler previous_int_ = SIG_ERR;
+    SignalHandler previous_term_ = SIG_ERR;
+#endif
+};
 
 constexpr uint64_t kOverlayVachunkFeatureFlags =
     VACHUNK_FEATURE_CU_GEOMETRY |
@@ -86,6 +161,10 @@ struct CliOptions {
     std::string mode = "bitrate";
     std::string quality_backend = "auto";
     std::string quality_cpu_mode = "auto";
+    std::string quality_metrics = "all";
+    std::string quality_regions = "full";
+    std::string quality_events = "candidates";
+    std::string quality_request_id;
     bool quality_summary_only = false;
     bool quality_jsonl = false;
     bool with_grid = false;
@@ -135,14 +214,454 @@ std::string distribution_json(
     return out.str();
 }
 
+struct QualityMetricSpec {
+    const char* name;
+    vr::analysis::quality::QualityMetricFlag flag;
+};
+
+constexpr std::array<QualityMetricSpec, 5> kQualityMetricSpecs{{
+    {"blockiness", vr::analysis::quality::QualityMetricBlockiness},
+    {"banding", vr::analysis::quality::QualityMetricBanding},
+    {"blur", vr::analysis::quality::QualityMetricBlur},
+    {"noise", vr::analysis::quality::QualityMetricNoise},
+    {"flicker", vr::analysis::quality::QualityMetricFlicker},
+}};
+
+bool parse_quality_metric_mask(const std::string& text,
+                               uint32_t& metric_mask) {
+    if (text == "all") {
+        metric_mask = vr::analysis::quality::kQualityAllMetricMask;
+        return true;
+    }
+    metric_mask = 0;
+    size_t begin = 0;
+    while (begin <= text.size()) {
+        const size_t end = text.find(',', begin);
+        const std::string name = text.substr(
+            begin,
+            end == std::string::npos ? std::string::npos : end - begin);
+        const auto match = std::find_if(
+            kQualityMetricSpecs.begin(),
+            kQualityMetricSpecs.end(),
+            [&](const QualityMetricSpec& spec) { return name == spec.name; });
+        if (match == kQualityMetricSpecs.end()) {
+            metric_mask = 0;
+            return false;
+        }
+        const uint32_t flag = static_cast<uint32_t>(match->flag);
+        if ((metric_mask & flag) != 0) {
+            metric_mask = 0;
+            return false;
+        }
+        metric_mask |= flag;
+        if (end == std::string::npos) {
+            break;
+        }
+        begin = end + 1;
+    }
+    return metric_mask != 0;
+}
+
+void write_selected_metrics_json(std::ostream& out, uint32_t metric_mask) {
+    out << "[";
+    bool wrote = false;
+    for (const auto& spec : kQualityMetricSpecs) {
+        if (!vr::analysis::quality::quality_metric_enabled(
+                metric_mask, spec.flag)) {
+            continue;
+        }
+        if (wrote) {
+            out << ",";
+        }
+        out << "\"" << spec.name << "\"";
+        wrote = true;
+    }
+    out << "]";
+}
+
+std::string selected_metrics_canonical(uint32_t metric_mask) {
+    std::string result;
+    for (const auto& spec : kQualityMetricSpecs) {
+        if (!vr::analysis::quality::quality_metric_enabled(
+                metric_mask, spec.flag)) {
+            continue;
+        }
+        if (!result.empty()) {
+            result += ',';
+        }
+        result += spec.name;
+    }
+    return result;
+}
+
+std::string fnv1a64_digest(const std::string& value) {
+    uint64_t hash = 14695981039346656037ull;
+    for (const unsigned char byte : value) {
+        hash ^= byte;
+        hash *= 1099511628211ull;
+    }
+    std::ostringstream out;
+    out << "fnv1a64:" << std::hex << std::setw(16)
+        << std::setfill('0') << hash;
+    return out.str();
+}
+
+struct LocalInputIdentity {
+    std::string normalized_path;
+    uint64_t size_bytes = 0;
+    std::string mtime_token;
+    std::string digest;
+};
+
+bool same_local_input_identity(const LocalInputIdentity& left,
+                               const LocalInputIdentity& right) {
+    return left.normalized_path == right.normalized_path &&
+           left.size_bytes == right.size_bytes &&
+           left.mtime_token == right.mtime_token &&
+           left.digest == right.digest;
+}
+
+bool read_local_input_identity(const std::string& input,
+                               LocalInputIdentity& identity,
+                               std::string& error) {
+    const auto source_path = vr::win_utf8::path_from_utf8(input);
+    std::error_code ec;
+    std::filesystem::path normalized =
+        std::filesystem::weakly_canonical(source_path, ec);
+    if (ec) {
+        ec.clear();
+        normalized = std::filesystem::absolute(source_path, ec);
+    }
+    if (ec) {
+        error = "failed to normalize input path: " + ec.message();
+        return false;
+    }
+    const auto size = std::filesystem::file_size(normalized, ec);
+    if (ec) {
+        error = "failed to read input size: " + ec.message();
+        return false;
+    }
+    const auto write_time = std::filesystem::last_write_time(normalized, ec);
+    if (ec) {
+        error = "failed to read input modification time: " + ec.message();
+        return false;
+    }
+    identity.normalized_path =
+        vr::win_utf8::path_to_utf8(normalized.lexically_normal());
+    std::replace(
+        identity.normalized_path.begin(),
+        identity.normalized_path.end(),
+        '\\',
+        '/');
+    identity.size_bytes = static_cast<uint64_t>(size);
+    identity.mtime_token = std::to_string(
+        write_time.time_since_epoch().count());
+    const std::string canonical =
+        "local-file-stat-v1\n" + identity.normalized_path + "\n" +
+        std::to_string(identity.size_bytes) + "\n" + identity.mtime_token;
+    identity.digest = fnv1a64_digest(canonical);
+    return true;
+}
+
+bool valid_quality_request_id(const std::string& value) {
+    if (value.empty() || value.size() > 128) {
+        return false;
+    }
+    return std::all_of(value.begin(), value.end(), [](unsigned char ch) {
+        return ch >= 0x21 && ch <= 0x7e;
+    });
+}
+
+std::string make_quality_request_id() {
+    const auto ticks = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+#ifdef _WIN32
+    const int process_id = _getpid();
+#else
+    const int process_id = static_cast<int>(getpid());
+#endif
+    std::ostringstream out;
+    out << "q-" << std::hex << ticks << "-" << process_id;
+    return out.str();
+}
+
+const char* quality_phase_name(
+    vr::analysis::quality::QualityAnalysisPhase phase) {
+    using vr::analysis::quality::QualityAnalysisPhase;
+    switch (phase) {
+    case QualityAnalysisPhase::Opening:
+        return "opening";
+    case QualityAnalysisPhase::Decoding:
+        return "decoding";
+    case QualityAnalysisPhase::Finalizing:
+        return "finalizing";
+    }
+    return "opening";
+}
+
+void write_quality_progress_json(
+    const std::string& request_id,
+    uint64_t sequence,
+    const vr::analysis::quality::QualityAnalysisProgress& progress) {
+    std::cout << "{"
+              << "\"type\":\"qualityProgress\","
+              << "\"protocolVersion\":"
+              << kQualityProcessProtocolVersion << ","
+              << "\"requestId\":\"" << json_escape(request_id) << "\","
+              << "\"sequence\":" << sequence << ","
+              << "\"phase\":\"" << quality_phase_name(progress.phase)
+              << "\","
+              << "\"packetCount\":" << progress.packet_count << ","
+              << "\"packetBytes\":" << progress.packet_bytes << ","
+              << "\"decodedFrames\":" << progress.decoded_frames << ","
+              << "\"sampledFrames\":" << progress.sampled_frames << ","
+              << "\"ptsUs\":";
+    if (progress.has_pts) {
+        std::cout << progress.pts_us;
+    } else {
+        std::cout << "null";
+    }
+    std::cout << ",\"durationUs\":";
+    if (progress.has_duration) {
+        std::cout << progress.duration_us;
+    } else {
+        std::cout << "null";
+    }
+    std::cout << "}\n" << std::flush;
+}
+
+void write_quality_complete_json(const std::string& request_id,
+                                 size_t frame_sample_records,
+                                 size_t event_records) {
+    std::cout << "{"
+              << "\"type\":\"qualityComplete\","
+              << "\"protocolVersion\":"
+              << kQualityProcessProtocolVersion << ","
+              << "\"requestId\":\"" << json_escape(request_id) << "\","
+              << "\"status\":\"success\","
+              << "\"reportRecords\":1,"
+              << "\"frameSampleRecords\":" << frame_sample_records << ","
+              << "\"eventRecords\":" << event_records
+              << "}\n" << std::flush;
+}
+
+void write_quality_event_json(
+    const std::string& request_id,
+    size_t event_index,
+    const vr::analysis::quality::QualityEvent& event,
+    int video_width,
+    int video_height) {
+    using namespace vr::analysis::quality;
+    std::ostringstream event_id;
+    event_id << "qe-" << std::setw(6) << std::setfill('0')
+             << event_index + 1;
+    std::cout << std::setprecision(10)
+              << "{"
+              << "\"type\":\"qualityEvent\","
+              << "\"eventSchemaVersion\":"
+              << kQualityEventSchemaVersion << ","
+              << "\"eventSchemaId\":\"" << kQualityEventSchemaId << "\","
+              << "\"policyVersion\":\""
+              << kQualityEventPolicyVersion << "\","
+              << "\"metricVersion\":\"" << kQualityMetricVersion << "\","
+              << "\"requestId\":\"" << json_escape(request_id) << "\","
+              << "\"eventId\":\"" << event_id.str() << "\","
+              << "\"metric\":\"" << json_escape(event.metric) << "\","
+              << "\"classification\":\""
+              << quality_event_classification_name(event.classification)
+              << "\","
+              << "\"calibrated\":false,"
+              << "\"direction\":\"higherIsWorse\","
+              << "\"startPtsUs\":" << event.start_pts_us << ","
+              << "\"endPtsUs\":" << event.end_pts_us << ","
+              << "\"peakPtsUs\":" << event.peak_pts_us << ","
+              << "\"startSampleIndex\":"
+              << event.start_sample_index << ","
+              << "\"endSampleIndex\":" << event.end_sample_index << ","
+              << "\"peakSampleIndex\":"
+              << event.peak_sample_index << ","
+              << "\"peakScore\":" << event.peak_score << ","
+              << "\"evidenceSampleCount\":"
+              << event.evidence_sample_count << ","
+              << "\"threshold\":{"
+              << "\"kind\":\""
+              << quality_event_threshold_kind_name(event.threshold.kind)
+              << "\","
+              << "\"appliesTo\":\""
+              << (event.threshold.kind ==
+                          QualityEventThresholdKind::SpatialDetection
+                      ? "regionScore"
+                      : "frameMetric")
+              << "\","
+              << "\"value\":" << event.threshold.value << ","
+              << "\"median\":";
+    if (event.threshold.median >= 0.0) {
+        std::cout << event.threshold.median;
+    } else {
+        std::cout << "null";
+    }
+    std::cout << ",\"mad\":";
+    if (event.threshold.mad >= 0.0) {
+        std::cout << event.threshold.mad;
+    } else {
+        std::cout << "null";
+    }
+    std::cout << ",\"p90\":";
+    if (event.threshold.p90 >= 0.0) {
+        std::cout << event.threshold.p90;
+    } else {
+        std::cout << "null";
+    }
+    std::cout << ",\"robustSigma\":";
+    if (event.threshold.robust_sigma >= 0.0) {
+        std::cout << event.threshold.robust_sigma;
+    } else {
+        std::cout << "null";
+    }
+    std::cout << ",\"sigmaMultiplier\":";
+    if (event.threshold.sigma_multiplier >= 0.0) {
+        std::cout << event.threshold.sigma_multiplier;
+    } else {
+        std::cout << "null";
+    }
+    std::cout << "},\"region\":";
+    if (!event.has_spatial_region) {
+        std::cout << "null";
+    } else {
+        const auto& region = event.spatial_region;
+        const double width =
+            static_cast<double>(std::max(1, video_width));
+        const double height =
+            static_cast<double>(std::max(1, video_height));
+        std::cout << "{"
+                  << "\"metric\":\"" << json_escape(region.metric) << "\","
+                  << "\"score\":" << region.score << ","
+                  << "\"detectionThreshold\":"
+                  << region.detection_threshold << ","
+                  << "\"rect\":{"
+                  << "\"x\":" << region.x / width << ","
+                  << "\"y\":" << region.y / height << ","
+                  << "\"width\":" << region.width / width << ","
+                  << "\"height\":" << region.height / height << "},"
+                  << "\"pixelRect\":{"
+                  << "\"x\":" << region.x << ","
+                  << "\"y\":" << region.y << ","
+                  << "\"width\":" << region.width << ","
+                  << "\"height\":" << region.height << "},"
+                  << "\"tileCount\":" << region.tile_count << ","
+                  << "\"tileSpan\":{"
+                  << "\"columns\":" << region.tile_span_columns << ","
+                  << "\"rows\":" << region.tile_span_rows << "},"
+                  << "\"fillRatio\":" << region.fill_ratio
+                  << "}";
+    }
+    std::cout << "}\n";
+}
+
+void write_optional_score_json(std::ostream& out, double score) {
+    if (score >= 0.0 && std::isfinite(score)) {
+        out << score;
+    } else {
+        out << "null";
+    }
+}
+
+struct QualityRegionSummary {
+    bool available = false;
+    uint64_t sampled_frames = 0;
+    uint64_t frames_with_regions = 0;
+    uint64_t region_count = 0;
+    uint64_t max_regions_per_frame = 0;
+    vr::analysis::quality::DistributionSummary score;
+    vr::analysis::quality::DistributionSummary detection_threshold;
+    vr::analysis::quality::DistributionSummary normalized_area;
+    vr::analysis::quality::DistributionSummary frame_coverage;
+};
+
+QualityRegionSummary summarize_quality_regions(
+    const vr::analysis::quality::QualityReport& report,
+    bool available) {
+    QualityRegionSummary summary;
+    summary.available = available;
+    summary.sampled_frames = report.timeline.size();
+    if (!available) {
+        return summary;
+    }
+    std::vector<double> scores;
+    std::vector<double> thresholds;
+    std::vector<double> areas;
+    std::vector<double> coverage;
+    coverage.reserve(report.timeline.size());
+    const double frame_area =
+        static_cast<double>(std::max(1, report.width)) *
+        static_cast<double>(std::max(1, report.height));
+    for (const auto& sample : report.timeline) {
+        const size_t count = sample.spatial_regions.size();
+        summary.region_count += count;
+        summary.max_regions_per_frame = std::max<uint64_t>(
+            summary.max_regions_per_frame,
+            static_cast<uint64_t>(count));
+        summary.frames_with_regions += count > 0 ? 1 : 0;
+        double sample_coverage = 0.0;
+        for (const auto& region : sample.spatial_regions) {
+            const double area =
+                static_cast<double>(region.width) * region.height /
+                frame_area;
+            scores.push_back(region.score);
+            thresholds.push_back(region.detection_threshold);
+            areas.push_back(area);
+            sample_coverage += area;
+        }
+        coverage.push_back(std::clamp(sample_coverage, 0.0, 1.0));
+    }
+    summary.score = vr::analysis::quality::summarize_distribution(
+        std::move(scores));
+    summary.detection_threshold =
+        vr::analysis::quality::summarize_distribution(
+            std::move(thresholds));
+    summary.normalized_area =
+        vr::analysis::quality::summarize_distribution(std::move(areas));
+    summary.frame_coverage =
+        vr::analysis::quality::summarize_distribution(std::move(coverage));
+    return summary;
+}
+
+void write_quality_region_summary_json(
+    std::ostream& out, const QualityRegionSummary& summary) {
+    out << "{"
+        << "\"available\":" << (summary.available ? "true" : "false")
+        << ",\"metric\":\"banding\""
+        << ",\"sampledFrames\":" << summary.sampled_frames
+        << ",\"framesWithRegions\":" << summary.frames_with_regions
+        << ",\"regionCount\":" << summary.region_count
+        << ",\"maxRegionsPerFrame\":"
+        << summary.max_regions_per_frame
+        << ",\"score\":" << distribution_json(summary.score)
+        << ",\"detectionThreshold\":"
+        << distribution_json(summary.detection_threshold)
+        << ",\"normalizedArea\":"
+        << distribution_json(summary.normalized_area)
+        << ",\"frameCoverage\":"
+        << distribution_json(summary.frame_coverage)
+        << "}";
+}
+
 void write_quality_error_json(const std::string& code,
-                              const std::string& message) {
+                              const std::string& message,
+                              const std::string* request_id = nullptr) {
     std::cout << "{"
               << "\"type\":\"qualityError\","
               << "\"schemaVersion\":"
-              << vr::analysis::quality::kQualityReportSchemaVersion << ","
-              << "\"schemaId\":\"quality-output-v4\","
-              << "\"ok\":false,"
+              << kQualityCliSchemaVersion << ","
+              << "\"schemaId\":\"" << kQualityCliSchemaId << "\","
+              << "\"ok\":false,";
+    if (request_id) {
+        std::cout << "\"protocolVersion\":"
+                  << kQualityProcessProtocolVersion << ","
+                  << "\"requestId\":\""
+                  << json_escape(*request_id) << "\",";
+    }
+    std::cout
               << "\"code\":\"" << json_escape(code) << "\","
               << "\"message\":\"" << json_escape(message) << "\""
               << "}\n";
@@ -165,6 +684,11 @@ void write_metric_definitions_json(std::ostream& out) {
         << "\"direction\":\"higherIsWorse\","
         << "\"unit\":\"normalizedScore\","
         << "\"aggregationScope\":\"sampledFrames\","
+        << "\"spatialLocalization\":\"experimentalTileRegions\","
+        << "\"spatialTileSize\":16,"
+        << "\"spatialRegionAlgorithm\":\"banding-tile-cc-v2\","
+        << "\"minimumRegionTileSpan\":{\"columns\":2,\"rows\":2},"
+        << "\"minimumRegionFillRatio\":0.5,"
         << "\"experimental\":true,"
         << "\"description\":\"quantized plateau and weak-contour proxy\""
         << "},"
@@ -300,29 +824,59 @@ void write_string_array_json(
 }
 
 void write_quality_sample_json(
-    std::ostream& out,
-    const vr::analysis::quality::FrameQualitySample& sample) {
+    std::ostream& out, const vr::analysis::quality::FrameQualitySample& sample,
+    int video_width, int video_height, bool include_regions) {
     out << "{"
         << "\"sampleIndex\":" << sample.sample_index << ","
-        << "\"decodedFrameIndex\":"
-        << sample.decoded_frame_index << ","
+        << "\"decodedFrameIndex\":" << sample.decoded_frame_index << ","
         << "\"ptsUs\":" << sample.pts_us << ","
-        << "\"blockiness\":" << sample.blockiness << ","
-        << "\"banding\":" << sample.banding << ","
-        << "\"blur\":" << sample.blur << ","
-        << "\"noise\":" << sample.noise << ","
-        << "\"flicker\":";
-    if (sample.flicker >= 0.0) {
-        out << sample.flicker;
-    } else {
-        out << "null";
-    }
+        << "\"blockiness\":";
+    write_optional_score_json(out, sample.blockiness);
+    out << ",\"banding\":";
+    write_optional_score_json(out, sample.banding);
+    out << ",\"blur\":";
+    write_optional_score_json(out, sample.blur);
+    out << ",\"noise\":";
+    write_optional_score_json(out, sample.noise);
+    out << ",\"flicker\":";
+    write_optional_score_json(out, sample.flicker);
     out << ",\"averageQp\":";
     if (sample.average_qp >= 0.0) {
         out << sample.average_qp;
     } else {
         out << "null";
     }
+    out << ",\"spatialRegions\":[";
+    const double width = static_cast<double>(std::max(1, video_width));
+    const double height = static_cast<double>(std::max(1, video_height));
+    const size_t region_count =
+        include_regions ? sample.spatial_regions.size() : 0;
+    for (size_t index = 0; index < region_count; ++index) {
+        if (index != 0) {
+            out << ",";
+        }
+        const auto& region = sample.spatial_regions[index];
+        out << "{"
+            << "\"metric\":\"" << json_escape(region.metric) << "\","
+            << "\"score\":" << region.score << ","
+            << "\"detectionThreshold\":" << region.detection_threshold << ","
+            << "\"rect\":{"
+            << "\"x\":" << region.x / width << ","
+            << "\"y\":" << region.y / height << ","
+            << "\"width\":" << region.width / width << ","
+            << "\"height\":" << region.height / height << "},"
+            << "\"pixelRect\":{"
+            << "\"x\":" << region.x << ","
+            << "\"y\":" << region.y << ","
+            << "\"width\":" << region.width << ","
+            << "\"height\":" << region.height << "},"
+            << "\"tileCount\":" << region.tile_count << ","
+            << "\"tileSpan\":{"
+            << "\"columns\":" << region.tile_span_columns << ","
+            << "\"rows\":" << region.tile_span_rows << "},"
+            << "\"fillRatio\":" << region.fill_ratio << "}";
+    }
+    out << "]";
     out << "}";
 }
 
@@ -457,7 +1011,7 @@ void print_usage(std::ostream& out) {
         "  VoidPlayerCli benchmark-overlay-gpu <chunk.vck> --frame N [--width N] [--height N] [--iterations N] [--mode bitrate|qp] [--with-grid] [--json]\n\n"
         "  VoidPlayerCli generate-base --input <video> --cache-root <dir> --hash <hash> [--json]\n"
         "  VoidPlayerCli generate-overlay --input <video> --cache-root <dir> --hash <hash> --start-frame N --end-frame N [--codec h264|hevc|vvc] [--analyzer <exe>] [--json]\n\n"
-        "  VoidPlayerCli score-quality --input <video> [--backend auto|cpu|wgpu] [--cpu-mode auto|scalar] [--decode-threads N] [--cpu-workers N] [--cpu-in-flight N] [--sample-interval-ms N] [--max-samples N] [--json [--summary-only] | --jsonl]\n\n"
+        "  VoidPlayerCli score-quality --input <video> [--metrics all|blockiness,banding,blur,noise,flicker] [--regions none|summary|full] [--events none|candidates] [--backend auto|cpu|wgpu] [--cpu-mode auto|scalar] [--decode-threads N] [--cpu-workers N] [--cpu-in-flight N] [--sample-interval-ms N] [--max-samples N] [--request-id ID] [--json [--summary-only] | --jsonl]\n\n"
         "Examples:\n"
         "  VoidPlayerCli inspect \"%APPDATA%\\VoidPlayer\\cache\\<hash>\\base.vac\"\n"
         "  VoidPlayerCli chunk-frame \"overlay.vck\" --frame 128 --json\n"
@@ -523,6 +1077,14 @@ bool parse_args(const std::vector<std::string>& args, CliOptions& options) {
             options.quality_backend = args[++i];
         } else if (arg == "--cpu-mode" && i + 1 < args.size()) {
             options.quality_cpu_mode = args[++i];
+        } else if (arg == "--metrics" && i + 1 < args.size()) {
+            options.quality_metrics = args[++i];
+        } else if (arg == "--regions" && i + 1 < args.size()) {
+            options.quality_regions = args[++i];
+        } else if (arg == "--events" && i + 1 < args.size()) {
+            options.quality_events = args[++i];
+        } else if (arg == "--request-id" && i + 1 < args.size()) {
+            options.quality_request_id = args[++i];
         } else if (arg == "--generator-revision" && i + 1 < args.size()) {
             if (!parse_u64(args[++i], options.generator_revision)) return false;
         } else if (arg == "--max-cache-bytes" && i + 1 < args.size()) {
@@ -1532,11 +2094,16 @@ int generate_overlay(const CliOptions& options) {
 int score_quality(const CliOptions& options) {
     const bool machine_output =
         options.json || options.quality_jsonl;
+    std::string established_request_id;
+    bool session_emitted = false;
     auto fail = [&](int exit_code,
                     const std::string& code,
                     const std::string& message) {
         if (machine_output) {
-            write_quality_error_json(code, message);
+            write_quality_error_json(
+                code,
+                message,
+                session_emitted ? &established_request_id : nullptr);
         } else {
             std::cerr << message << "\n";
         }
@@ -1563,6 +2130,41 @@ int score_quality(const CliOptions& options) {
             "score-quality requires --input <video> or a video path");
     }
 
+    uint32_t metric_mask = 0;
+    if (!parse_quality_metric_mask(options.quality_metrics, metric_mask)) {
+        return fail(
+            1,
+            "invalid_metrics",
+            "score-quality --metrics must be 'all' or a comma-separated, non-duplicated subset of blockiness,banding,blur,noise,flicker");
+    }
+    if (options.quality_regions != "none" &&
+        options.quality_regions != "summary" &&
+        options.quality_regions != "full") {
+        return fail(
+            1,
+            "invalid_regions",
+            "score-quality --regions must be none, summary, or full");
+    }
+    if (options.quality_events != "none" &&
+        options.quality_events != "candidates") {
+        return fail(
+            1,
+            "invalid_events",
+            "score-quality --events must be none or candidates");
+    }
+    const bool banding_selected =
+        vr::analysis::quality::quality_metric_enabled(
+            metric_mask,
+            vr::analysis::quality::QualityMetricBanding);
+    const bool collect_regions =
+        options.quality_regions != "none" && banding_selected;
+    std::string effective_region_output =
+        collect_regions ? options.quality_regions : "none";
+    if (options.quality_summary_only &&
+        effective_region_output == "full") {
+        effective_region_output = "summary";
+    }
+
     vr::analysis::quality::QualityVideoAnalyzerOptions analyzer_options;
     analyzer_options.sample_interval_us =
         static_cast<int64_t>(options.sample_interval_ms) * 1000;
@@ -1572,6 +2174,8 @@ int score_quality(const CliOptions& options) {
     analyzer_options.cpu_workers = options.quality_cpu_workers;
     analyzer_options.cpu_in_flight =
         options.quality_cpu_in_flight;
+    analyzer_options.metric_mask = metric_mask;
+    analyzer_options.collect_spatial_regions = collect_regions;
     if (options.quality_backend == "cpu") {
         analyzer_options.backend =
             vr::analysis::quality::QualityComputeBackend::Cpu;
@@ -1600,36 +2204,171 @@ int score_quality(const CliOptions& options) {
             "score-quality --cpu-mode must be auto or scalar");
     }
 
+    std::string request_id = options.quality_request_id;
+    if (request_id.empty()) {
+        request_id = make_quality_request_id();
+    } else if (!valid_quality_request_id(request_id)) {
+        return fail(
+            1,
+            "invalid_request_id",
+            "score-quality --request-id must contain 1-128 visible ASCII characters without spaces");
+    }
+
+    LocalInputIdentity input_identity;
+    if (options.quality_jsonl) {
+        std::string identity_error;
+        if (!read_local_input_identity(
+                input, input_identity, identity_error)) {
+            return fail(1, "input_unavailable", identity_error);
+        }
+        const std::string result_key_input =
+            std::string("quality-result-v1\n") +
+            input_identity.digest + "\n" +
+            vr::analysis::quality::kQualityMetricVersion + "\n" +
+            selected_metrics_canonical(metric_mask) + "\n" +
+            effective_region_output + "\n" +
+            options.quality_events + "\n" +
+            vr::analysis::quality::kQualityEventPolicyVersion + "\n" +
+            std::to_string(analyzer_options.sample_interval_us) + "\n" +
+            (analyzer_options.max_samples > 0
+                 ? std::to_string(analyzer_options.max_samples)
+                 : "null");
+        std::cout << "{"
+                  << "\"type\":\"qualitySession\","
+                  << "\"protocolVersion\":"
+                  << kQualityProcessProtocolVersion << ","
+                  << "\"requestId\":\"" << json_escape(request_id)
+                  << "\","
+                  << "\"inputIdentity\":{"
+                  << "\"kind\":\"local-file-stat-v1\","
+                  << "\"normalizedPath\":\""
+                  << json_escape(input_identity.normalized_path) << "\","
+                  << "\"sizeBytes\":" << input_identity.size_bytes << ","
+                  << "\"mtimeToken\":\""
+                  << input_identity.mtime_token << "\","
+                  << "\"digest\":\"" << input_identity.digest << "\"},"
+                  << "\"resultConfig\":{"
+                  << "\"metricVersion\":\""
+                  << vr::analysis::quality::kQualityMetricVersion << "\","
+                  << "\"metrics\":";
+        write_selected_metrics_json(std::cout, metric_mask);
+        std::cout << ",\"regionOutput\":\""
+                  << effective_region_output << "\","
+                  << "\"events\":\"" << options.quality_events << "\","
+                  << "\"eventPolicyVersion\":\""
+                  << vr::analysis::quality::kQualityEventPolicyVersion << "\","
+                  << "\"sampleIntervalUs\":"
+                  << analyzer_options.sample_interval_us << ","
+                  << "\"maxSamples\":";
+        if (analyzer_options.max_samples > 0) {
+            std::cout << analyzer_options.max_samples;
+        } else {
+            std::cout << "null";
+        }
+        std::cout << "},\"executionConfig\":{"
+                  << "\"backend\":\"" << options.quality_backend << "\","
+                  << "\"cpuMode\":\"" << options.quality_cpu_mode << "\","
+                  << "\"decodeThreads\":"
+                  << analyzer_options.decode_threads << ","
+                  << "\"cpuWorkers\":" << analyzer_options.cpu_workers << ","
+                  << "\"cpuInFlight\":"
+                  << analyzer_options.cpu_in_flight << "},"
+                  << "\"resultKey\":\""
+                  << fnv1a64_digest(result_key_input) << "\""
+                  << "}\n" << std::flush;
+        established_request_id = request_id;
+        session_emitted = true;
+    }
+
+    QualityCancellationScope cancellation;
+    analyzer_options.cancel_requested = [&cancellation]() {
+        return cancellation.requested();
+    };
+    uint64_t progress_sequence = 0;
+    if (options.quality_jsonl) {
+        analyzer_options.progress_callback =
+            [&](const vr::analysis::quality::QualityAnalysisProgress& progress) {
+                write_quality_progress_json(
+                    request_id, progress_sequence++, progress);
+            };
+    }
+
     vr::analysis::quality::QualityReport report;
     std::string error;
     const auto start = std::chrono::steady_clock::now();
     if (!vr::analysis::quality::analyze_video_quality(
             input, analyzer_options, report, error)) {
+        if (cancellation.requested() ||
+            error == vr::analysis::quality::kQualityAnalysisCancelledError) {
+            return fail(130, "cancelled", "Quality analysis cancelled");
+        }
         return fail(
             2,
             "analysis_failed",
             "Quality analysis failed: " + error);
     }
+    if (options.quality_jsonl) {
+        LocalInputIdentity completed_identity;
+        std::string identity_error;
+        if (!read_local_input_identity(
+                input, completed_identity, identity_error) ||
+            !same_local_input_identity(
+                input_identity, completed_identity)) {
+            return fail(
+                2,
+                "input_changed",
+                "Input identity changed during quality analysis; result discarded");
+        }
+    }
     const double elapsed_ms =
         std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - start)
             .count();
+    const QualityRegionSummary region_summary =
+        summarize_quality_regions(report, collect_regions);
 
     if (machine_output) {
         const bool inline_timeline =
             options.json && !options.quality_summary_only;
         const bool jsonl_timeline = options.quality_jsonl;
+        const bool include_region_details =
+            effective_region_output == "full" &&
+            (inline_timeline || jsonl_timeline);
+        std::vector<vr::analysis::quality::QualityEvent> quality_events;
+        if (jsonl_timeline && options.quality_events == "candidates") {
+            vr::analysis::quality::QualityEventAggregationOptions
+                event_options;
+            event_options.metric_mask = metric_mask;
+            event_options.include_spatial_regions =
+                include_region_details;
+            quality_events =
+                vr::analysis::quality::aggregate_quality_events(
+                    report, event_options);
+        }
         const char* timeline_encoding =
             inline_timeline
                 ? "inline"
                 : (jsonl_timeline ? "jsonl" : "omitted");
-        const std::vector<std::string> warnings =
+        std::vector<std::string> warnings =
             quality_warnings(report);
+        if (!banding_selected && options.quality_regions != "none") {
+            warnings.emplace_back(
+                "spatial region output disabled because banding was not selected");
+        } else if (options.quality_summary_only &&
+                   options.quality_regions == "full") {
+            warnings.emplace_back(
+                "spatial region output reduced to summary because timeline was omitted");
+        }
+        if (jsonl_timeline && options.quality_events == "candidates" &&
+            !include_region_details && banding_selected) {
+            warnings.emplace_back(
+                "spatial quality events require --regions full; relative event candidates remain enabled");
+        }
         std::cout << std::setprecision(10)
                   << "{"
                   << "\"type\":\"qualityReport\","
-                  << "\"schemaVersion\":" << report.schema_version << ","
-                  << "\"schemaId\":\"quality-output-v4\","
+                  << "\"schemaVersion\":" << kQualityCliSchemaVersion << ","
+                  << "\"schemaId\":\"" << kQualityCliSchemaId << "\","
                   << "\"metricVersion\":\""
                   << json_escape(report.metric_version) << "\","
                   << "\"ok\":true,"
@@ -1646,11 +2385,25 @@ int score_quality(const CliOptions& options) {
                           : "false")
                   << ",\"timelineEncoding\":\""
                   << timeline_encoding << "\","
+                  << "\"spatialRegionsIncluded\":"
+                  << (include_region_details
+                          ? "true"
+                          : "false")
+                  << ",\"spatialRegionSummaryIncluded\":"
+                  << (collect_regions ? "true" : "false")
+                  << ",\"requestedRegionOutput\":\""
+                  << options.quality_regions << "\""
+                  << ",\"effectiveRegionOutput\":\""
+                  << effective_region_output << "\""
+                  << ",\"spatialRegionMetrics\":[\"banding\"],"
+                  << "\"spatialRegionCoordinateSpace\":\"normalizedLuma\","
                   << "\"absoluteThresholdsCalibrated\":false,"
                   << "\"crossMetricAggregationSupported\":false"
                   << "},"
                   << "\"warnings\":";
         write_string_array_json(std::cout, warnings);
+        std::cout << ",\"selectedMetrics\":";
+        write_selected_metrics_json(std::cout, metric_mask);
         std::cout << ",\"execution\":";
         write_execution_json(std::cout, report.execution);
         std::cout << ",\"metricDefinitions\":";
@@ -1695,34 +2448,57 @@ int score_quality(const CliOptions& options) {
                   << "},"
                   << "\"metrics\":{"
                   << "\"blockiness\":{"
+                  << "\"selected\":"
+                  << (vr::analysis::quality::quality_metric_enabled(
+                          metric_mask,
+                          vr::analysis::quality::QualityMetricBlockiness)
+                          ? "true" : "false") << ","
                   << "\"kind\":\"proxy\","
                   << "\"distribution\":"
                   << distribution_json(report.blockiness)
                   << "},"
                   << "\"banding\":{"
+                  << "\"selected\":"
+                  << (banding_selected ? "true" : "false") << ","
                   << "\"kind\":\"proxy\","
                   << "\"distribution\":"
                   << distribution_json(report.banding)
                   << "},"
                   << "\"blur\":{"
+                  << "\"selected\":"
+                  << (vr::analysis::quality::quality_metric_enabled(
+                          metric_mask,
+                          vr::analysis::quality::QualityMetricBlur)
+                          ? "true" : "false") << ","
                   << "\"kind\":\"proxy\","
                   << "\"distribution\":"
                   << distribution_json(report.blur)
                   << "},"
                   << "\"noise\":{"
+                  << "\"selected\":"
+                  << (vr::analysis::quality::quality_metric_enabled(
+                          metric_mask,
+                          vr::analysis::quality::QualityMetricNoise)
+                          ? "true" : "false") << ","
                   << "\"kind\":\"proxy\","
                   << "\"normalization\":\"estimatedSigma8Bit/24\","
                   << "\"distribution\":"
                   << distribution_json(report.noise)
                   << "},"
                   << "\"flicker\":{"
+                  << "\"selected\":"
+                  << (vr::analysis::quality::quality_metric_enabled(
+                          metric_mask,
+                          vr::analysis::quality::QualityMetricFlicker)
+                          ? "true" : "false") << ","
                   << "\"kind\":\"temporalProxy\","
                   << "\"sceneCutFiltered\":true,"
                   << "\"distribution\":"
                   << distribution_json(report.flicker)
                   << "}"
-                  << "},"
-                  << "\"timingsMs\":{"
+                  << "},\"regionSummary\":";
+        write_quality_region_summary_json(std::cout, region_summary);
+        std::cout << ",\"timingsMs\":{"
                   << "\"blockiness\":"
                   << distribution_json(report.timings.blockiness_ms) << ","
                   << "\"banding\":"
@@ -1758,7 +2534,11 @@ int score_quality(const CliOptions& options) {
                     std::cout << ",";
                 }
                 write_quality_sample_json(
-                    std::cout, report.timeline[index]);
+                    std::cout,
+                    report.timeline[index],
+                    report.width,
+                    report.height,
+                    include_region_details);
             }
             std::cout << "]";
         }
@@ -1769,14 +2549,32 @@ int score_quality(const CliOptions& options) {
                 std::cout << "{"
                           << "\"type\":\"qualityFrameSample\","
                           << "\"schemaVersion\":"
-                          << report.schema_version << ","
-                          << "\"schemaId\":\"quality-output-v4\","
+                          << kQualityCliSchemaVersion << ","
+                          << "\"schemaId\":\"" << kQualityCliSchemaId
+                          << "\","
                           << "\"metricVersion\":\""
                           << json_escape(report.metric_version) << "\","
                           << "\"sample\":";
-                write_quality_sample_json(std::cout, sample);
+                write_quality_sample_json(
+                    std::cout,
+                    sample,
+                    report.width,
+                    report.height,
+                    include_region_details);
                 std::cout << "}\n";
             }
+            for (size_t index = 0; index < quality_events.size(); ++index) {
+                write_quality_event_json(
+                    request_id,
+                    index,
+                    quality_events[index],
+                    report.width,
+                    report.height);
+            }
+            write_quality_complete_json(
+                request_id,
+                report.timeline.size(),
+                quality_events.size());
         }
         return 0;
     }
@@ -1918,42 +2716,59 @@ int score_quality(const CliOptions& options) {
                   << " " << report.bit_depth << "-bit\n"
                   << "  sampled/decoded: " << report.timeline.size() << "/"
                   << report.stream.decoded_frames << "\n"
-                  << "  blockiness proxy mean/p95/max: "
-                  << report.blockiness.mean << "/"
-                  << report.blockiness.p95 << "/"
-                  << report.blockiness.maximum << "\n"
-                  << "  banding proxy mean/p95/max: "
-                  << report.banding.mean << "/"
-                  << report.banding.p95 << "/"
-                  << report.banding.maximum << "\n"
-                  << "  blur proxy mean/p95/max: "
-                  << report.blur.mean << "/"
-                  << report.blur.p95 << "/"
-                  << report.blur.maximum << "\n"
-                  << "  noise proxy mean/p95/max: "
-                  << report.noise.mean << "/"
-                  << report.noise.p95 << "/"
-                  << report.noise.maximum << "\n"
-                  << "  flicker proxy frames/mean/p95/max: "
-                  << report.flicker.count << "/"
-                  << report.flicker.mean << "/"
-                  << report.flicker.p95 << "/"
-                  << report.flicker.maximum << "\n"
-                  << "  metric CPU mean ms (block/band/blur/noise/temporal): "
-                  << report.timings.blockiness_ms.mean << "/"
-                  << report.timings.banding_ms.mean << "/"
-                  << report.timings.blur_ms.mean << "/"
-                  << report.timings.noise_ms.mean << "/"
-                  << report.timings.temporal_ms.mean << "\n"
-                  << "  fused GPU mean ms "
-                     "(pack/submit/wait/readback/active/latency): "
-                  << report.timings.gpu_pack_ms.mean << "/"
-                  << report.timings.gpu_submit_ms.mean << "/"
-                  << report.timings.gpu_wait_ms.mean << "/"
-                  << report.timings.gpu_readback_ms.mean << "/"
-                  << report.timings.gpu_total_ms.mean << "/"
-                  << report.timings.gpu_latency_ms.mean << "\n"
-                  << "  QP available frames/mean/p90: "
+                  << "  selected metrics: ";
+        bool wrote_metric = false;
+        for (const auto& spec : kQualityMetricSpecs) {
+            if (!vr::analysis::quality::quality_metric_enabled(
+                    metric_mask, spec.flag)) {
+                continue;
+            }
+            std::cout << (wrote_metric ? "," : "") << spec.name;
+            wrote_metric = true;
+        }
+        std::cout << "\n";
+        auto print_metric = [](const char* name,
+                               const vr::analysis::quality::DistributionSummary& value) {
+            std::cout << "  " << name << " mean/p95/max: "
+                      << value.mean << "/" << value.p95 << "/"
+                      << value.maximum << "\n";
+        };
+        if (vr::analysis::quality::quality_metric_enabled(
+                metric_mask,
+                vr::analysis::quality::QualityMetricBlockiness)) {
+            print_metric("blockiness proxy", report.blockiness);
+        }
+        if (vr::analysis::quality::quality_metric_enabled(
+                metric_mask,
+                vr::analysis::quality::QualityMetricBanding)) {
+            print_metric("banding proxy", report.banding);
+        }
+        if (vr::analysis::quality::quality_metric_enabled(
+                metric_mask,
+                vr::analysis::quality::QualityMetricBlur)) {
+            print_metric("blur proxy", report.blur);
+        }
+        if (vr::analysis::quality::quality_metric_enabled(
+                metric_mask,
+                vr::analysis::quality::QualityMetricNoise)) {
+            print_metric("noise proxy", report.noise);
+        }
+        if (vr::analysis::quality::quality_metric_enabled(
+                metric_mask,
+                vr::analysis::quality::QualityMetricFlicker)) {
+            std::cout << "  flicker proxy frames/mean/p95/max: "
+                      << report.flicker.count << "/"
+                      << report.flicker.mean << "/"
+                      << report.flicker.p95 << "/"
+                      << report.flicker.maximum << "\n";
+        }
+        if (region_summary.available) {
+            std::cout << "  banding regions frames/count/max-per-frame: "
+                      << region_summary.frames_with_regions << "/"
+                      << region_summary.region_count << "/"
+                      << region_summary.max_regions_per_frame << "\n";
+        }
+        std::cout << "  QP available frames/mean/p90: "
                   << report.stream.average_qp.count << "/"
                   << report.stream.average_qp.mean << "/"
                   << report.stream.average_qp.p90 << "\n"

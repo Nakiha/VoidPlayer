@@ -18,11 +18,7 @@ void main() {
     expect(controller.chartOffset, 24);
     expect(controller.visibleFrameCount, 48);
 
-    controller.setViewState(
-      sourceFileId: 1,
-      selectedTab: 1,
-      ptsOrder: false,
-    );
+    controller.setViewState(sourceFileId: 1, selectedTab: 1, ptsOrder: false);
     expect(controller.viewStateRevision, 1);
     expect(controller.viewStateSourceFileId, 1);
     expect(controller.selectedTab, 1);
@@ -34,11 +30,7 @@ void main() {
       offset: 24,
       visibleFrameCount: 48,
     );
-    controller.setViewState(
-      sourceFileId: 1,
-      selectedTab: 1,
-      ptsOrder: false,
-    );
+    controller.setViewState(sourceFileId: 1, selectedTab: 1, ptsOrder: false);
     expect(notifications, 2);
   });
 }

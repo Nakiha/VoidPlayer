@@ -93,17 +93,17 @@ HwDecodeInitResult try_hw_decode_providers(
     }
 
     for (auto& provider : providers) {
-        spdlog::info("[HWDecode] Probing {} for codec {}",
-                     provider->name(), codec->name);
+        spdlog::debug("[HWDecode] Probing {} for codec {}",
+                      provider->name(), codec->name);
 
         if (!provider->probe(codec)) {
-            spdlog::info("[HWDecode] {} declined (codec not supported)", provider->name());
+            spdlog::debug("[HWDecode] {} declined (codec not supported)", provider->name());
             continue;
         }
 
         auto result = provider->init(params);
         if (result.success) {
-            spdlog::info("[HWDecode] {} initialized successfully", provider->name());
+            spdlog::debug("[HWDecode] {} initialized successfully", provider->name());
             result.provider = std::move(provider);  // Transfer ownership — provider must outlive hw_device_ctx
             return result;
         }

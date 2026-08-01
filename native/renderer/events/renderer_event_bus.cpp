@@ -39,7 +39,7 @@ void RendererEventBus::emit(const RendererEvent& event,
     }
 
     if (event.type == RendererEvent::Type::SeekPreviewPresented) {
-        spdlog::debug("[Renderer] emit seekPreviewPresented request_id={} file_id={} pts={:.3f}s dts={:.3f}s",
+        spdlog::info("[Renderer] seek preview presented request_id={} file_id={} pts={:.3f}s dts={:.3f}s",
                      event.request_id,
                      event.track_file_id,
                      event.pts_us / 1e6,

@@ -148,9 +148,9 @@ void Renderer::Impl::shutdown() {
     spdlog::info("Renderer: shutdown begin");
 
     if (loop_driver_.thread_joinable()) {
-        spdlog::info("Renderer: waiting for render thread join");
+        spdlog::debug("Renderer: waiting for render thread join");
         loop_driver_.join_thread();
-        spdlog::info("Renderer: render thread joined");
+        spdlog::debug("Renderer: render thread joined");
     }
 
     {

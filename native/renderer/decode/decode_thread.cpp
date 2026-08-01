@@ -154,8 +154,8 @@ bool DecodeThread::start() {
     }
 
     AVCodecContext* codec_context = decoder_.codec_context();
-    spdlog::info("[DecodeThread] Codec opened successfully ({}x{})",
-                 codec_context->width, codec_context->height);
+    spdlog::debug("[DecodeThread] Codec opened successfully ({}x{})",
+                  codec_context->width, codec_context->height);
 
     // Initialize the frame converter based on decode mode
     bool conv_ok;
@@ -424,15 +424,15 @@ void DecodeThread::log_hw_frame_context_once(const AVFrame* frame) {
     hw_frames_width_.store(frames_ctx->width, std::memory_order_relaxed);
     hw_frames_height_.store(frames_ctx->height, std::memory_order_relaxed);
     hw_frames_initial_pool_size_.store(frames_ctx->initial_pool_size, std::memory_order_relaxed);
-    spdlog::info("[DecodeThread] HW frames ctx: format={}, sw_format={}, {}x{}, initial_pool_size={}, extra_hw_frames={}",
-                 static_cast<int>(frames_ctx->format),
-                 static_cast<int>(frames_ctx->sw_format),
-                 frames_ctx->width,
-                 frames_ctx->height,
-                 frames_ctx->initial_pool_size,
-                 decoder_.codec_context()
-                     ? decoder_.codec_context()->extra_hw_frames
-                     : 0);
+    spdlog::debug("[DecodeThread] HW frames ctx: format={}, sw_format={}, {}x{}, initial_pool_size={}, extra_hw_frames={}",
+                  static_cast<int>(frames_ctx->format),
+                  static_cast<int>(frames_ctx->sw_format),
+                  frames_ctx->width,
+                  frames_ctx->height,
+                  frames_ctx->initial_pool_size,
+                  decoder_.codec_context()
+                      ? decoder_.codec_context()->extra_hw_frames
+                      : 0);
     hw_frames_ctx_logged_ = true;
 }
 

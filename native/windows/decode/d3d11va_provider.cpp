@@ -179,7 +179,7 @@ HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
         ? probed_pixel_format_
         : AV_PIX_FMT_D3D11;
     result.type = HwDecodeType::D3D11VA;
-    spdlog::info(
+    spdlog::debug(
         "[D3D11VA] Decode device initialized ({}x{}, mode={})",
         params.width,
         params.height,

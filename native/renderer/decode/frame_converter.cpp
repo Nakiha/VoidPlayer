@@ -38,9 +38,9 @@ bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat 
     hardware_converter_.reset();
 
     if (src_width <= 0 || src_height <= 0 || src_format == AV_PIX_FMT_NONE) {
-        spdlog::info("[FrameConverter] Software converter will initialize from first frame "
-                     "(initial params {}x{}, format={})",
-                     src_width, src_height, static_cast<int>(src_format));
+        spdlog::debug("[FrameConverter] Software converter will initialize from first frame "
+                      "(initial params {}x{}, format={})",
+                      src_width, src_height, static_cast<int>(src_format));
         return true;
     }
 
@@ -58,9 +58,9 @@ bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat 
         return false;
     }
 
-    spdlog::info("[FrameConverter] Software converter initialized for deterministic upload "
-                 "({}x{}, format={})",
-                 src_width, src_height, static_cast<int>(src_format));
+    spdlog::debug("[FrameConverter] Software converter initialized for deterministic upload "
+                  "({}x{}, format={})",
+                  src_width, src_height, static_cast<int>(src_format));
     return true;
 }
 
@@ -85,10 +85,10 @@ bool FrameConverter::init_hardware(void* native_device, void* native_context,
     }
     hardware_converter_ = std::move(hardware_converter);
 
-    spdlog::info("[FrameConverter] Hardware converter initialized ({}x{}, hw_type={}, download_to_cpu={})",
-                 src_width, src_height,
-                 hw_decode_type_name(hw_type),
-                 download_to_cpu);
+    spdlog::debug("[FrameConverter] Hardware converter initialized ({}x{}, hw_type={}, download_to_cpu={})",
+                  src_width, src_height,
+                  hw_decode_type_name(hw_type),
+                  download_to_cpu);
     return true;
 }
 

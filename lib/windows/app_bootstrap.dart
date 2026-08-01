@@ -20,19 +20,28 @@ import 'windows_main_window_platform.dart';
 const MethodChannel _windowBootstrapChannel = MethodChannel(
   'void_player/window_bootstrap',
 );
+final _startupLogger = appLogger('Startup');
 
 class _StartupTrace {
   final Stopwatch _total = Stopwatch()..start();
   final Stopwatch _step = Stopwatch()..start();
 
   void mark(String label) {
-    log.info(
-      '[Startup] $label: +${_step.elapsedMilliseconds}ms, '
-      'total=${_total.elapsedMilliseconds}ms',
+    _startupLogger.fine(
+      'step completed name="$label" step_ms=${_step.elapsedMilliseconds} '
+      'total_ms=${_total.elapsedMilliseconds}',
     );
     _step
       ..reset()
       ..start();
+  }
+
+  void complete({required bool silentUiTest}) {
+    mark('show requested');
+    _startupLogger.info(
+      'startup completed elapsed_ms=${_total.elapsedMilliseconds} '
+      'silent_ui_test=$silentUiTest',
+    );
   }
 }
 
@@ -44,9 +53,10 @@ class _StepTrace {
   _StepTrace(this.name);
 
   void mark(String label) {
-    log.info(
-      '[Startup:$name] $label: +${_step.elapsedMilliseconds}ms, '
-      'total=${_total.elapsedMilliseconds}ms',
+    _startupLogger.fine(
+      'step completed scope=$name name="$label" '
+      'step_ms=${_step.elapsedMilliseconds} '
+      'total_ms=${_total.elapsedMilliseconds}',
     );
     _step
       ..reset()
@@ -86,7 +96,7 @@ Future<void> _showWindowForModeWithTrace({
   required _StartupTrace trace,
 }) async {
   await _showWindowForMode(silent: silent);
-  trace.mark('show requested');
+  trace.complete(silentUiTest: silent);
 }
 
 Future<void> _applyInitialMainWindowBounds({
@@ -201,7 +211,9 @@ Future<void> runVoidPlayer(List<String> args) async {
 
   final accentColor = _getWindowsAccentColor();
   startupTrace.mark('accent color loaded');
-  log.info('Application starting (main window), silentUiTest=$silentUiTest');
+  _startupLogger.fine(
+    'application widget starting silent_ui_test=$silentUiTest',
+  );
   runApp(
     VoidPlayerApp(
       accentColor: accentColor,

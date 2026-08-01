@@ -142,6 +142,6 @@ class AutomationProbe {
 
 int countNativeSeekRequests(String nativeLog) {
   return RegExp(
-    RegExp.escape('[Renderer] seek_internal: target='),
+    RegExp.escape('[Renderer] seek requested request_id='),
   ).allMatches(nativeLog).length;
 }

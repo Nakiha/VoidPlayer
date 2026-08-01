@@ -154,7 +154,7 @@ void DecodeThread::run() {
         if (result.adjusted_for_monotonicity &&
             (result.adjustment_count <= 8 ||
              result.adjustment_count % 120 == 0)) {
-            spdlog::warn(
+            spdlog::debug(
                 "[DecodeTimestamp] normalized non-monotonic timestamp "
                 "raw_pts_us={} best_effort_pts_us={} output_pts_us={} "
                 "used_best_effort={} correction={} order_preserved=true dropped=0",

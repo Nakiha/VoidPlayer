@@ -7,6 +7,15 @@ import 'package:path/path.dart' as p;
 import 'package:void_player/app_log.dart';
 
 void main() {
+  test('native log filename separates reused process ids by session', () {
+    final config = LogConfig.defaultsFor(const []);
+
+    expect(
+      config.nativeLogFileName,
+      matches(RegExp(r'^native_main_\d+_\d{4}-\d{2}-\d{2}_\d{6}_\d{3}\.log$')),
+    );
+  });
+
   test('file logger flushes queued records asynchronously', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'void_player_log_test_',
@@ -164,5 +173,42 @@ void main() {
     );
 
     expect(await tempDir.exists(), isTrue);
+  });
+
+  test('log retention includes native process logs', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'void_player_native_log_retention_test_',
+    );
+    addTearDown(() async {
+      await shutdownLogging();
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+    for (var index = 0; index < 36; index++) {
+      final file = File(
+        p.join(tempDir.path, 'native_main_${index}_2020-01-01.log'),
+      );
+      await file.writeAsString('stale');
+      await file.setLastModified(
+        DateTime(2020, 1, 1).add(Duration(seconds: index)),
+      );
+    }
+
+    await initLogging(const [], logsDirOverride: tempDir.path);
+    await flushLogFile();
+
+    final logFiles = await tempDir
+        .list()
+        .where((entity) => entity is File && entity.path.endsWith('.log'))
+        .toList();
+    // Retention runs before the current Dart process opens its own log.
+    expect(logFiles.length, lessThanOrEqualTo(31));
+    expect(
+      logFiles
+          .where((entity) => p.basename(entity.path).startsWith('native_'))
+          .length,
+      lessThan(36),
+    );
   });
 }

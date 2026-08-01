@@ -139,9 +139,9 @@ bool HardwareFrameConverter::init(void* native_device, void* native_context,
     }
 #endif
 
-    spdlog::info("[HardwareFrameConverter] Hardware converter initialized "
-                 "({}x{}, hw_type={}, download_to_cpu={})",
-                 width_, height_, hw_decode_type_name(hw_type_), download_to_cpu_);
+    spdlog::debug("[HardwareFrameConverter] Hardware converter initialized "
+                  "({}x{}, hw_type={}, download_to_cpu={})",
+                  width_, height_, hw_decode_type_name(hw_type_), download_to_cpu_);
     return true;
 }
 

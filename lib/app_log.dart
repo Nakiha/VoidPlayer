@@ -37,6 +37,7 @@ class LogConfig {
   final Level ffmpeg;
   final String logsDir;
   final String processRole;
+  final String logSession;
 
   const LogConfig({
     required this.flutter,
@@ -44,6 +45,7 @@ class LogConfig {
     required this.ffmpeg,
     required this.logsDir,
     required this.processRole,
+    required this.logSession,
   });
 
   /// Default config: INFO for all modules, logs in the resolved app data root.
@@ -54,6 +56,7 @@ class LogConfig {
       ffmpeg: Level.INFO,
       logsDir: AppPaths.current.logsDir,
       processRole: 'main',
+      logSession: DateFormat('yyyy-MM-dd_HHmmss_SSS').format(DateTime.now()),
     );
   }
 
@@ -89,6 +92,7 @@ class LogConfig {
           ffmpeg: ffmpeg,
           logsDir: logsDir,
           processRole: processRole,
+          logSession: logSession,
         );
       case LogModule.native:
         return LogConfig(
@@ -97,6 +101,7 @@ class LogConfig {
           ffmpeg: ffmpeg,
           logsDir: logsDir,
           processRole: processRole,
+          logSession: logSession,
         );
       case LogModule.ffmpeg:
         return LogConfig(
@@ -105,6 +110,7 @@ class LogConfig {
           ffmpeg: level,
           logsDir: logsDir,
           processRole: processRole,
+          logSession: logSession,
         );
     }
   }
@@ -116,6 +122,7 @@ class LogConfig {
       ffmpeg: ffmpeg,
       logsDir: value,
       processRole: processRole,
+      logSession: logSession,
     );
   }
 
@@ -133,7 +140,8 @@ class LogConfig {
   }
 
   String get flutterLogPrefix => 'void_player_${processRole}_$pid';
-  String get nativeLogFileName => 'native_${processRole}_$pid.log';
+  String get nativeLogFileName =>
+      'native_${processRole}_${pid}_$logSession.log';
 }
 
 // ---------------------------------------------------------------------------
@@ -277,6 +285,7 @@ Future<void> _configureNativeLogging(LogConfig config) async {
 // ---------------------------------------------------------------------------
 
 const String _kLogPrefix = 'void_player_';
+const String _kNativeLogPrefix = 'native_';
 const int _kMaxFileSize = 5 * 1024 * 1024; // 5 MB
 const int _kMaxFiles = 30;
 
@@ -462,7 +471,10 @@ void _cleanOldLogs(String logsDir) {
 
   final logFiles = <MapEntry<File, DateTime>>[];
   for (final entity in entities) {
-    if (entity is File && p.basename(entity.path).startsWith(_kLogPrefix)) {
+    final basename = p.basename(entity.path);
+    if (entity is File &&
+        (basename.startsWith(_kLogPrefix) ||
+            basename.startsWith(_kNativeLogPrefix))) {
       try {
         logFiles.add(MapEntry(entity, entity.lastModifiedSync()));
       } on FileSystemException {

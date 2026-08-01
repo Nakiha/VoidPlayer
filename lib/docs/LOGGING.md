@@ -56,7 +56,9 @@ python dev.py launch --log-level flutter=TRACE,native=TRACE
 `TRACE` 打开逐事件诊断。快捷键跨 Flutter/Win32 排查需要两侧同时设为 `TRACE`。
 
 日志文件位于运行时数据根目录的 `logs/`：Dart 为
-`void_player_<role>_<pid>_<date>.log`，native 为 `native_<role>_<pid>.log`。
+`void_player_<role>_<pid>_<date>.log`，native 为
+`native_<role>_<pid>_<session>.log`。会话字段避免操作系统复用 PID 时把不同进程的
+日志追加进同一文件。
 
 ## 评审检查
 

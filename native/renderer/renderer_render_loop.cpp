@@ -72,8 +72,8 @@ void Renderer::Impl::render_loop() noexcept {
     // On Windows this raises timer resolution from the default ~15.6 ms to
     // 1 ms; on other platforms it is a no-op wrapper.
     ScopedRenderThreadTiming render_thread_timing;
-    spdlog::info("[Renderer] Render loop started (timer resolution: platform), tid={}",
-                 current_render_thread_id_string());
+    spdlog::debug("[Renderer] Render loop started (timer resolution: platform), tid={}",
+                  current_render_thread_id_string());
 
     RendererRenderLoopCommandContext render_loop_context{
         state_mutex_,
@@ -139,7 +139,7 @@ void Renderer::Impl::render_loop() noexcept {
     }
 
     loop_driver_.clear_pending_resize();
-    spdlog::info("[Renderer] Render loop ended");
+    spdlog::debug("[Renderer] Render loop ended");
 }
 
 RendererPresentationOverlayHooks Renderer::Impl::presentation_overlay_hooks() {

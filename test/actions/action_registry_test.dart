@@ -11,6 +11,8 @@ void main() {
     await initLogging(const []);
   });
 
+  tearDownAll(shutdownLogging);
+
   test('shortcut display metadata is derived from real action definitions', () {
     final entries = PlayerAction.shortcutEntries;
 

@@ -66,14 +66,14 @@ void TrackPipelineManager::stop_slot(size_t slot, const TrackCallback& before_st
         before_stop(slot, *track);
     }
     if (track->decode_thread) {
-        spdlog::info("Renderer: stopping track[{}] decode ({})", slot, track->file_path);
+        spdlog::debug("Renderer: stopping track[{}] decode ({})", slot, track->file_path);
         track->decode_thread->stop();
-        spdlog::info("Renderer: track[{}] decode stopped", slot);
+        spdlog::debug("Renderer: track[{}] decode stopped", slot);
     }
     if (track->demux_thread) {
-        spdlog::info("Renderer: stopping track[{}] demux ({})", slot, track->file_path);
+        spdlog::debug("Renderer: stopping track[{}] demux ({})", slot, track->file_path);
         track->demux_thread->stop();
-        spdlog::info("Renderer: track[{}] demux stopped", slot);
+        spdlog::debug("Renderer: track[{}] demux stopped", slot);
     }
     track.reset();
 }

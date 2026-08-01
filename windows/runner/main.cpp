@@ -137,7 +137,7 @@ void TraceShortcutMessage(const MSG& message, uint64_t sequence) {
     return;
   }
   const auto bits = static_cast<uint64_t>(message.lParam);
-  spdlog::info(
+  spdlog::trace(
       "[ShortcutTrace][Win32] seq={} message={} vk=0x{:02x} repeat={} "
       "scan=0x{:02x} extended={} was_down={} transition_up={} target=0x{:x} "
       "focus=0x{:x}",

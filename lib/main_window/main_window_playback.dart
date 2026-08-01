@@ -1131,7 +1131,7 @@ class MainWindowPlaybackCoordinator {
         'raw=[$rawFrames] anchors=[$anchorText]';
     if (signature == _lastQuickMarkAnchorTrace) return;
     _lastQuickMarkAnchorTrace = signature;
-    log.info('[QuickMarkTrace] playback snapshot $signature');
+    log.finer('[QuickMarkTrace] playback snapshot $signature');
   }
 
   Future<void> setLoopRangeEnabled(bool enabled) async {

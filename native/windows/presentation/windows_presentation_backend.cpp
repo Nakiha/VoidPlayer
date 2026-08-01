@@ -225,7 +225,7 @@ bool WindowsD3D11PresentationBackend::update_offscreen_target_ring(
   width_ = width;
   height_ = height;
   max_track_slots_ = std::clamp(max_track_slots, 1, 4);
-  spdlog::info(
+  spdlog::debug(
       "[WindowsPresentation] target ring reconfigured format={} output={}",
       target_format_name(first_desc.Format),
       next_output_target == ColorOutputTarget::kWindowsLinearScRGB
@@ -515,7 +515,7 @@ bool WindowsD3D11PresentationBackend::ensure_capture_staging(
     ++capture_staging_allocation_count_;
     capture_staging_max_bytes_ =
         std::max(capture_staging_max_bytes_, staging_bytes);
-    spdlog::info(
+    spdlog::debug(
         "[WindowsCapture] staging allocation={} size={}x{} bytes={} "
         "requested={}x{}",
         capture_staging_allocation_count_, next_width, next_height,
@@ -607,7 +607,7 @@ bool WindowsD3D11PresentationBackend::draw_frame(
         ++overlay_diagnostic_count_;
         if (overlay_diagnostic_count_ <= 12 ||
             overlay_diagnostic_count_ % 120 == 0) {
-          spdlog::info(
+          spdlog::debug(
               "[WindowsAnalysisOverlay] package tracks={} matched={} draw_tracks={} "
               "missing_slot={} missing_presented={} missing_index={} missing_frame={} "
               "generation={}",

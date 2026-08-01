@@ -336,7 +336,7 @@ class MainWindowLayoutCoordinator {
         now.difference(lastResizeLog) >= _resizePacingLogInterval;
     if (shouldLogResize) {
       _lastViewportResizePacingLogAt = now;
-      log.info(
+      log.fine(
         '[NativeResizePacing] dart viewportResize '
         'count=$_debugViewportResizeReports '
         'previous=${previousWidth}x$previousHeight next=${width}x$height '
@@ -355,7 +355,7 @@ class MainWindowLayoutCoordinator {
     }
     _resizeDebounceTimer = Timer(viewportResizeDebounce, () {
       if (_disposed || !mounted()) return;
-      log.info(
+      log.fine(
         '[NativeResizePacing] dart viewportResize debounceFire '
         'target=${viewportWidth}x$viewportHeight '
         'reports=$_debugViewportResizeReports '
@@ -717,7 +717,7 @@ class MainWindowLayoutCoordinator {
               now.difference(lastNativeLog) >= _resizePacingLogInterval;
           if (shouldLogNative) {
             _lastNativeResizePacingLogAt = now;
-            log.info(
+            log.fine(
               '[NativeResizePacing] dart nativeResizeFlush '
               'count=$_debugNativeResizeFlushes '
               'target=${width}x$height '
@@ -776,7 +776,7 @@ class MainWindowLayoutCoordinator {
     _debugNativeLayoutApplies++;
     if (_debugNativeLayoutApplies <= 12 ||
         _debugNativeLayoutApplies % 60 == 0) {
-      log.info(
+      log.fine(
         '[WindowsLayout] dart intent=$_debugNativeLayoutApplies '
         'playing=${_state.isPlaying} mode=${nextLayout.mode} '
         'zoom=${nextLayout.zoomRatio.toStringAsFixed(4)} '

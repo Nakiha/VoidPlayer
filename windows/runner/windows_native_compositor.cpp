@@ -287,7 +287,7 @@ bool WindowsNativeCompositor::CreateVideoTargetRing(
     for (const auto& target : video_targets_) {
       textures.push_back(target.Get());
     }
-    spdlog::info(
+    spdlog::debug(
         "[WindowsCompositor] target ring generation={} next={}x{} format={} "
         "retained={} retained_size={}x{}",
         diagnostics_.video_target_generation, width, height,
@@ -356,7 +356,7 @@ bool WindowsNativeCompositor::PresentVideoTarget(ID3D11Texture2D* texture,
               static_cast<int>(presented_desc.Height))) {
         video_viewport_width_ = viewport.width;
         ++diagnostics_.video_target_retained_geometry_sync_count;
-        spdlog::info(
+        spdlog::debug(
             "[WindowsCompositor] retained target geometry sync serial={} "
             "viewport=({},{} {}x{}) surface={}x{}",
             serial, video_viewport_left_, video_viewport_top_,
@@ -390,7 +390,7 @@ bool WindowsNativeCompositor::PresentVideoTarget(ID3D11Texture2D* texture,
         serial, completed, video_completed_serial_, running_.load(),
         diagnostics_.last_error);
   } else if (serial <= 8 || serial % 120 == 0) {
-    spdlog::info(
+    spdlog::debug(
         "[WindowsCompositor] video present serial={} flutter_generation={} "
         "composites={}",
         serial, cached_flutter_generation_, diagnostics_.composite_count);
@@ -444,7 +444,7 @@ void WindowsNativeCompositor::SetVideoViewportRect(
     video_viewport_surface_height_ = surface_height;
   }
   if (changed) {
-    spdlog::info(
+    spdlog::debug(
         "[WindowsCompositor] viewport rect=({},{} {}x{}) surface={}x{}",
         left, top, width, height, surface_width, surface_height);
     SignalComposite();
@@ -474,7 +474,7 @@ void WindowsNativeCompositor::SetBackgroundColor(
         (to_byte(next[1]) << 8u) | to_byte(next[2]);
   }
   if (changed) {
-    spdlog::info(
+    spdlog::debug(
         "[WindowsCompositor] background color argb=0x{:08X}",
         diagnostics().background_color_argb);
     SignalComposite();
@@ -981,7 +981,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
           FlutterDesktopWindowsSurfaceExportState export_state = {};
           export_state.struct_size = sizeof(export_state);
           FlutterDesktopViewGetSurfaceExportState(flutter_view_, &export_state);
-          spdlog::info(
+          spdlog::debug(
               "[WindowsCompositor] cached Flutter refresh={} generation={} "
               "ring={} size={}x{} requests={} dispatched={} scheduled={} "
               "vsync={} presents={} pending_pump={}",
@@ -1235,13 +1235,13 @@ void WindowsNativeCompositor::CompleteVideoPresentation(uint64_t serial,
         video_target_retirement_gate_.successful_composites_remaining();
   }
   if (completed_retained_handoff) {
-    spdlog::info(
+    spdlog::debug(
         "[WindowsCompositor] retained target handoff complete generation={} "
         "reconfigures={} handoffs={} retirement_grace_remaining={}",
         generation, reconfigure_count, handoff_count,
         retirement_grace_remaining);
   } else if (completed_retired_release) {
-    spdlog::info(
+    spdlog::debug(
         "[WindowsCompositor] retired target grace complete "
         "released_retired={}",
         released_retired_targets);

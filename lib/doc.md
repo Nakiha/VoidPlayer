@@ -69,6 +69,10 @@ void_player.exe --log-level=flutter=DEBUG,native=TRACE,ffmpeg=INFO
 - `native`: C++ native 模块日志，写入运行时数据根目录下的 `logs/`
 - `ffmpeg`: FFmpeg 库日志（预留，暂未实现）
 
+等级、分类、字段格式与评审要求见 [docs/LOGGING.md](docs/LOGGING.md)。默认
+`INFO` 只保留有界的操作与生命周期记录；resize/layout/seek 内部阶段使用
+`DEBUG`，逐帧和逐输入事件使用 `TRACE`。
+
 ## 启动参数
 
 面向 release / GUI 用户的启动参数说明维护在

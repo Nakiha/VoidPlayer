@@ -37,6 +37,7 @@ class LogConfig {
   final Level ffmpeg;
   final String logsDir;
   final String processRole;
+  final String logSession;
 
   const LogConfig({
     required this.flutter,
@@ -44,6 +45,7 @@ class LogConfig {
     required this.ffmpeg,
     required this.logsDir,
     required this.processRole,
+    required this.logSession,
   });
 
   /// Default config: INFO for all modules, logs in the resolved app data root.
@@ -54,6 +56,7 @@ class LogConfig {
       ffmpeg: Level.INFO,
       logsDir: AppPaths.current.logsDir,
       processRole: 'main',
+      logSession: DateFormat('yyyy-MM-dd_HHmmss_SSS').format(DateTime.now()),
     );
   }
 
@@ -89,6 +92,7 @@ class LogConfig {
           ffmpeg: ffmpeg,
           logsDir: logsDir,
           processRole: processRole,
+          logSession: logSession,
         );
       case LogModule.native:
         return LogConfig(
@@ -97,6 +101,7 @@ class LogConfig {
           ffmpeg: ffmpeg,
           logsDir: logsDir,
           processRole: processRole,
+          logSession: logSession,
         );
       case LogModule.ffmpeg:
         return LogConfig(
@@ -105,6 +110,7 @@ class LogConfig {
           ffmpeg: level,
           logsDir: logsDir,
           processRole: processRole,
+          logSession: logSession,
         );
     }
   }
@@ -116,6 +122,7 @@ class LogConfig {
       ffmpeg: ffmpeg,
       logsDir: value,
       processRole: processRole,
+      logSession: logSession,
     );
   }
 
@@ -133,7 +140,8 @@ class LogConfig {
   }
 
   String get flutterLogPrefix => 'void_player_${processRole}_$pid';
-  String get nativeLogFileName => 'native_${processRole}_$pid.log';
+  String get nativeLogFileName =>
+      'native_${processRole}_${pid}_$logSession.log';
 }
 
 // ---------------------------------------------------------------------------
@@ -144,12 +152,21 @@ late LogConfig _logConfig;
 late Logger _root;
 StreamSubscription<LogRecord>? _rootSubscription;
 bool _loggingInitialized = false;
+RawReceivePort? _isolateErrorPort;
+FlutterExceptionHandler? _previousFlutterErrorHandler;
+FlutterExceptionHandler? _installedFlutterErrorHandler;
 
 /// The parsed log config. Available after [initLogging].
 LogConfig get logConfig => _logConfig;
 
 /// The root Logger. Available after [initLogging].
 Logger get log => _root;
+
+/// Returns a component logger that inherits the configured Flutter level.
+///
+/// Prefer this over embedding a component name in every message. The formatter
+/// emits the logger name as a stable, searchable field.
+Logger appLogger(String component) => Logger(component);
 
 void logFine(String message, [Object? error, StackTrace? stackTrace]) {
   if (!_loggingInitialized) return;
@@ -172,6 +189,8 @@ Future<LogConfig> initLogging(
   await _resetFileSink();
   await _rootSubscription?.cancel();
   _rootSubscription = null;
+  _removeGlobalErrorHooks();
+  _fileSinkFailureReported = false;
 
   _logConfig = logsDirOverride == null
       ? LogConfig.parse(args)
@@ -189,20 +208,21 @@ Future<LogConfig> initLogging(
   _root.level = _logConfig.flutter;
   _rootSubscription = _root.onRecord.listen(_dispatchRecord);
 
-  FlutterError.onError = (details) {
-    _root.warning(
-      'Flutter error: ${details.exceptionAsString()}\n${details.stack}',
-    );
+  _previousFlutterErrorHandler = FlutterError.onError;
+  _installedFlutterErrorHandler = (details) {
+    _root.severe('Unhandled Flutter error', details.exception, details.stack);
   };
+  FlutterError.onError = _installedFlutterErrorHandler;
 
-  Isolate.current.addErrorListener(
-    RawReceivePort((Object? pair) {
-      final List<dynamic> errorAndStack = pair as List<dynamic>;
-      _root.severe(
-        'Isolate error: ${errorAndStack.first}\n${errorAndStack.last}',
-      );
-    }).sendPort,
-  );
+  _isolateErrorPort = RawReceivePort((Object? payload) {
+    final pair = payload is List<dynamic> ? payload : const <dynamic>[];
+    final error = pair.isNotEmpty ? pair.first : payload;
+    final stack = pair.length > 1
+        ? StackTrace.fromString('${pair.last}')
+        : null;
+    _root.severe('Unhandled isolate error', error, stack);
+  });
+  Isolate.current.addErrorListener(_isolateErrorPort!.sendPort);
 
   _root.info(
     'Logging initialized: flutter=${_logConfig.flutter.name}, '
@@ -213,7 +233,7 @@ Future<LogConfig> initLogging(
   // Forward native log config to C++ side via MethodChannel.
   // Fire-and-forget — native plugin already initialized with defaults
   // on construction, this just updates the level if --log-level changed it.
-  unawaited(_configureNativeLogging());
+  unawaited(_configureNativeLogging(_logConfig));
 
   return _logConfig;
 }
@@ -221,18 +241,42 @@ Future<LogConfig> initLogging(
 /// Send parsed native log config to the C++ plugin via MethodChannel.
 /// Fire-and-forget: if the plugin isn't registered yet or the call fails,
 /// native logging keeps its default config (initialized in plugin constructor).
-Future<void> _configureNativeLogging() async {
+Future<void> _configureNativeLogging(LogConfig config) async {
   try {
     const channel = MethodChannel('video_renderer');
     await channel.invokeMethod<void>('initLogging', {
-      'logLevel': _logConfig.nativeLevelName,
-      'logsDir': _logConfig.logsDir,
-      'logFileName': _logConfig.nativeLogFileName,
-      'processRole': _logConfig.processRole,
+      'logLevel': config.nativeLevelName,
+      'logsDir': config.logsDir,
+      'logFileName': config.nativeLogFileName,
+      'processRole': config.processRole,
       'processId': pid,
     });
-  } catch (_) {
-    // Plugin not registered yet or not available — native defaults are fine.
+  } on MissingPluginException catch (error, stackTrace) {
+    appLogger('Logging').fine(
+      'Native logging configuration unavailable; using native defaults',
+      error,
+      stackTrace,
+    );
+  } on FlutterError catch (error, stackTrace) {
+    if (error.message.contains('Binding has not yet been initialized')) {
+      appLogger('Logging').fine(
+        'Native logging configuration deferred until bindings initialize',
+        error,
+        stackTrace,
+      );
+      return;
+    }
+    appLogger('Logging').warning(
+      'Native logging configuration failed; using native defaults',
+      error,
+      stackTrace,
+    );
+  } on Object catch (error, stackTrace) {
+    appLogger('Logging').warning(
+      'Native logging configuration failed; using native defaults',
+      error,
+      stackTrace,
+    );
   }
 }
 
@@ -241,6 +285,7 @@ Future<void> _configureNativeLogging() async {
 // ---------------------------------------------------------------------------
 
 const String _kLogPrefix = 'void_player_';
+const String _kNativeLogPrefix = 'native_';
 const int _kMaxFileSize = 5 * 1024 * 1024; // 5 MB
 const int _kMaxFiles = 30;
 
@@ -251,6 +296,7 @@ final Queue<String> _pendingFileLines = Queue<String>();
 bool _fileFlushScheduled = false;
 bool _fileFlushInProgress = false;
 Completer<void>? _fileFlushCompleter;
+bool _fileSinkFailureReported = false;
 
 void _dispatchRecord(LogRecord record) {
   final line = _formatRecord(record);
@@ -299,8 +345,23 @@ Future<void> flushLogFile() async {
 Future<void> shutdownLogging() async {
   await _rootSubscription?.cancel();
   _rootSubscription = null;
+  _removeGlobalErrorHooks();
   await _resetFileSink();
   _loggingInitialized = false;
+}
+
+void _removeGlobalErrorHooks() {
+  final port = _isolateErrorPort;
+  if (port != null) {
+    Isolate.current.removeErrorListener(port.sendPort);
+    port.close();
+    _isolateErrorPort = null;
+  }
+  if (identical(FlutterError.onError, _installedFlutterErrorHandler)) {
+    FlutterError.onError = _previousFlutterErrorHandler;
+  }
+  _installedFlutterErrorHandler = null;
+  _previousFlutterErrorHandler = null;
 }
 
 Future<void> _flushFileQueue() {
@@ -337,8 +398,9 @@ Future<void> _flushFileQueue() {
           _cleanOldLogs(_logConfig.logsDir);
         }
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
       _pendingFileLines.clear();
+      _reportFileSinkFailure(error, stackTrace);
     } finally {
       _fileFlushInProgress = false;
       _fileFlushCompleter = null;
@@ -354,8 +416,9 @@ Future<void> _resetFileSink() async {
   try {
     await flushLogFile();
     await _raf?.close();
-  } catch (_) {
+  } catch (error, stackTrace) {
     // Never let logging teardown crash tests or app startup.
+    _reportFileSinkFailure(error, stackTrace);
   } finally {
     _raf = null;
     _currentFileSize = 0;
@@ -365,6 +428,15 @@ Future<void> _resetFileSink() async {
     _fileFlushInProgress = false;
     _fileFlushCompleter = null;
   }
+}
+
+void _reportFileSinkFailure(Object error, StackTrace stackTrace) {
+  if (_fileSinkFailureReported) return;
+  _fileSinkFailureReported = true;
+  _stderrWriter.write(
+    '[VoidPlayer][Logging] file sink failed; console logging remains active: '
+    '$error\n$stackTrace',
+  );
 }
 
 Future<void> _ensureLogOpen() async {
@@ -389,21 +461,36 @@ void _cleanOldLogs(String logsDir) {
   final dir = Directory(logsDir);
   if (!dir.existsSync()) return;
 
-  final logFiles = <File>[];
-  for (final entity in dir.listSync()) {
-    if (entity is File && p.basename(entity.path).startsWith(_kLogPrefix)) {
-      logFiles.add(entity);
+  final List<FileSystemEntity> entities;
+  try {
+    entities = dir.listSync();
+  } on FileSystemException {
+    // Another process may remove or rotate the directory concurrently.
+    return;
+  }
+
+  final logFiles = <MapEntry<File, DateTime>>[];
+  for (final entity in entities) {
+    final basename = p.basename(entity.path);
+    if (entity is File &&
+        (basename.startsWith(_kLogPrefix) ||
+            basename.startsWith(_kNativeLogPrefix))) {
+      try {
+        logFiles.add(MapEntry(entity, entity.lastModifiedSync()));
+      } on FileSystemException {
+        // Cross-process rotation can remove an entry after listSync().
+      }
     }
   }
 
   if (logFiles.length <= _kMaxFiles) return;
 
-  logFiles.sort((a, b) => a.lastModifiedSync().compareTo(b.lastModifiedSync()));
+  logFiles.sort((a, b) => a.value.compareTo(b.value));
 
   final toDelete = logFiles.length - _kMaxFiles;
   for (int i = 0; i < toDelete; i++) {
     try {
-      logFiles[i].deleteSync();
+      logFiles[i].key.deleteSync();
     } catch (_) {}
   }
 }

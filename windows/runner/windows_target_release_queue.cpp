@@ -34,7 +34,7 @@ void WindowsTargetReleaseQueue::Enqueue(
     requests_.push_back({player, target});
     const auto count = ++enqueue_count_;
     if (count <= 12 || count % 120 == 0) {
-      spdlog::info(
+      spdlog::debug(
           "[WindowsTargetRelease] enqueue={} released={} queued={} active={}",
           count, release_count_, requests_.size(), active_count_);
     }
@@ -71,7 +71,7 @@ void WindowsTargetReleaseQueue::Run() {
       --active_count_;
       const auto count = ++release_count_;
       if (count <= 12 || count % 120 == 0) {
-        spdlog::info(
+        spdlog::debug(
             "[WindowsTargetRelease] released={} enqueue={} queued={} "
             "elapsed_us={}",
             count, enqueue_count_, requests_.size(),

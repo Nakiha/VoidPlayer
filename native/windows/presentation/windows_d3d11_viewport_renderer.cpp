@@ -902,7 +902,7 @@ bool WindowsD3D11ViewportRenderer::draw_overlay(
       stats_.overlay_max_cpu_submit_us, stats_.overlay_last_cpu_submit_us);
   if (stats_.overlay_draw_count <= 12 ||
       stats_.overlay_draw_count % 120 == 0) {
-    spdlog::info(
+    spdlog::debug(
         "[WindowsAnalysisOverlayHotPath] draw={} generation={} instances={} "
         "source_cache_hit={} gpu_upload={} gpu_uploads={} gpu_reuse={} "
         "lookup_us={} upload_us={} cpu_submit_us={} cpu_submit_max_us={}",
@@ -958,7 +958,7 @@ bool WindowsD3D11ViewportRenderer::draw(
     last_layout_revision_ = draw_snapshot.layout_revision;
     ++layout_log_count_;
     if (layout_log_count_ <= 12 || layout_log_count_ % 60 == 0) {
-      spdlog::info(
+      spdlog::debug(
           "[WindowsLayout] d3d11 draw={} layout_rev={} target={}x{} mode={} "
           "zoom={:.4f} offset=({:.1f},{:.1f}) split={:.4f}",
           stats_.draw_count + 1, draw_snapshot.layout_revision,

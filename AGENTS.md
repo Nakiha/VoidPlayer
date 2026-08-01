@@ -118,7 +118,7 @@ python dev.py gate macos-ui-smoke
 `dev.py ui-test` 默认把日志写到 `%APPDATA%\VoidPlayer\logs`。
 
 - Flutter/Dart 日志形如 `void_player_main_<pid>_<date>.log`
-- native C++ 日志形如 `native_main_<pid>.log`
+- native C++ 日志形如 `native_main_<pid>_<session>.log`
 - UI 自动化失败后，先看最近一对 Flutter/native 日志；Flutter 日志通常包含 `TestRunner FAIL`，native 日志通常包含 demux/decode/render/seek 细节。
 
 常用 PowerShell：

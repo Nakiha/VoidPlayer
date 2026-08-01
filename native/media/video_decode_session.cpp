@@ -91,8 +91,8 @@ bool VideoDecodeSession::initialize(
         close();
         return false;
     }
-    spdlog::info("[VideoDecodeSession] decoder prepared: {}",
-                 codec_->name ? codec_->name : "unknown");
+    spdlog::debug("[VideoDecodeSession] decoder prepared: {}",
+                  codec_->name ? codec_->name : "unknown");
     return true;
 }
 
@@ -138,7 +138,7 @@ bool VideoDecodeSession::enable_hardware_decode(
     params.height = codec_params_->height;
     params.device_mutex = device_mutex;
 
-    spdlog::info(
+    spdlog::debug(
         "[VideoDecodeSession] hardware device mode: {}",
         decode_device_mode_name(mode));
     auto result = try_hw_decode_providers(codec_, params);

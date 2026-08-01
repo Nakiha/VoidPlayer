@@ -40,6 +40,12 @@ void Renderer::Impl::seek(int64_t target_pts_us, SeekType type, int64_t request_
     {
         std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
         std::unique_lock<std::mutex> lock(state_mutex_);
+        const auto request_log = build_seek_request_log_facts(target_pts_us, type);
+        spdlog::info(
+            "[Renderer] seek requested request_id={} target={:.3f}s type={}",
+            request_id,
+            request_log.target_seconds,
+            request_log.type_label);
         if (request_id >= 0) {
             timeline_.begin_pending_seek_preview_event(request_id, target_pts_us);
         }
@@ -145,9 +151,9 @@ void Renderer::Impl::SeekCommandProcessor::seek(
                      clamp_log.duration_seconds);
     }
     const auto request_log = build_seek_request_log_facts(target_pts_us, type);
-    spdlog::info("[Renderer] seek_internal: target={:.3f}s, type={}",
-                 request_log.target_seconds,
-                 request_log.type_label);
+    spdlog::debug("[Renderer] seek_internal: target={:.3f}s, type={}",
+                  request_log.target_seconds,
+                  request_log.type_label);
     if (seek_preparation.clock_gate.deferred) {
         spdlog::info("[Renderer] Deferring paused HEVC HW seek to {:.3f}s",
                      seek_preparation.clock_gate.plan.target_pts_us / 1e6);
@@ -214,8 +220,8 @@ void Renderer::Impl::mark_paused_hevc_seek_preview_drawn_locked() {
     const auto result =
         timeline_.mark_paused_hevc_preview_drawn(has_hevc_hw_track_locked());
     if (result.was_in_flight && !result.in_flight) {
-        spdlog::info("[Renderer] Paused HEVC HW seek preview ready, settle window {}ms",
-                     static_cast<long long>(kPausedHevcSeekSettleDelay.count()));
+        spdlog::debug("[Renderer] Paused HEVC HW seek preview ready, settle window {}ms",
+                      static_cast<long long>(kPausedHevcSeekSettleDelay.count()));
     }
 }
 

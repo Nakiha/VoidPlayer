@@ -6,6 +6,7 @@ import '../analysis/analysis_ffi.dart';
 import '../analysis/analysis_quality_service.dart';
 import '../analysis/ui/charts/analysis_chart_common.dart';
 import '../analysis/ui/charts/analysis_frame_style.dart';
+import '../app_log.dart';
 import '../l10n/app_localizations.dart';
 import '../track_manager.dart';
 import 'main_window_view_model.dart';
@@ -22,6 +23,8 @@ const Key mainWindowQualityThresholdDragKey = ValueKey(
 );
 const Key mainWindowQualityToolbarKey = ValueKey('main-window-quality-toolbar');
 const Key mainWindowQualityMetricsKey = ValueKey('main-window-quality-metrics');
+
+final _qualityUiLogger = appLogger('QualityUI');
 
 /// Keeps completed quality reports alive while the analysis deck changes tabs.
 ///
@@ -212,7 +215,13 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
             track.path,
             report.samples,
           );
-        } catch (_) {
+        } catch (error, stackTrace) {
+          _qualityUiLogger.warning(
+            'cached frame enrichment failed file_id=${track.fileId} '
+            'samples=${report.samples.length}',
+            error,
+            stackTrace,
+          );
           frames = const {};
         }
       }
@@ -285,13 +294,31 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
     final fileId = _fileId;
     final create = widget.actions.deck.onQualityMarksRequested;
     if (report == null || fileId == null || create == null) return;
-    final created = await create(
-      MainWindowQualityMarkRequest(
-        fileId: fileId,
-        metric: _metric,
-        threshold: _threshold,
-        report: report,
-      ),
+    _qualityUiLogger.info(
+      'mark generation started file_id=$fileId metric=${_metric.name} '
+      'threshold=${_threshold.toStringAsFixed(4)}',
+    );
+    final int created;
+    try {
+      created = await create(
+        MainWindowQualityMarkRequest(
+          fileId: fileId,
+          metric: _metric,
+          threshold: _threshold,
+          report: report,
+        ),
+      );
+    } catch (error, stackTrace) {
+      _qualityUiLogger.warning(
+        'mark generation failed file_id=$fileId metric=${_metric.name}',
+        error,
+        stackTrace,
+      );
+      rethrow;
+    }
+    _qualityUiLogger.info(
+      'mark generation completed file_id=$fileId metric=${_metric.name} '
+      'created=$created',
     );
     if (!mounted) return;
     final l = AppLocalizations.of(context)!;

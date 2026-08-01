@@ -5,11 +5,14 @@ import 'dart:isolate';
 
 import 'package:path/path.dart' as p;
 
+import '../app_log.dart';
 import '../app_paths.dart';
 import 'analysis_ffi.dart';
 import 'analysis_manager.dart';
 
 enum AnalysisQualityPhase { opening, decoding, finalizing }
+
+final _qualityLogger = appLogger('QualityAnalysis');
 
 class AnalysisQualityProgress {
   final AnalysisQualityPhase phase;
@@ -100,17 +103,57 @@ class NativeAnalysisQualityService
   const NativeAnalysisQualityService({this.cliExecutablePath});
 
   @override
-  Future<AnalysisQualityReport> analyze(AnalysisQualityRequest request) {
-    if (cliExecutablePath != null || Platform.isWindows) {
-      return _analyzeWithCli(request);
-    }
-    return Isolate.run(
-      () => AnalysisQualityNative.analyzeSync(
-        request.videoPath,
-        sampleIntervalUs: request.sampleIntervalUs,
-        maxSamples: request.maxSamples,
-      ),
+  Future<AnalysisQualityReport> analyze(AnalysisQualityRequest request) async {
+    final operationId =
+        'qa-${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}';
+    final backend = cliExecutablePath != null || Platform.isWindows
+        ? 'cli'
+        : 'ffi';
+    final stopwatch = Stopwatch()..start();
+    _qualityLogger.info(
+      'analysis started operation=$operationId backend=$backend '
+      'media=${p.basename(request.videoPath)} '
+      'sample_interval_us=${request.sampleIntervalUs} '
+      'max_samples=${request.maxSamples}',
     );
+    try {
+      final report = backend == 'cli'
+          ? await _analyzeWithCli(request)
+          : await Isolate.run(
+              () => AnalysisQualityNative.analyzeSync(
+                request.videoPath,
+                sampleIntervalUs: request.sampleIntervalUs,
+                maxSamples: request.maxSamples,
+              ),
+            );
+      _qualityLogger.info(
+        'analysis completed operation=$operationId backend=$backend '
+        'elapsed_ms=${stopwatch.elapsedMilliseconds} '
+        'samples=${report.samples.length} tiles=${report.tileSamples.length} '
+        'events=${report.events.length} truncated=${report.truncated}',
+      );
+      return report;
+    } on AnalysisQualityException catch (error, stackTrace) {
+      final message =
+          'analysis ${error.code == 'cancelled' ? 'cancelled' : 'failed'} '
+          'operation=$operationId backend=$backend '
+          'elapsed_ms=${stopwatch.elapsedMilliseconds} code=${error.code}';
+      if (error.code == 'cancelled') {
+        _qualityLogger.info(message);
+      } else {
+        _qualityLogger.warning(message, error, stackTrace);
+      }
+      rethrow;
+    } on Object catch (error, stackTrace) {
+      _qualityLogger.warning(
+        'analysis failed operation=$operationId backend=$backend '
+        'elapsed_ms=${stopwatch.elapsedMilliseconds} '
+        'code=unexpected_error',
+        error,
+        stackTrace,
+      );
+      rethrow;
+    }
   }
 
   Future<AnalysisQualityReport> _analyzeWithCli(

@@ -10,6 +10,7 @@ import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/viewport/display_geometry.dart';
 import 'package:void_player/viewport/viewport_display_state.dart';
 import 'package:void_player/widgets/app_menu_combo.dart';
+import 'package:void_player/widgets/quick_mark_overlay.dart';
 import 'package:void_player/widgets/viewport_panel.dart';
 
 class _FakePointerButtonStateProvider implements PointerButtonStateProvider {
@@ -26,6 +27,44 @@ class _FakePointerButtonStateProvider implements PointerButtonStateProvider {
 void main() {
   setUpAll(() async {
     await initLogging(['--log-level=flutter=OFF']);
+  });
+
+  test('small tile marks keep their labels readable outside the tile', () {
+    const mark = QuickMark(
+      id: 11,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
+      sourceRect: Rect.fromLTWH(0.5, 0, 1 / 30, 1 / 17),
+      text: 'Quality: blockiness 0.030',
+    );
+
+    final labelRect = quickMarkTextHitRect(
+      mark,
+      const Rect.fromLTWH(500, 40, 34, 34),
+      const Rect.fromLTWH(0, 0, 1000, 600),
+    );
+
+    expect(labelRect, isNotNull);
+    expect(labelRect!.width, greaterThan(120));
+    expect(labelRect.height, lessThan(48));
+    expect(labelRect.left, 500);
+  });
+
+  test('tile labels move below tiles that touch the viewport top', () {
+    const mark = QuickMark(
+      id: 11,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
+      sourceRect: Rect.fromLTWH(0.5, 0, 1 / 30, 1 / 17),
+      text: 'Quality: blockiness 0.030',
+    );
+
+    final labelRect = quickMarkTextHitRect(
+      mark,
+      const Rect.fromLTWH(500, 0, 34, 34),
+      const Rect.fromLTWH(0, 0, 1000, 600),
+    );
+
+    expect(labelRect, isNotNull);
+    expect(labelRect!.top, greaterThan(34));
   });
 
   Widget buildPanel({

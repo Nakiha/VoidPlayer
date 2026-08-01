@@ -980,6 +980,7 @@ class AnalysisQualitySample {
   final double noise;
   final double? flicker;
   final double? averageQp;
+  final List<AnalysisQualitySpatialRegion> spatialRegions;
 
   const AnalysisQualitySample({
     required this.sampleIndex,
@@ -991,6 +992,7 @@ class AnalysisQualitySample {
     required this.noise,
     required this.flicker,
     required this.averageQp,
+    this.spatialRegions = const [],
   });
 
   double? valueFor(AnalysisQualityMetric metric) {
@@ -1020,6 +1022,8 @@ class AnalysisQualitySample {
 
 class AnalysisQualityReport {
   final int schemaVersion;
+  final String metricVersion;
+  final String? resultKey;
   final int videoWidth;
   final int videoHeight;
   final int bitDepth;
@@ -1029,9 +1033,13 @@ class AnalysisQualityReport {
   final int unsupportedPixelFrames;
   final Map<AnalysisQualityMetric, AnalysisQualityDistribution> distributions;
   final List<AnalysisQualitySample> samples;
+  final List<AnalysisQualityTileSample> tileSamples;
+  final List<AnalysisQualityEvent> events;
 
   const AnalysisQualityReport({
     required this.schemaVersion,
+    required this.metricVersion,
+    this.resultKey,
     required this.videoWidth,
     required this.videoHeight,
     required this.bitDepth,
@@ -1041,6 +1049,186 @@ class AnalysisQualityReport {
     required this.unsupportedPixelFrames,
     required this.distributions,
     required this.samples,
+    this.tileSamples = const [],
+    this.events = const [],
+  });
+
+  /// Whether this report came from the quality CLI process protocol. Reports
+  /// produced through the in-process FFI path have no [resultKey]; only the
+  /// CLI emits candidate events and a cache identity.
+  bool get hasEventCandidates => resultKey != null;
+
+  AnalysisQualityTileSample? tileSampleAt(int sampleIndex) {
+    if (sampleIndex >= 0 && sampleIndex < tileSamples.length) {
+      final direct = tileSamples[sampleIndex];
+      if (direct.sampleIndex == sampleIndex) return direct;
+    }
+    for (final sample in tileSamples) {
+      if (sample.sampleIndex == sampleIndex) return sample;
+    }
+    return null;
+  }
+}
+
+class AnalysisQualityTileMetricData {
+  final bool available;
+  final String algorithm;
+  final List<double?>? values;
+
+  const AnalysisQualityTileMetricData({
+    required this.available,
+    required this.algorithm,
+    required this.values,
+  });
+}
+
+class AnalysisQualityTilePeak {
+  final int column;
+  final int row;
+  final double value;
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+
+  const AnalysisQualityTilePeak({
+    required this.column,
+    required this.row,
+    required this.value,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+  });
+}
+
+class AnalysisQualityTileSample {
+  final int sampleIndex;
+  final int decodedFrameIndex;
+  final int ptsUs;
+  final String tileMetricVersion;
+  final int frameWidth;
+  final int frameHeight;
+  final int targetTileWidth;
+  final int targetTileHeight;
+  final int columns;
+  final int rows;
+  final Map<AnalysisQualityMetric, AnalysisQualityTileMetricData> metrics;
+
+  const AnalysisQualityTileSample({
+    required this.sampleIndex,
+    required this.decodedFrameIndex,
+    required this.ptsUs,
+    required this.tileMetricVersion,
+    required this.frameWidth,
+    required this.frameHeight,
+    required this.targetTileWidth,
+    required this.targetTileHeight,
+    required this.columns,
+    required this.rows,
+    required this.metrics,
+  });
+
+  AnalysisQualityTilePeak? strongestTileFor(AnalysisQualityMetric metric) {
+    final data = metrics[metric];
+    final values = data?.values;
+    if (data == null || !data.available || values == null) return null;
+    if (columns <= 0 || rows <= 0 || values.length != columns * rows) {
+      return null;
+    }
+    var strongestIndex = -1;
+    var strongestValue = -1.0;
+    for (var index = 0; index < values.length; index++) {
+      final value = values[index];
+      if (value != null && value > strongestValue) {
+        strongestIndex = index;
+        strongestValue = value;
+      }
+    }
+    if (strongestIndex < 0) return null;
+    final column = strongestIndex % columns;
+    final row = strongestIndex ~/ columns;
+    if (frameWidth <= 0 || frameHeight <= 0) return null;
+    final pixelLeft = column * frameWidth ~/ columns;
+    final pixelTop = row * frameHeight ~/ rows;
+    final pixelRight = (column + 1) * frameWidth ~/ columns;
+    final pixelBottom = (row + 1) * frameHeight ~/ rows;
+    final left = pixelLeft / frameWidth;
+    final top = pixelTop / frameHeight;
+    final right = pixelRight / frameWidth;
+    final bottom = pixelBottom / frameHeight;
+    return AnalysisQualityTilePeak(
+      column: column,
+      row: row,
+      value: strongestValue,
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+    );
+  }
+}
+
+class AnalysisQualitySpatialRegion {
+  final double score;
+  final double detectionThreshold;
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final int pixelX;
+  final int pixelY;
+  final int pixelWidth;
+  final int pixelHeight;
+
+  const AnalysisQualitySpatialRegion({
+    required this.score,
+    required this.detectionThreshold,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.pixelX,
+    required this.pixelY,
+    required this.pixelWidth,
+    required this.pixelHeight,
+  });
+}
+
+enum AnalysisQualityEventClassification { relativeOutlier, spatialCandidate }
+
+/// A candidate quality event emitted by the CLI. Events are experimental
+/// evidence, not calibrated pass/fail labels; thresholding and grouping are
+/// owned by the CLI event policy and must not be reproduced here.
+class AnalysisQualityEvent {
+  final String eventId;
+  final AnalysisQualityMetric metric;
+  final AnalysisQualityEventClassification classification;
+  final int startPtsUs;
+  final int endPtsUs;
+  final int peakPtsUs;
+  final int startSampleIndex;
+  final int endSampleIndex;
+  final int peakSampleIndex;
+  final double peakScore;
+  final int evidenceSampleCount;
+  final double threshold;
+  final AnalysisQualitySpatialRegion? region;
+
+  const AnalysisQualityEvent({
+    required this.eventId,
+    required this.metric,
+    required this.classification,
+    required this.startPtsUs,
+    required this.endPtsUs,
+    required this.peakPtsUs,
+    required this.startSampleIndex,
+    required this.endSampleIndex,
+    required this.peakSampleIndex,
+    required this.peakScore,
+    required this.evidenceSampleCount,
+    required this.threshold,
+    required this.region,
   });
 }
 
@@ -1124,6 +1312,11 @@ class AnalysisQualityNative {
         }
         return AnalysisQualityReport(
           schemaVersion: native.schemaVersion,
+          // The in-process FFI path predates the CLI process protocol: it has
+          // no metric-version string, no result key and no event candidates.
+          metricVersion: '',
+          resultKey: null,
+          events: const [],
           videoWidth: native.videoWidth,
           videoHeight: native.videoHeight,
           bitDepth: native.bitDepth,

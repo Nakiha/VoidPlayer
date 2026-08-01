@@ -15,6 +15,7 @@ platform service 注入、MethodChannel/EventChannel 调用编排，以及平台
 - Native 播放、渲染与解码能力通过 `NativePlayerController` 暴露，Flutter 层不直接处理帧数据；平台 native target 与 runner compose 都在平台边界内。
 - 跨平台主窗口在 `lib/main_window/`。Analysis UI 位于 `lib/analysis/ui/`，以内嵌 deck tab 运行；Windows 专属能力集中在 `lib/windows/`。
 - macOS runner/platform services 由 `macos/` 和平台能力开关承接；native playback 与进程内 analysis UI 均可用。
+- Windows 主窗口的质量页通过同目录 `VoidPlayerCli` 的 JSONL 进程协议执行质量分析；Dart 只负责请求、进度/取消、严格协议解析和结果缓存。CLI 不可用或协议不完整时显式失败，不回退到另一套静默算法。
 
 ## 详细文档索引
 
@@ -33,7 +34,7 @@ platform service 注入、MethodChannel/EventChannel 调用编排，以及平台
 | [AXTree 维护](docs/AXTREE_MAINTENANCE.md) | 主窗口 / analysis 窗口 Semantics、UIA、识图分割维护规则 |
 | [UI 自动化测试](docs/UI_TESTING.md) | `ui_tests/` 目录分区、回归选择、补测试规则 |
 | [macOS Runner](../macos/doc.md) | macOS Cocoa runner、native CVPixelBuffer target ring、Metal composition、release gate |
-| [VoidPlayerCli](../installer/windows/docs/cli.md) | 发布包内只读 VAC2/VACHUNK cache 检查工具 |
+| [VoidPlayerCli](../installer/windows/docs/cli.md) | 发布包内 cache 检查、质量评分与 JSONL 进程协议工具 |
 
 ## 常用开发命令
 

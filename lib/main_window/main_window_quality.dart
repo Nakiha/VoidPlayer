@@ -20,19 +20,56 @@ const Key mainWindowQualityChartKey = ValueKey('main-window-quality-chart');
 const Key mainWindowQualityThresholdDragKey = ValueKey(
   'main-window-quality-threshold-drag',
 );
+const Key mainWindowQualityToolbarKey = ValueKey('main-window-quality-toolbar');
+const Key mainWindowQualityMetricsKey = ValueKey('main-window-quality-metrics');
+
+/// Keeps completed quality reports alive while the analysis deck changes tabs.
+///
+/// The deck owns this session, so cached reports remain scoped to the current
+/// main-window session instead of becoming global application state.
+class MainWindowQualitySession {
+  final Map<int, _MainWindowQualitySnapshot> _snapshots = {};
+
+  _MainWindowQualitySnapshot? _restore(int? fileId) =>
+      fileId == null ? null : _snapshots[fileId];
+
+  void _save(int fileId, _MainWindowQualitySnapshot snapshot) {
+    _snapshots[fileId] = snapshot;
+  }
+}
+
+class _MainWindowQualitySnapshot {
+  final AnalysisQualityMetric metric;
+  final Set<AnalysisQualityMetric> visibleMetrics;
+  final AnalysisQualityReport report;
+  final Map<int, FrameInfo> framesByDecodedIndex;
+  final AnalysisQualitySample? selectedSample;
+  final double threshold;
+  final String? notice;
+
+  const _MainWindowQualitySnapshot({
+    required this.metric,
+    required this.visibleMetrics,
+    required this.report,
+    required this.framesByDecodedIndex,
+    required this.selectedSample,
+    required this.threshold,
+    required this.notice,
+  });
+}
 
 class MainWindowQualityDeck extends StatefulWidget {
   final MainWindowViewModel model;
   final MainWindowViewActions actions;
+  final MainWindowQualitySession session;
   final int? selectedFileId;
-  final bool showTrackSelector;
 
   const MainWindowQualityDeck({
     super.key,
     required this.model,
     required this.actions,
+    required this.session,
     this.selectedFileId,
-    this.showTrackSelector = true,
   });
 
   @override
@@ -54,11 +91,21 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
   String? _error;
   String? _notice;
   int _requestSerial = 0;
+  AnalysisQualityProgress? _progress;
+  AnalysisQualityCancellationToken? _cancelToken;
 
   @override
   void initState() {
     super.initState();
     _fileId = widget.selectedFileId ?? _initialFileId();
+    _restoreReport();
+  }
+
+  @override
+  void dispose() {
+    _cancelToken?.cancel();
+    _cancelToken = null;
+    super.dispose();
   }
 
   @override
@@ -68,22 +115,54 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
     if (widget.selectedFileId != null &&
         widget.selectedFileId != oldWidget.selectedFileId) {
       _fileId = widget.selectedFileId;
-      _resetReport();
+      _restoreReport();
       return;
     }
     if (_fileId == null || !tracks.any((entry) => entry.fileId == _fileId)) {
       _fileId = widget.selectedFileId ?? _initialFileId();
-      _resetReport();
+      _restoreReport();
     }
   }
 
-  void _resetReport() {
-    _report = null;
-    _framesByDecodedIndex = const {};
-    _selectedSample = null;
+  void _restoreReport() {
+    // Switching tracks abandons any in-flight request: cancel it and bump the
+    // serial so its completion cannot leak the old report into the newly
+    // selected track or save it under the wrong file id.
+    _cancelToken?.cancel();
+    _cancelToken = null;
+    _requestSerial++;
+    _loading = false;
+    _progress = null;
+    final snapshot = widget.session._restore(_fileId);
+    _metric = snapshot?.metric ?? AnalysisQualityMetric.blockiness;
+    _visibleMetrics
+      ..clear()
+      ..addAll(snapshot?.visibleMetrics ?? AnalysisQualityMetric.values);
+    _report = snapshot?.report;
+    _framesByDecodedIndex = snapshot?.framesByDecodedIndex ?? const {};
+    _selectedSample = snapshot?.selectedSample;
     _hoverSample = null;
+    _threshold = snapshot?.threshold ?? 0;
     _error = null;
-    _notice = null;
+    _notice = snapshot?.notice;
+  }
+
+  void _saveReport() {
+    final fileId = _fileId;
+    final report = _report;
+    if (fileId == null || report == null) return;
+    widget.session._save(
+      fileId,
+      _MainWindowQualitySnapshot(
+        metric: _metric,
+        visibleMetrics: Set.unmodifiable(_visibleMetrics),
+        report: report,
+        framesByDecodedIndex: Map.unmodifiable(_framesByDecodedIndex),
+        selectedSample: _selectedSample,
+        threshold: _threshold,
+        notice: _notice,
+      ),
+    );
   }
 
   int? _initialFileId() {
@@ -102,12 +181,15 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
     final track = _selectedTrack;
     if (track == null || _loading) return;
     final serial = ++_requestSerial;
+    final cancelToken = AnalysisQualityCancellationToken();
     setState(() {
       _loading = true;
       _error = null;
       _notice = null;
       _selectedSample = null;
       _hoverSample = null;
+      _progress = null;
+      _cancelToken = cancelToken;
     });
     try {
       final source = widget.model.deck.qualityDataSource;
@@ -116,6 +198,11 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
           videoPath: track.path,
           sampleIntervalUs: 1000000,
           maxSamples: 600,
+          cancellationToken: cancelToken,
+          onProgress: (progress) {
+            if (!mounted || serial != _requestSerial) return;
+            setState(() => _progress = progress);
+          },
         ),
       );
       Map<int, FrameInfo> frames = const {};
@@ -135,16 +222,40 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
         _framesByDecodedIndex = frames;
         _threshold = _distribution(report, _metric).p95.clamp(0.0, 1.0);
         _loading = false;
+        _progress = null;
+        _cancelToken = null;
       });
+      _saveReport();
     } catch (error) {
       if (!mounted || serial != _requestSerial) return;
+      if (error is AnalysisQualityException && error.code == 'cancelled') {
+        // Cooperative cancellation restores the previous report unchanged.
+        setState(() {
+          _loading = false;
+          _progress = null;
+          _cancelToken = null;
+        });
+        return;
+      }
       setState(() {
         _report = null;
         _framesByDecodedIndex = const {};
         _loading = false;
+        _progress = null;
+        _cancelToken = null;
         _error = error.toString();
       });
     }
+  }
+
+  void _cancelAnalysis() {
+    _cancelToken?.cancel();
+  }
+
+  String _progressLabel(AppLocalizations l) {
+    final fraction = _progress?.fraction;
+    if (fraction == null) return l.qualityAnalyzing;
+    return '${l.qualityAnalyzing} ${(fraction * 100).round()}%';
   }
 
   void _selectMetric(AnalysisQualityMetric metric) {
@@ -158,6 +269,7 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
         _threshold = _distribution(report, metric).p95.clamp(0.0, 1.0);
       }
     });
+    _saveReport();
   }
 
   void _toggleMetric(AnalysisQualityMetric metric) {
@@ -165,6 +277,7 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
       if (!_visibleMetrics.remove(metric)) _visibleMetrics.add(metric);
       _notice = null;
     });
+    _saveReport();
   }
 
   Future<void> _createMarks() async {
@@ -187,6 +300,7 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
           ? l.qualityNoNewMarks
           : l.qualityCreatedMarks(created);
     });
+    _saveReport();
   }
 
   @override
@@ -199,102 +313,142 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
     final aboveThreshold = samples
         .where((sample) => (sample.valueFor(_metric) ?? -1) >= _threshold)
         .length;
+    // CLI reports carry candidate events aggregated by the analyzer; the
+    // legacy FFI path falls back to threshold-filtered samples.
+    final eventCandidateCount = report != null && report.hasEventCandidates
+        ? report.events.where((event) => event.metric == _metric).length
+        : null;
+    final markCandidateCount = eventCandidateCount ?? aboveThreshold;
+    final distribution = report == null ? null : _distribution(report, _metric);
 
     return DecoratedBox(
       decoration: BoxDecoration(color: theme.colorScheme.surface),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 7, 10, 8),
+        padding: const EdgeInsets.all(4),
         child: Column(
           children: [
-            SizedBox(
-              height: 38,
-              child: Row(
-                children: [
-                  if (widget.showTrackSelector) ...[
-                    DropdownMenu<int>(
-                      key: ValueKey('main-window-quality-track-$_fileId'),
-                      width: 220,
-                      initialSelection: _fileId,
-                      label: Text(l.qualityTrack),
-                      textStyle: theme.textTheme.bodySmall,
-                      inputDecorationTheme: const InputDecorationTheme(
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 7,
-                        ),
-                        constraints: BoxConstraints.tightFor(height: 36),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final statusWidth = (constraints.maxWidth * 0.18).clamp(
+                  104.0,
+                  220.0,
+                );
+                return SizedBox(
+                  key: mainWindowQualityToolbarKey,
+                  height: 32,
+                  child: Row(
+                    children: [
+                      _QualityToolbarButton(
+                        key: mainWindowQualityAnalyzeButtonKey,
+                        onPressed: tracks.isEmpty
+                            ? null
+                            : _loading
+                            ? _cancelAnalysis
+                            : _analyze,
+                        tooltip: _loading
+                            ? l.qualityCancelAnalysis
+                            : report == null
+                            ? l.qualityAnalyze
+                            : l.qualityReanalyze,
+                        emphasized: report == null && !_loading,
+                        icon: _loading
+                            ? const SizedBox.square(
+                                dimension: 13,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.query_stats, size: 16),
                       ),
-                      dropdownMenuEntries: [
-                        for (final track in tracks)
-                          DropdownMenuEntry(
-                            value: track.fileId,
-                            label: track.fileName,
+                      const SizedBox(width: 4),
+                      SizedBox(
+                        width: report == null
+                            ? constraints.maxWidth - 32
+                            : statusWidth,
+                        child: Text(
+                          _loading
+                              ? _progressLabel(l)
+                              : report == null
+                              ? l.qualityExperimentalProxyNotice
+                              : l.qualitySampleSummary(
+                                  report.videoWidth,
+                                  report.videoHeight,
+                                  report.samples.length,
+                                  report.truncated
+                                      ? l.qualitySampleCappedSuffix
+                                      : '',
+                                ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
-                      ],
-                      onSelected: _loading
-                          ? null
-                          : (fileId) {
-                              setState(() {
-                                _fileId = fileId;
-                                _resetReport();
-                              });
-                            },
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  FilledButton.tonalIcon(
-                    key: mainWindowQualityAnalyzeButtonKey,
-                    onPressed: tracks.isEmpty || _loading ? null : _analyze,
-                    icon: _loading
-                        ? const SizedBox.square(
-                            dimension: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.query_stats, size: 17),
-                    label: Text(
-                      _loading
-                          ? l.qualityAnalyzing
-                          : report == null
-                          ? l.qualityAnalyze
-                          : l.qualityReanalyze,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      report == null
-                          ? l.qualityExperimentalProxyNotice
-                          : l.qualitySampleSummary(
-                              report.videoWidth,
-                              report.videoHeight,
-                              report.samples.length,
-                              report.truncated
-                                  ? l.qualitySampleCappedSuffix
-                                  : '',
-                            ),
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
-                    ),
+                      if (report != null) ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            key: mainWindowQualityMetricsKey,
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                for (final metric
+                                    in AnalysisQualityMetric.values) ...[
+                                  _QualityMetricControl(
+                                    semanticsKey: ValueKey(
+                                      'main-window-quality-metric-${metric.name}',
+                                    ),
+                                    label: _metricLabel(l, metric),
+                                    color: _metricColor(metric),
+                                    visible: _visibleMetrics.contains(metric),
+                                    focused: _metric == metric,
+                                    visibleLabel: l.qualityMetricVisible,
+                                    hiddenLabel: l.qualityMetricHidden,
+                                    onToggleVisibility: () =>
+                                        _toggleMetric(metric),
+                                    onSelect: () => _selectMetric(metric),
+                                  ),
+                                  const SizedBox(width: 4),
+                                ],
+                                if (distribution != null &&
+                                    distribution.count > 0)
+                                  Text(
+                                    '${l.qualityMean} '
+                                    '${distribution.mean.toStringAsFixed(3)}  ·  '
+                                    '${l.qualityP95} '
+                                    '${distribution.p95.toStringAsFixed(3)}',
+                                    maxLines: 1,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        _QualityToolbarButton(
+                          key: mainWindowQualityCreateMarksButtonKey,
+                          onPressed:
+                              markCandidateCount == 0 ||
+                                  widget.actions.deck.onQualityMarksRequested ==
+                                      null
+                              ? null
+                              : _createMarks,
+                          tooltip: l.qualityCreateMarks(markCandidateCount),
+                          icon: const Icon(
+                            Icons.add_location_alt_outlined,
+                            size: 16,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  FilledButton.tonalIcon(
-                    key: mainWindowQualityCreateMarksButtonKey,
-                    onPressed:
-                        report == null ||
-                            aboveThreshold == 0 ||
-                            widget.actions.deck.onQualityMarksRequested == null
-                        ? null
-                        : _createMarks,
-                    icon: const Icon(Icons.add_location_alt_outlined, size: 17),
-                    label: Text(l.qualityCreateMarks(aboveThreshold)),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
-            const SizedBox(height: 5),
+            const SizedBox(height: 4),
             Expanded(
               child: _buildChartArea(
                 context,
@@ -384,6 +538,7 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
                       geometry.plotRect,
                     );
                     setState(() => _selectedSample = sample);
+                    _saveReport();
                     final fileId = _fileId;
                     if (fileId != null) {
                       widget.actions.deck.onQualitySeekRequested?.call(
@@ -398,7 +553,6 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
                       framesByDecodedIndex: _framesByDecodedIndex,
                       focusMetric: _metric,
                       visibleMetrics: Set.unmodifiable(_visibleMetrics),
-                      distribution: _distribution(_report!, _metric),
                       threshold: _threshold,
                       playbackPtsUs: playbackPtsUs,
                       selectedSample: _selectedSample,
@@ -409,8 +563,6 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
                           metric: _metricLabel(l, metric),
                       },
                       thresholdLabel: l.qualityThreshold,
-                      meanLabel: l.qualityMean,
-                      p95Label: l.qualityP95,
                       seekHint: l.qualityClickChartToSeek,
                       notice: _notice,
                       tooltipTimeLabel: l.qualityTooltipTime,
@@ -423,8 +575,6 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
                 ),
               ),
             ),
-            for (final metric in AnalysisQualityMetric.values)
-              _metricGestureRegion(l, metric, geometry.legendRects[metric]!),
             Positioned(
               key: mainWindowQualityThresholdDragKey,
               left: geometry.plotRect.left,
@@ -448,6 +598,7 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
                       _notice = null;
                     });
                   },
+                  onVerticalDragEnd: (_) => _saveReport(),
                 ),
               ),
             ),
@@ -456,33 +607,129 @@ class _MainWindowQualityDeckState extends State<MainWindowQualityDeck> {
       },
     );
   }
+}
 
-  Widget _metricGestureRegion(
-    AppLocalizations l,
-    AnalysisQualityMetric metric,
-    Rect rect,
-  ) {
-    final visible = _visibleMetrics.contains(metric);
-    final focused = metric == _metric;
-    return Positioned.fromRect(
-      rect: rect,
-      child: Semantics(
-        key: ValueKey('main-window-quality-metric-${metric.name}'),
-        button: true,
-        toggled: visible,
-        selected: focused,
-        label:
-            '${_metricLabel(l, metric)}, '
-            '${visible ? l.qualityMetricVisible : l.qualityMetricHidden}',
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTapUp: (details) {
-            if (details.localPosition.dx <= 24) {
-              _toggleMetric(metric);
-            } else {
-              _selectMetric(metric);
-            }
-          },
+class _QualityMetricControl extends StatelessWidget {
+  final Key semanticsKey;
+  final String label;
+  final Color color;
+  final bool visible;
+  final bool focused;
+  final String visibleLabel;
+  final String hiddenLabel;
+  final VoidCallback onToggleVisibility;
+  final VoidCallback onSelect;
+
+  const _QualityMetricControl({
+    required this.semanticsKey,
+    required this.label,
+    required this.color,
+    required this.visible,
+    required this.focused,
+    required this.visibleLabel,
+    required this.hiddenLabel,
+    required this.onToggleVisibility,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      key: semanticsKey,
+      button: true,
+      toggled: visible,
+      selected: focused,
+      label: '$label, ${visible ? visibleLabel : hiddenLabel}',
+      child: Material(
+        color: focused ? color.withValues(alpha: 0.13) : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+        child: SizedBox(
+          height: 28,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Tooltip(
+                message: visible ? visibleLabel : hiddenLabel,
+                child: InkResponse(
+                  onTap: onToggleVisibility,
+                  radius: 14,
+                  child: SizedBox(
+                    width: 24,
+                    height: 28,
+                    child: Center(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: visible ? 1 : 0.24),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                        child: const SizedBox(width: 11, height: 9),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              InkWell(
+                onTap: onSelect,
+                borderRadius: const BorderRadius.horizontal(
+                  right: Radius.circular(4),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: visible ? 0.9 : 0.38,
+                      ),
+                      fontWeight: focused ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _QualityToolbarButton extends StatelessWidget {
+  final VoidCallback? onPressed;
+  final String tooltip;
+  final Widget icon;
+  final bool emphasized;
+
+  const _QualityToolbarButton({
+    super.key,
+    required this.onPressed,
+    required this.tooltip,
+    required this.icon,
+    this.emphasized = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        onPressed: onPressed,
+        icon: icon,
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+        style: IconButton.styleFrom(
+          minimumSize: const Size.square(28),
+          maximumSize: const Size.square(28),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          backgroundColor: emphasized ? colors.secondaryContainer : null,
+          foregroundColor: emphasized ? colors.onSecondaryContainer : null,
+          disabledBackgroundColor: emphasized
+              ? colors.onSurface.withValues(alpha: 0.08)
+              : null,
         ),
       ),
     );
@@ -544,31 +791,15 @@ String _formatTimestamp(int ptsUs) {
 class _QualityChartGeometry {
   final Size size;
   late final Rect plotRect;
-  late final Map<AnalysisQualityMetric, Rect> legendRects;
 
   _QualityChartGeometry(this.size) {
-    final compactLegend = size.width < 700;
-    final plotTop = compactLegend ? 62.0 : 40.0;
+    const plotTop = 8.0;
     plotRect = Rect.fromLTRB(
       40,
       plotTop,
       math.max(41, size.width - 10),
       math.max(plotTop + 1, size.height - 27),
     );
-    const itemW = 88.0;
-    const itemH = 25.0;
-    final rects = <AnalysisQualityMetric, Rect>{};
-    for (var index = 0; index < AnalysisQualityMetric.values.length; index++) {
-      final row = compactLegend ? index ~/ 3 : 0;
-      final column = compactLegend ? index % 3 : index;
-      rects[AnalysisQualityMetric.values[index]] = Rect.fromLTWH(
-        42 + column * itemW,
-        5 + row * itemH,
-        itemW,
-        itemH,
-      );
-    }
-    legendRects = Map.unmodifiable(rects);
   }
 
   double yForValue(double value) =>
@@ -580,7 +811,6 @@ class _QualityChartPainter extends CustomPainter {
   final Map<int, FrameInfo> framesByDecodedIndex;
   final AnalysisQualityMetric focusMetric;
   final Set<AnalysisQualityMetric> visibleMetrics;
-  final AnalysisQualityDistribution distribution;
   final double threshold;
   final int playbackPtsUs;
   final AnalysisQualitySample? selectedSample;
@@ -588,8 +818,6 @@ class _QualityChartPainter extends CustomPainter {
   final ColorScheme colors;
   final Map<AnalysisQualityMetric, String> metricLabels;
   final String thresholdLabel;
-  final String meanLabel;
-  final String p95Label;
   final String seekHint;
   final String? notice;
   final String tooltipTimeLabel;
@@ -602,7 +830,6 @@ class _QualityChartPainter extends CustomPainter {
     required this.framesByDecodedIndex,
     required this.focusMetric,
     required this.visibleMetrics,
-    required this.distribution,
     required this.threshold,
     required this.playbackPtsUs,
     required this.selectedSample,
@@ -610,8 +837,6 @@ class _QualityChartPainter extends CustomPainter {
     required this.colors,
     required this.metricLabels,
     required this.thresholdLabel,
-    required this.meanLabel,
-    required this.p95Label,
     required this.seekHint,
     required this.notice,
     required this.tooltipTimeLabel,
@@ -635,7 +860,6 @@ class _QualityChartPainter extends CustomPainter {
     double yFor(double value) =>
         plot.bottom - value.clamp(0.0, 1.0) * plot.height;
 
-    _drawLegend(canvas, geometry);
     _drawGrid(canvas, plot, xFor, firstPts, lastPts);
 
     canvas.save();
@@ -647,41 +871,7 @@ class _QualityChartPainter extends CustomPainter {
     _drawHover(canvas, plot, xFor, yFor);
     canvas.restore();
 
-    _drawSummary(canvas, size);
     _drawChartMessage(canvas, plot);
-  }
-
-  void _drawLegend(Canvas canvas, _QualityChartGeometry geometry) {
-    for (final metric in AnalysisQualityMetric.values) {
-      final rect = geometry.legendRects[metric]!;
-      final visible = visibleMetrics.contains(metric);
-      final focused = metric == focusMetric;
-      final color = _metricColor(metric);
-      if (focused) {
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(rect.deflate(1), const Radius.circular(4)),
-          Paint()..color = color.withValues(alpha: 0.13),
-        );
-      }
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(rect.left + 5, rect.top + 8, 11, 9),
-          const Radius.circular(2),
-        ),
-        Paint()..color = color.withValues(alpha: visible ? 1 : 0.24),
-      );
-      _paintText(
-        canvas,
-        metricLabels[metric]!,
-        Offset(rect.left + 22, rect.top + 5),
-        TextStyle(
-          color: colors.onSurface.withValues(alpha: visible ? 0.9 : 0.38),
-          fontSize: 10,
-          fontWeight: focused ? FontWeight.w700 : FontWeight.w500,
-        ),
-        maxWidth: rect.width - 24,
-      );
-    }
   }
 
   void _drawGrid(
@@ -911,18 +1101,6 @@ class _QualityChartPainter extends CustomPainter {
     }
   }
 
-  void _drawSummary(Canvas canvas, Size size) {
-    if (distribution.count == 0) return;
-    final text =
-        '$meanLabel ${distribution.mean.toStringAsFixed(3)}  ·  '
-        '$p95Label ${distribution.p95.toStringAsFixed(3)}';
-    final painter = _textPainter(
-      text,
-      TextStyle(color: colors.onSurfaceVariant, fontSize: 10),
-    );
-    painter.paint(canvas, Offset(size.width - painter.width - 8, 7));
-  }
-
   void _drawChartMessage(Canvas canvas, Rect plot) {
     final text = notice ?? (selectedSample == null ? seekHint : null);
     if (text == null || hoverSample != null) return;
@@ -975,7 +1153,6 @@ class _QualityChartPainter extends CustomPainter {
         oldDelegate.framesByDecodedIndex != framesByDecodedIndex ||
         oldDelegate.focusMetric != focusMetric ||
         oldDelegate.visibleMetrics != visibleMetrics ||
-        oldDelegate.distribution != distribution ||
         oldDelegate.threshold != threshold ||
         oldDelegate.playbackPtsUs != playbackPtsUs ||
         oldDelegate.selectedSample != selectedSample ||

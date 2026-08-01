@@ -235,6 +235,16 @@ class TestRunner {
       case ScriptClickMainWindowQualityAnalyze():
         testHarness.clickMainWindowQualityAnalyze();
 
+      case ScriptClickMainWindowQualityCreateMarks():
+        testHarness.clickMainWindowQualityCreateMarks();
+
+      case ScriptWaitMainWindowQualityReport(:final timeout):
+        log.info(
+          'TestRunner ${instr.time}: WAIT_MAIN_WINDOW_QUALITY_REPORT '
+          '${timeout.inMilliseconds}ms',
+        );
+        await _executeWaitMainWindowQualityReport(timeout);
+
       case ScriptAssertMainWindowDeckTab(:final tabName):
         final actual = automation.mainWindowDeckTabName();
         if (actual != tabName) {
@@ -1002,6 +1012,18 @@ class TestRunner {
       'WAIT_ANALYSIS_ENTRY_COUNT timed out after '
       '${timeout.inMilliseconds}ms: expected $count, got '
       '${automation.analysisEntryCount()}',
+    );
+  }
+
+  Future<void> _executeWaitMainWindowQualityReport(Duration timeout) async {
+    final stopwatch = Stopwatch()..start();
+    while (stopwatch.elapsed < timeout) {
+      if (testHarness.mainWindowQualityReportVisible) return;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    throw AssertionError(
+      'WAIT_MAIN_WINDOW_QUALITY_REPORT timed out after '
+      '${timeout.inMilliseconds}ms',
     );
   }
 

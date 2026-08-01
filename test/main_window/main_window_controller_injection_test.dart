@@ -4,12 +4,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/actions/action_registry.dart';
 import 'package:void_player/analysis/analysis_cache.dart';
+import 'package:void_player/analysis/analysis_ffi.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/analysis/analysis_overlay.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
+import 'package:void_player/analysis/nalu_types.dart';
+import 'package:void_player/analysis/ui/analysis_ui_selection.dart';
 import 'package:void_player/app_log.dart';
 import 'package:void_player/config/app_settings_repository.dart';
 import 'package:void_player/main_window/main_window_controller.dart';
+import 'package:void_player/main_window/main_window_selection.dart';
 import 'package:void_player/marks/quick_mark.dart';
 import 'package:void_player/marks/quick_mark_persistence.dart';
 import 'package:void_player/marks/quick_mark_thumbnail.dart';
@@ -481,7 +485,7 @@ void main() {
     expect(failures.single, contains('offset failed'));
   });
 
-  test('quick mark jump previews target frame before selecting the mark', () {
+  test('quick mark jump keeps inspector selection while seeking target', () {
     final controller = MainWindowController(
       actionRegistry: ActionRegistry(),
       vsync: const TestVSync(),
@@ -536,6 +540,22 @@ void main() {
         },
       );
 
+    controller.stateStore.setAnalysisSelection(
+      AnalysisNaluSelection(
+        fileId: 1,
+        codec: AnalysisCodec.h264,
+        naluIndex: 0,
+        nalu: NaluInfo(
+          offset: 0,
+          size: 8,
+          nalType: 1,
+          temporalId: 0,
+          layerId: 0,
+          flags: 0,
+        ),
+      ),
+    );
+
     expect(
       controller.viewModel.viewport.quickMarks.map((mark) => mark.id),
       const [1],
@@ -545,7 +565,10 @@ void main() {
 
     expect(controller.stateStore.value.currentPtsUs, 5000);
     expect(controller.stateStore.value.pendingSeekUs, 5000);
+    expect(controller.stateStore.value.selectedQuickMarkId, 2);
+    expect(controller.stateStore.value.analysisSelection, isNull);
     var viewModel = controller.viewModel;
+    expect(viewModel.selection, isA<MainWindowQuickMarkSelection>());
     expect(viewModel.viewport.quickMarks, isEmpty);
     expect(viewModel.viewport.selectedQuickMarkId, isNull);
 
@@ -742,6 +765,87 @@ void main() {
     expect(controller.viewModel.playback.isPlaying, isFalse);
     expect(controller.viewModel.viewport.quickMarkDraft, isNotNull);
   });
+
+  test(
+    'quick mark on a non-zero first frame stays visible at timeline zero',
+    () async {
+      const channel = MethodChannel('video_renderer');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            switch (call.method) {
+              case 'createPlayer':
+                return {
+                  'playerId': 1,
+                  'textureId': 1,
+                  'tracks': const <Map<String, Object?>>[],
+                };
+              case 'currentPresentedFrame':
+                return {
+                  'ptsUs': 12000,
+                  'dtsUs': 12000,
+                  'durationUs': 33333,
+                  'analysisFrameIndex': 0,
+                };
+              default:
+                return null;
+            }
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final controller = MainWindowController(
+        actionRegistry: ActionRegistry(),
+        vsync: const TestVSync(),
+        startupOptions: const StartupOptions(),
+        mounted: () => true,
+        analysisGeneration: _FakeAnalysisGenerationService(),
+        analysisToolbarDataSource: _FakeAnalysisToolbarDataSource(),
+        appSettings: _FakeAppSettingsRepository(),
+        playbackPreferences: _FakePlaybackPreferences(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.player.createPlayer(
+        ['/tmp/video.mp4'],
+        width: 320,
+        height: 180,
+      );
+      controller.trackManager.addTrack(
+        const TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: '/tmp/video.mp4',
+          width: 320,
+          height: 180,
+        ),
+      );
+      controller.stateStore
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
+        ..setPolledPlaybackState(0, 1000000, false);
+      controller.viewActions.viewport.onResize(320, 180, 1.0);
+
+      controller.viewActions.viewport.onQuickMarkStart(const Offset(80, 60));
+      controller.viewActions.viewport.onQuickMarkUpdate(const Offset(160, 120));
+      controller.viewActions.viewport.onQuickMarkEnd();
+
+      await _waitForTestCondition(
+        () => controller.viewModel.marks.allMarks.isNotEmpty,
+        'quick mark creation',
+      );
+
+      final mark = controller.viewModel.marks.allMarks.single;
+      expect(controller.viewModel.playback.currentPtsUs, 0);
+      expect(mark.anchor.ptsUs, 12000);
+      expect(controller.stateStore.value.presentedFrameAnchors[1], mark.anchor);
+      expect(controller.viewModel.marks.visibleMarkIds, contains(mark.id));
+      expect(
+        controller.viewModel.viewport.quickMarks.map((item) => item.id),
+        contains(mark.id),
+      );
+    },
+  );
 
   test(
     'arrow quick mark thumbnail capture is centered on arrow head',

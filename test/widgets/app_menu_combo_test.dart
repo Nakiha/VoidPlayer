@@ -94,6 +94,30 @@ void main() {
 
     expect(selected, 'Two');
   });
+
+  testWidgets('disabled app menu combo does not open', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: AppMenuCombo<String>(
+              value: 'One',
+              items: const ['One', 'Two'],
+              labelFor: (value) => value,
+              onChanged: (_) {},
+              enabled: false,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(AppMenuCombo<String>));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Two'), findsNothing);
+  });
 }
 
 class _ComboHost extends StatefulWidget {

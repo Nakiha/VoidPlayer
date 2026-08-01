@@ -61,6 +61,8 @@
   "@qualityReanalyze": { "description": "Quality reanalysis action" },
   "qualityAnalyzing": "Analyzing…",
   "@qualityAnalyzing": { "description": "Quality analysis in-progress action label" },
+  "qualityCancelAnalysis": "Cancel analysis",
+  "@qualityCancelAnalysis": { "description": "Cancel the running quality analysis" },
   "qualityExperimentalProxyNotice": "Experimental proxies · higher is worse",
   "@qualityExperimentalProxyNotice": { "description": "Quality metric qualification shown before analysis" },
   "qualitySampleSummary": "{width}×{height} · {count} samples{suffix}",

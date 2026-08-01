@@ -36,6 +36,7 @@ class AppMenuCombo<T> extends StatefulWidget {
   final bool showSelectedCheck;
   final IconData? Function(T value)? iconFor;
   final bool notifyOnReselect;
+  final bool enabled;
 
   const AppMenuCombo({
     super.key,
@@ -64,6 +65,7 @@ class AppMenuCombo<T> extends StatefulWidget {
     this.showSelectedCheck = true,
     this.iconFor,
     this.notifyOnReselect = false,
+    this.enabled = true,
   });
 
   @override
@@ -120,6 +122,7 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
   }
 
   void _toggleMenu() {
+    if (!widget.enabled) return;
     if (_isOpen) {
       _closeMenu();
     } else {
@@ -128,6 +131,7 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
   }
 
   void _openMenu() {
+    if (!widget.enabled) return;
     final overlay = Overlay.of(context);
     if (_overlayEntry != null) return;
 
@@ -164,6 +168,7 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (!widget.enabled) return KeyEventResult.ignored;
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     if (event.logicalKey == LogicalKeyboardKey.escape) {
       if (_isOpen) {
@@ -362,7 +367,13 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
     final theme = Theme.of(context);
     final labelStyle = (widget.textStyle ?? theme.textTheme.bodySmall)
         ?.copyWith(color: widget.foregroundColor);
-    final iconColor = widget.foregroundColor ?? theme.iconTheme.color;
+    final disabledColor = theme.colorScheme.onSurface.withValues(alpha: 0.38);
+    final iconColor = widget.enabled
+        ? widget.foregroundColor ?? theme.iconTheme.color
+        : disabledColor;
+    final effectiveLabelStyle = widget.enabled
+        ? labelStyle
+        : labelStyle?.copyWith(color: disabledColor);
     final buttonLabel = widget.buttonLabel ?? widget.labelFor(widget.value);
     final buttonContent = widget.buttonBuilder?.call(
       context,
@@ -380,7 +391,7 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
           borderRadius: widget.borderRadius,
           clipBehavior: Clip.antiAlias,
           child: InkWell(
-            onTap: _toggleMenu,
+            onTap: widget.enabled ? _toggleMenu : null,
             borderRadius: widget.borderRadius,
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -405,7 +416,7 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
                         Expanded(
                           child: Text(
                             buttonLabel,
-                            style: labelStyle,
+                            style: effectiveLabelStyle,
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
                           ),

@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import '../analysis/ui/page/analysis_page_state.dart';
 import '../analysis/ui/workspace/analysis_workspace_models.dart';
 import '../analysis/ui/workspace/analysis_workspace_page.dart';
+import '../native_player/native_player_protocol.dart';
 import '../widgets/loop_range_bar.dart';
 import '../widgets/timeline_area.dart';
 import 'main_window_analysis_dock.dart';
 import 'main_window_list_sidebar.dart';
+import 'main_window_quality.dart';
 import 'main_window_state.dart';
 import 'main_window_view_handles.dart';
 import 'main_window_view_model.dart';
@@ -22,7 +24,7 @@ const int _maxVisibleCompactTimelineTracks = 4;
 const double _defaultAnalysisDeckFraction = 0.42;
 const double _minAnalysisDeckFraction = 0.25;
 const double _maxAnalysisDeckFraction = 0.70;
-const double _analysisDeckResizeHandleHeight = 9.0;
+const double _analysisDeckResizeHandleHeight = 8.0;
 
 class MainWindowDeck extends StatefulWidget {
   final MainWindowViewModel model;
@@ -46,7 +48,7 @@ class MainWindowDeck extends StatefulWidget {
 
 class _MainWindowDeckState extends State<MainWindowDeck> {
   double _analysisDeckFraction = _defaultAnalysisDeckFraction;
-  bool _analysisSplitView = false;
+  final MainWindowQualitySession _qualitySession = MainWindowQualitySession();
   int _focusPublication = 0;
 
   @override
@@ -103,9 +105,7 @@ class _MainWindowDeckState extends State<MainWindowDeck> {
               currentPlaybackByFileId: model.deck.analysisPlaybackByFileId,
               onFrameSeekRequested:
                   widget.actions.deck.onAnalysisFrameSeekRequested,
-              splitView:
-                  _analysisSplitView &&
-                  model.deck.tab == MainWindowDeckTab.analysis,
+              splitView: model.viewport.viewMode == LayoutMode.splitScreen,
               contentBuilder:
                   (
                     context,
@@ -164,6 +164,7 @@ class _MainWindowDeckState extends State<MainWindowDeck> {
       analysisActions: analysisActions,
       model: widget.model,
       actions: widget.actions,
+      qualitySession: _qualitySession,
     );
   }
 
@@ -187,6 +188,7 @@ class _MainWindowDeckState extends State<MainWindowDeck> {
       entry: entry,
       model: widget.model,
       actions: widget.actions,
+      qualitySession: _qualitySession,
     );
   }
 
@@ -196,17 +198,11 @@ class _MainWindowDeckState extends State<MainWindowDeck> {
       builder: (context, focus, _) {
         final entries =
             focus?.entries ?? widget.model.deck.analysisEntries.value;
-        final entry = focus?.entry ?? (entries.isEmpty ? null : entries.first);
         final qualitySelected =
             widget.model.deck.tab == MainWindowDeckTab.quality;
-        final splitEnabled = !qualitySelected && entries.length > 1;
-        if (entries.length <= 1 && _analysisSplitView) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && _analysisSplitView) {
-              setState(() => _analysisSplitView = false);
-            }
-          });
-        }
+        final selectedIndex = entries.isEmpty
+            ? 0
+            : (focus?.selectedIndex ?? 0).clamp(0, entries.length - 1).toInt();
 
         void selectAnalysisTab(int tab) {
           focus?.pageActions?.onTabChanged(tab);
@@ -216,19 +212,17 @@ class _MainWindowDeckState extends State<MainWindowDeck> {
         }
 
         return MainWindowAnalysisDeckHeader(
-          fileName: entry?.fileName ?? '',
+          entries: entries,
+          selectedIndex: selectedIndex,
+          showTrackSelector:
+              widget.model.viewport.viewMode != LayoutMode.splitScreen,
+          onTrackSelected: focus?.onSelected,
           selectedAnalysisTab: focus?.pageModel?.selectedTab ?? 0,
           qualitySelected: qualitySelected,
-          splitView: splitEnabled && _analysisSplitView,
-          splitEnabled: splitEnabled,
           onReferencePressed: () => selectAnalysisTab(0),
           onTrendPressed: () => selectAnalysisTab(1),
           onQualityPressed: () =>
               widget.actions.deck.onTabChanged(MainWindowDeckTab.quality),
-          onSplitViewChanged: (value) {
-            if (value == _analysisSplitView) return;
-            setState(() => _analysisSplitView = value);
-          },
           onClose: () =>
               widget.actions.deck.onTabChanged(MainWindowDeckTab.timeline),
           closeButtonKey: mainWindowDeckCollapseButtonKey,

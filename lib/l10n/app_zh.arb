@@ -25,6 +25,7 @@
   "qualityAnalyze": "分析",
   "qualityReanalyze": "重新分析",
   "qualityAnalyzing": "分析中…",
+  "qualityCancelAnalysis": "取消分析",
   "qualityExperimentalProxyNotice": "实验性代理指标 · 数值越高越差",
   "qualitySampleSummary": "{width}×{height} · {count} 个样本{suffix}",
   "qualitySampleCappedSuffix": " · 已截断",

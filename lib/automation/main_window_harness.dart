@@ -512,6 +512,23 @@ class MainWindowTestHarness {
     );
   }
 
+  void clickMainWindowQualityCreateMarks() {
+    _clickWidgetByKey(
+      mainWindowQualityCreateMarksButtonKey,
+      'CLICK_MAIN_WINDOW_QUALITY_CREATE_MARKS',
+    );
+  }
+
+  bool get mainWindowQualityReportVisible {
+    final context = _findContextByKey(mainWindowQualityChartKey);
+    if (context == null) return false;
+    final renderObject = context.findRenderObject();
+    return renderObject is RenderBox &&
+        renderObject.hasSize &&
+        renderObject.size.width > 0 &&
+        renderObject.size.height > 0;
+  }
+
   Future<void> dragMainWindowDeck(double deltaY, {int steps = 12}) async {
     final context = _findContextByKey(mainWindowDeckResizeHandleKey);
     if (context == null) {

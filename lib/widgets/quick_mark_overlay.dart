@@ -78,7 +78,10 @@ _QuickMarkTextLayout? _quickMarkTextLayout(
   final maxLayoutWidth = math.min(
     _QuickMarkOverlayState._textMaxWidth,
     mark.shape == QuickMarkShape.rectangle
-        ? math.max(8.0, markRect.width)
+        // Spatial analyzers can legitimately return a single 64x64 tile.
+        // Keep the rectangle exact, but let its label extend outside the box
+        // instead of wrapping one character per line inside a tiny region.
+        ? math.max(_QuickMarkOverlayState._textMinWidth, markRect.width)
         : _QuickMarkOverlayState._textMaxWidth,
   );
   final availableTextWidth = math.max(
@@ -87,7 +90,7 @@ _QuickMarkTextLayout? _quickMarkTextLayout(
   );
   final painter = TextPainter(
     text: TextSpan(text: text.isEmpty ? ' ' : text, style: style),
-    maxLines: 5,
+    maxLines: _QuickMarkOverlayState._textMaxLines,
     ellipsis: '…',
     textDirection: TextDirection.ltr,
   )..layout(maxWidth: availableTextWidth);
@@ -110,8 +113,10 @@ _QuickMarkTextLayout? _quickMarkTextLayout(
       ? _quickMarkArrowTextAnchor(mark, markRect)
       : null;
   final rawLeft = anchor == null ? markRect.left : anchor.dx - contentWidth / 2;
+  final aboveTop = markRect.top - _QuickMarkOverlayState._textGap - height;
+  final belowTop = markRect.bottom + _QuickMarkOverlayState._textGap;
   final rawTop = anchor == null
-      ? markRect.top - _QuickMarkOverlayState._textGap - height
+      ? (aboveTop >= expandedClip.top ? aboveTop : belowTop)
       : anchor.dy - height / 2;
   final left = rawLeft.clamp(
     expandedClip.left,
@@ -213,7 +218,9 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
   static const double _panelHeight = 36.0;
   static const double _panelGap = 10.0;
   static const double _textMaxWidth = 220.0;
+  static const double _textMinWidth = 180.0;
   static const double _textMaxHeight = 128.0;
+  static const int _textMaxLines = 2;
   static const double _textGap = 4.0;
   static const double _textEditGutter = 10.0;
   static const List<double> _fontSizes = [
@@ -324,12 +331,17 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
               ),
             ),
             for (final mark in widget.marks)
-              ..._buildSyncedMarkHitTargets(context, projection, mark),
+              if (!mark.isTimeOnly)
+                ..._buildSyncedMarkHitTargets(context, projection, mark),
             for (final mark in widget.marks)
-              ..._buildMarkHitTargets(context, projection, mark),
+              if (!mark.isTimeOnly)
+                ..._buildMarkHitTargets(context, projection, mark),
             for (final mark in widget.marks)
-              ..._buildMarkTextHitTarget(context, projection, mark),
-            if (selected != null && selectedProjection != null)
+              if (!mark.isTimeOnly)
+                ..._buildMarkTextHitTarget(context, projection, mark),
+            if (selected != null &&
+                !selected.isTimeOnly &&
+                selectedProjection != null)
               ..._buildSelectedMarkControls(
                 context,
                 projection,
@@ -339,6 +351,7 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
                 constraints.biggest,
               ),
             if (selected != null &&
+                !selected.isTimeOnly &&
                 selectedProjection != null &&
                 _editingTextMarkId == selected.id)
               _buildTextEditor(
@@ -1775,6 +1788,8 @@ class _QuickMarkPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (!projection.isValid || devicePixelRatio <= 0) return;
     for (final mark in marks) {
+      // Time-only marks have no spatial extent; nothing to paint on video.
+      if (mark.isTimeOnly) continue;
       if (mark.syncAcrossTracks && tracks.length > 1) {
         for (final track in tracks) {
           if (track.fileId == mark.fileId) continue;
@@ -2009,7 +2024,7 @@ class _QuickMarkPainter extends CustomPainter {
     if (layout == null) return;
     final painter = TextPainter(
       text: TextSpan(text: text, style: layout.style),
-      maxLines: 5,
+      maxLines: _QuickMarkOverlayState._textMaxLines,
       ellipsis: '…',
       textDirection: TextDirection.ltr,
     )..layout(maxWidth: layout.textMaxWidth);

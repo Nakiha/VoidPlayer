@@ -596,6 +596,40 @@ void main() {
     expect(instructions.single, isA<ScriptClickMainWindowQualityAnalyze>());
   });
 
+  test('parses CLICK_MAIN_WINDOW_QUALITY_CREATE_MARKS', () {
+    final temp = Directory.systemTemp.createTempSync('void_player_test_');
+    addTearDown(() => temp.deleteSync(recursive: true));
+    final file = File('${temp.path}/quality-create-marks.csv');
+    file.writeAsStringSync('0.1,CLICK_MAIN_WINDOW_QUALITY_CREATE_MARKS\n');
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(instructions, hasLength(1));
+    expect(instructions.single, isA<ScriptClickMainWindowQualityCreateMarks>());
+  });
+
+  test('parses WAIT_MAIN_WINDOW_QUALITY_REPORT', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_quality_report_wait_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync('0.1,WAIT_MAIN_WINDOW_QUALITY_REPORT,45000\n');
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(instructions, hasLength(1));
+    expect(
+      instructions.single,
+      isA<ScriptWaitMainWindowQualityReport>().having(
+        (instruction) => instruction.timeout,
+        'timeout',
+        const Duration(seconds: 45),
+      ),
+    );
+  });
+
   test('parses native shortcut tracing actions', () {
     final file = File(
       '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_native_shortcut_script_test.csv',

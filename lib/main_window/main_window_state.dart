@@ -367,6 +367,18 @@ class MainWindowStateStore extends ChangeNotifier {
     );
   }
 
+  void setPresentedFrameAnchor(QuickMarkAnchor anchor) {
+    if (_value.presentedFrameAnchors[anchor.fileId] == anchor) return;
+    _set(
+      _value.copyWith(
+        presentedFrameAnchors: Map.unmodifiable({
+          ..._value.presentedFrameAnchors,
+          anchor.fileId: anchor,
+        }),
+      ),
+    );
+  }
+
   void setLoopRangeEnabled(bool enabled) {
     if (_value.loopRangeEnabled == enabled) return;
     _set(_value.copyWith(loopRangeEnabled: enabled));

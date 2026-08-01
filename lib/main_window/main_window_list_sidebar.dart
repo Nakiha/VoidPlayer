@@ -8,6 +8,7 @@ import '../analysis/ui/widgets/analysis_controls.dart';
 import '../analysis/ui/workspace/analysis_workspace_models.dart';
 import '../l10n/app_localizations.dart';
 import '../track_manager.dart';
+import '../widgets/app_menu_combo.dart';
 import '../widgets/axtree_region.dart';
 import '../widgets/quick_mark_sidebar.dart';
 import 'main_window_analysis_dock.dart';
@@ -106,15 +107,11 @@ class _MainWindowListSidebarState extends State<MainWindowListSidebar> {
           children: [
             SizedBox(
               height: 40,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(color: colors.outlineVariant),
-                  ),
-                ),
+              child: ColoredBox(
+                color: colors.surfaceContainerLowest,
                 child: Row(
                   children: [
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 4),
                     Expanded(
                       child: SizedBox(
                         height: 32,
@@ -244,7 +241,7 @@ class _TrackList extends StatelessWidget {
       _ => null,
     };
     return ListView.builder(
-      padding: const EdgeInsets.all(6),
+      padding: const EdgeInsets.all(4),
       itemCount: tracks.length,
       itemBuilder: (context, index) {
         final entry = tracks[index];
@@ -316,7 +313,7 @@ class _NaluTabBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final current = focus;
-    final theme = Theme.of(context);
+    final colors = Theme.of(context).colorScheme;
     final l = AppLocalizations.of(context)!;
     if (current == null) {
       return _NaluEmptyState(message: l.mainWindowListNoAnalysis);
@@ -325,24 +322,28 @@ class _NaluTabBody extends StatelessWidget {
     final pageActions = current.pageActions;
     return Column(
       children: [
-        _AnalysisTrackSelector(focus: current),
-        Divider(height: 1, color: theme.colorScheme.outlineVariant),
+        ColoredBox(
+          color: colors.surfaceContainerLowest,
+          child: _AnalysisTrackSelector(focus: current),
+        ),
         if (current.isReady) ...[
-          SizedBox(
-            height: 38,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: AnalysisOrderToggle(
-                  ptsOrder: pageModel!.ptsOrder,
-                  onChanged: pageActions!.onOrderChanged,
-                  l: l,
+          ColoredBox(
+            color: colors.surfaceContainerLow,
+            child: SizedBox(
+              height: 40,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: AnalysisOrderToggle(
+                    ptsOrder: pageModel!.ptsOrder,
+                    onChanged: pageActions!.onOrderChanged,
+                    l: l,
+                  ),
                 ),
               ),
             ),
           ),
-          Divider(height: 1, color: theme.colorScheme.outlineVariant),
           Expanded(
             child: AnalysisNaluPanel(model: pageModel, actions: pageActions),
           ),
@@ -366,7 +367,7 @@ class _AnalysisTrackSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     if (focus.entries.isEmpty) {
       return SizedBox(
-        height: 42,
+        height: 40,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Align(
@@ -380,31 +381,21 @@ class _AnalysisTrackSelector extends StatelessWidget {
       );
     }
     return SizedBox(
-      height: 42,
+      height: 40,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: DropdownMenu<int>(
+        child: AppMenuCombo<int>(
           key: mainWindowAnalysisTrackSelectorKey,
-          initialSelection: focus.selectedIndex,
-          expandedInsets: EdgeInsets.zero,
-          requestFocusOnTap: false,
-          textStyle: Theme.of(context).textTheme.bodySmall,
-          inputDecorationTheme: const InputDecorationTheme(
-            isDense: true,
-            constraints: BoxConstraints.tightFor(height: 34),
-            contentPadding: EdgeInsets.symmetric(horizontal: 10),
-            border: OutlineInputBorder(),
-          ),
-          dropdownMenuEntries: [
-            for (var index = 0; index < focus.entries.length; index++)
-              DropdownMenuEntry(
-                value: index,
-                label: '${index + 1}. ${focus.entries[index].fileName}',
-              ),
+          height: 32,
+          value: focus.selectedIndex,
+          items: [
+            for (var index = 0; index < focus.entries.length; index++) index,
           ],
-          onSelected: (index) {
-            if (index != null) focus.onSelected(index);
-          },
+          labelFor: (index) => '${index + 1}. ${focus.entries[index].fileName}',
+          onChanged: focus.onSelected,
+          textStyle: Theme.of(context).textTheme.bodySmall,
+          menuTextStyle: Theme.of(context).textTheme.bodySmall,
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
         ),
       ),
     );

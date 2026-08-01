@@ -39,8 +39,10 @@ import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/viewport/display_geometry.dart';
 import 'package:void_player/viewport/viewport_display_state.dart';
 import 'package:void_player/widgets/analysis_overlay_controls.dart';
+import 'package:void_player/widgets/app_menu_combo.dart';
 import 'package:void_player/widgets/loop_range_bar.dart';
 import 'package:void_player/widgets/quick_mark_sidebar.dart';
+import 'package:void_player/widgets/segmented_widget.dart';
 import 'package:void_player/widgets/timeline_area.dart';
 import 'package:void_player/widgets/viewport_panel.dart';
 
@@ -331,11 +333,11 @@ void main() {
     await tester.tap(find.text('2. second.mp4').last);
     await tester.pumpAndSettle();
 
-    expect(tester.widget<DropdownMenu<int>>(selector).initialSelection, 1);
+    expect(tester.widget<AppMenuCombo<int>>(selector).value, 1);
     expect(find.text('2. second.mp4'), findsWidgets);
   });
 
-  testWidgets('analysis split keeps its pair and changes focused entry', (
+  testWidgets('top-level split mode drives the analysis deck split', (
     tester,
   ) async {
     final feedback = AppFeedbackController();
@@ -404,6 +406,7 @@ void main() {
               analysisEntries: entries,
               deckTab: MainWindowDeckTab.analysis,
               marksSidebarVisible: true,
+              viewMode: 1,
             ),
             handles: _handles(),
             actions: _noop,
@@ -413,12 +416,10 @@ void main() {
     );
     await tester.pump();
 
-    final modeToggle = find.byKey(mainWindowAnalysisViewModeToggleKey);
-    expect(modeToggle, findsOneWidget);
-    await tester.tap(
-      find.descendant(of: modeToggle, matching: find.text('Split')),
-    );
-    await tester.pump();
+    final viewModeSelector = find.byType(ViewModeSelector);
+    expect(viewModeSelector, findsOneWidget);
+    expect(tester.widget<ViewModeSelector>(viewModeSelector).currentMode, 1);
+    expect(find.byKey(mainWindowAnalysisHeaderTrackSelectorKey), findsNothing);
 
     final firstCell = find.byKey(analysisWorkspaceSplitCellKey(1));
     final secondCell = find.byKey(analysisWorkspaceSplitCellKey(2));
@@ -449,10 +450,10 @@ void main() {
     );
     expect(
       tester
-          .widget<DropdownMenu<int>>(
+          .widget<AppMenuCombo<int>>(
             find.byKey(mainWindowAnalysisTrackSelectorKey),
           )
-          .initialSelection,
+          .value,
       1,
     );
   });
@@ -526,56 +527,124 @@ void main() {
       addTearDown(feedback.dispose);
       final seeks = <(int, int)>[];
       final markRequests = <MainWindowQualityMarkRequest>[];
-      const mediaTrack = TrackEntry(
-        TrackInfo(
-          fileId: 7,
-          slot: 0,
-          path: 'quality.mp4',
-          width: 1920,
-          height: 1080,
+      final qualityDataSource = _FakeQualityDataSource();
+      const mediaTracks = [
+        TrackEntry(
+          TrackInfo(
+            fileId: 7,
+            slot: 0,
+            path: 'quality.mp4',
+            width: 1920,
+            height: 1080,
+          ),
         ),
-      );
+        TrackEntry(
+          TrackInfo(
+            fileId: 8,
+            slot: 1,
+            path: 'quality-second.mp4',
+            width: 1280,
+            height: 720,
+          ),
+        ),
+      ];
+      const analysisEntries = [
+        AnalysisWorkspaceEntry(
+          fileId: 7,
+          path: 'quality.mp4',
+          fileName: 'quality.mp4',
+          hash: null,
+          generationStatus: null,
+        ),
+        AnalysisWorkspaceEntry(
+          fileId: 8,
+          path: 'quality-second.mp4',
+          fileName: 'quality-second.mp4',
+          hash: null,
+          generationStatus: null,
+        ),
+      ];
 
-      await tester.pumpWidget(
-        _localized(
-          AppFeedbackScope(
-            controller: feedback,
-            child: MainWindowScaffold(
-              model: _model(
-                settingsVisible: false,
-                tracks: const [mediaTrack],
-                deckTab: MainWindowDeckTab.quality,
-                qualityDataSource: const _FakeQualityDataSource(),
-              ),
-              handles: _handles(),
-              actions: _actionsWithDeck(
-                onQualitySeekRequested: (fileId, ptsUs) {
-                  seeks.add((fileId, ptsUs));
-                },
-                onQualityMarksRequested: (request) async {
-                  markRequests.add(request);
-                  return 1;
-                },
-              ),
+      Widget build(MainWindowDeckTab deckTab) => _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              tracks: mediaTracks,
+              analysisEntries: analysisEntries,
+              deckTab: deckTab,
+              qualityDataSource: qualityDataSource,
+            ),
+            handles: _handles(),
+            actions: _actionsWithDeck(
+              onQualitySeekRequested: (fileId, ptsUs) {
+                seeks.add((fileId, ptsUs));
+              },
+              onQualityMarksRequested: (request) async {
+                markRequests.add(request);
+                return 1;
+              },
             ),
           ),
         ),
       );
 
+      await tester.pumpWidget(build(MainWindowDeckTab.quality));
+
       expect(find.text('Quality'), findsOneWidget);
       expect(find.textContaining('Experimental proxies'), findsOneWidget);
       expect(find.byKey(mainWindowAnalysisNaluSidebarKey), findsNothing);
-      expect(find.byType(DropdownMenu<int>), findsOneWidget);
+      await tester.pump();
+      final qualitySelector = find.byKey(
+        mainWindowAnalysisHeaderTrackSelectorKey,
+      );
+      expect(qualitySelector, findsOneWidget);
+      expect(tester.widget<AppMenuCombo<int>>(qualitySelector).value, 0);
+      expect(find.byKey(mainWindowQualityCreateMarksButtonKey), findsNothing);
+      final analyzeControlSize = tester.getSize(
+        find.byKey(mainWindowQualityAnalyzeButtonKey),
+      );
+      expect(analyzeControlSize.width, lessThanOrEqualTo(32));
+      expect(analyzeControlSize.height, lessThanOrEqualTo(32));
+
+      await tester.tap(qualitySelector);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('2. quality-second.mp4').last);
+      await tester.pumpAndSettle();
+
+      final updatedQualitySelector = find.byKey(
+        mainWindowAnalysisHeaderTrackSelectorKey,
+      );
+      expect(updatedQualitySelector, findsOneWidget);
+      expect(tester.widget<AppMenuCombo<int>>(updatedQualitySelector).value, 1);
 
       await tester.tap(find.byKey(mainWindowQualityAnalyzeButtonKey));
       await tester.pump();
 
       expect(find.byKey(mainWindowQualityChartKey), findsOneWidget);
       expect(find.textContaining('3 samples'), findsOneWidget);
-      expect(find.text('Create 1 mark'), findsOneWidget);
+      expect(find.byKey(mainWindowQualityCreateMarksButtonKey), findsOneWidget);
+      final createMarksControlSize = tester.getSize(
+        find.byKey(mainWindowQualityCreateMarksButtonKey),
+      );
+      expect(createMarksControlSize.width, lessThanOrEqualTo(32));
+      expect(createMarksControlSize.height, lessThanOrEqualTo(32));
+      expect(qualityDataSource.analyzeCalls, 1);
 
       final blockingLegend = find.byKey(
         const ValueKey('main-window-quality-metric-blockiness'),
+      );
+      final toolbarRect = tester.getRect(
+        find.byKey(mainWindowQualityToolbarKey),
+      );
+      final metricsRect = tester.getRect(
+        find.byKey(mainWindowQualityMetricsKey),
+      );
+      expect(toolbarRect.height, 32);
+      expect(
+        (metricsRect.center.dy - toolbarRect.center.dy).abs(),
+        lessThan(1),
       );
       expect(
         tester.widget<Semantics>(blockingLegend).properties.toggled,
@@ -608,14 +677,24 @@ void main() {
       final chartRect = tester.getRect(find.byKey(mainWindowQualityChartKey));
       await tester.tapAt(Offset(chartRect.right - 14, chartRect.center.dy));
       await tester.pump();
-      expect(seeks, [(7, 2000000)]);
+      expect(seeks, [(8, 2000000)]);
 
       await tester.tap(find.byKey(mainWindowQualityCreateMarksButtonKey));
       await tester.pump();
       expect(markRequests, hasLength(1));
-      expect(markRequests.single.fileId, 7);
+      expect(markRequests.single.fileId, 8);
       expect(markRequests.single.metric, AnalysisQualityMetric.blockiness);
       expect(markRequests.single.threshold, lessThan(0.3));
+
+      await tester.pumpWidget(build(MainWindowDeckTab.analysis));
+      await tester.pump();
+      expect(find.byKey(mainWindowQualityChartKey), findsNothing);
+
+      await tester.pumpWidget(build(MainWindowDeckTab.quality));
+      await tester.pump();
+      expect(find.byKey(mainWindowQualityChartKey), findsOneWidget);
+      expect(find.textContaining('3 samples'), findsOneWidget);
+      expect(qualityDataSource.analyzeCalls, 1);
     },
   );
 
@@ -1278,6 +1357,7 @@ MainWindowViewModel _model({
   int? textureId,
   ViewportDisplayState viewportState = const ViewportDisplayState.empty(),
   bool nativeCompositorActive = false,
+  int viewMode = 0,
   bool marksSidebarVisible = false,
   bool analysisOverlayControlsVisible = false,
   List<TrackEntry> tracks = const [],
@@ -1293,7 +1373,7 @@ MainWindowViewModel _model({
 }) => MainWindowViewModel(
   session: MainWindowSessionVm.fromSession(const PlaybackSession.normal()),
   viewport: MainWindowViewportVm(
-    viewMode: 0,
+    viewMode: viewMode,
     viewModeEnabled: true,
     textureId: textureId,
     nativeCompositorActive: nativeCompositorActive,
@@ -1509,12 +1589,14 @@ MainWindowViewActions _actionsWithDeck({
 
 class _FakeQualityDataSource
     implements AnalysisQualityDataSource, AnalysisQualityFrameDataSource {
-  const _FakeQualityDataSource();
+  int analyzeCalls = 0;
 
   @override
   Future<AnalysisQualityReport> analyze(AnalysisQualityRequest request) async {
+    analyzeCalls++;
     return const AnalysisQualityReport(
       schemaVersion: 4,
+      metricVersion: '',
       videoWidth: 1920,
       videoHeight: 1080,
       bitDepth: 8,

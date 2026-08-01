@@ -150,6 +150,16 @@ class ScriptClickMainWindowQualityAnalyze extends ScriptInstruction {
   const ScriptClickMainWindowQualityAnalyze(super.time);
 }
 
+class ScriptClickMainWindowQualityCreateMarks extends ScriptInstruction {
+  const ScriptClickMainWindowQualityCreateMarks(super.time);
+}
+
+class ScriptWaitMainWindowQualityReport extends ScriptInstruction {
+  final Duration timeout;
+
+  const ScriptWaitMainWindowQualityReport(super.time, this.timeout);
+}
+
 class ScriptAssertMainWindowDeckTab extends ScriptInstruction {
   final String tabName;
 
@@ -906,6 +916,12 @@ ScriptInstruction? _parseInstruction(
         int.parse(args[0]),
         Duration(milliseconds: timeoutMs),
       );
+    case 'WAIT_MAIN_WINDOW_QUALITY_REPORT':
+      final timeoutMs = args.isNotEmpty ? int.parse(args[0]) : 30000;
+      return ScriptWaitMainWindowQualityReport(
+        time,
+        Duration(milliseconds: timeoutMs),
+      );
     case 'WAIT_PRESENTED_FRAME_RANGE':
       if (args.length < 3) {
         log.warning(
@@ -1453,6 +1469,8 @@ ScriptInstruction? _parseInstruction(
       return ScriptToggleMainWindowDeckCollapsed(time);
     case 'CLICK_MAIN_WINDOW_QUALITY_ANALYZE':
       return ScriptClickMainWindowQualityAnalyze(time);
+    case 'CLICK_MAIN_WINDOW_QUALITY_CREATE_MARKS':
+      return ScriptClickMainWindowQualityCreateMarks(time);
     case 'CLOSE_MAIN_WINDOW':
       return ScriptCloseMainWindow(time);
     case 'QUIT':

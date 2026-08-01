@@ -291,6 +291,18 @@ Future<void> flushLogFile() async {
   }
 }
 
+/// Flushes pending records, closes the file handle, and stops root dispatch.
+///
+/// This is primarily useful for deterministic process and test teardown on
+/// Windows, where an open log handle prevents its containing directory from
+/// being removed.
+Future<void> shutdownLogging() async {
+  await _rootSubscription?.cancel();
+  _rootSubscription = null;
+  await _resetFileSink();
+  _loggingInitialized = false;
+}
+
 Future<void> _flushFileQueue() {
   if (_fileFlushInProgress) {
     return _fileFlushCompleter?.future ?? Future<void>.value();

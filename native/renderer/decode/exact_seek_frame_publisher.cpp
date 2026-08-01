@@ -72,7 +72,7 @@ ExactSeekPreviewFramePublishResult publish_exact_seek_preview_frames(
 
     const auto predecessor = output_buffer.peek(-1);
     const auto current = output_buffer.peek(0);
-    spdlog::info(
+    spdlog::debug(
         "[DecodeThread] Exact seek publish cursor: history={} predecessor_pts={:.6f}s current_pts={:.6f}s",
         result.history_count,
         predecessor.has_value() ? predecessor->pts_us / 1e6 : -1.0,

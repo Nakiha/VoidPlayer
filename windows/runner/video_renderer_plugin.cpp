@@ -1083,7 +1083,7 @@ bool VideoRendererPlugin::ResizeVideoTargets(int width,
           install_completed - resize_started)
           .count();
   if (resize_count <= 12 || resize_count % 120 == 0 || total_us > 8333) {
-    spdlog::info(
+    spdlog::debug(
         "[NativeResizePacing] runner targetResize={} target={}x{} format={} "
         "ring=4 allocation_us={} install_us={} total_us={}",
         resize_count, width, height,
@@ -1139,7 +1139,7 @@ void VideoRendererPlugin::OnFrameAvailable(
   const bool current_target = compositor_->IsCurrentVideoTarget(target);
   if (first_frame_activation_gate_.accept_present(
           presentation_session, presented, current_target)) {
-    spdlog::info(
+    spdlog::debug(
         "[WindowsPresentation] first-frame activation session={} "
         "current_ring=true",
         presentation_session);
@@ -1710,7 +1710,7 @@ void VideoRendererPlugin::HandleMethodCall(
     const vr::LayoutState layout = ReadLayout(arguments);
     const uint64_t count = ++layout_apply_count_;
     if (count <= 12 || count % 60 == 0) {
-      spdlog::info(
+      spdlog::debug(
           "[WindowsLayout] runner intent={} playing={} mode={} zoom={:.4f} "
           "offset=({:.1f},{:.1f}) split={:.4f} pixel_mode={}",
           count, player_->is_playing(), layout.mode, layout.zoom_ratio,

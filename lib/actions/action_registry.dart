@@ -58,8 +58,11 @@ class ShortcutTraceRecord {
 
 typedef ShortcutTraceSink = void Function(ShortcutTraceRecord record);
 
+final _shortcutLogger = appLogger('Shortcut');
+final _actionLogger = appLogger('Action');
+
 void _logShortcutTrace(ShortcutTraceRecord record) {
-  log.info(record.toLogLine());
+  _shortcutLogger.finer(record.toLogLine());
 }
 
 /// Central registry for player actions with keyboard interception.
@@ -148,11 +151,13 @@ class ActionRegistry {
   ]) async {
     final callback = _callbacks[name];
     if (callback == null) {
-      log.severe('Action "$name" not bound');
+      _actionLogger.severe('execute failed name=$name reason=not-bound');
       throw StateError('Action "$name" not bound');
     }
     final action = overrideAction ?? _actions[name];
-    log.info('Action: $name${action != overrideAction ? '' : ' (script)'}');
+    _actionLogger.fine(
+      'execute name=$name source=${action != overrideAction ? 'ui' : 'script'}',
+    );
     if (action == null) {
       throw StateError('Action "$name" has no registered definition');
     }
@@ -432,7 +437,7 @@ class _ActionFocusState extends State<ActionFocus> {
   }
 
   void _logHandlerLifecycle(String state) {
-    log.info(
+    _shortcutLogger.fine(
       '[ShortcutTrace][Flutter] handler=$state '
       'registry=${identityHashCode(widget.actionRegistry)} '
       'input=${identityHashCode(_registeredKeyboardInput)}',

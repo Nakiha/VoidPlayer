@@ -99,7 +99,7 @@ inline void log_viewport_draw_trace(const char* source,
             storage = frame_storage_kind_name(frame.storage_kind());
         }
     }
-    spdlog::info(
+    spdlog::debug(
         "[ViewportTrace] native source={} attempted={} drew={} stale={} "
         "callback_available={} callback_published={} total_us={} snapshot_us={} "
         "backend_us={} layout_rev={} current_layout_rev={} slot={} file_id={} "

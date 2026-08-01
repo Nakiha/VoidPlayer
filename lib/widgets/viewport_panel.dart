@@ -664,7 +664,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           now.difference(lastResizeLog) >= _resizePacingLogInterval;
       if (shouldLogResize) {
         _lastResizePacingLogAt = now;
-        log.info(
+        log.fine(
           '[NativeResizePacing] flutter viewportReport '
           'count=$_debugResizeReportCount '
           'logical=${logicalWidth.toStringAsFixed(1)}x'
@@ -736,7 +736,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
         now.difference(lastRectLog) >= _resizePacingLogInterval;
     if (shouldLogRect) {
       _lastViewportRectPacingLogAt = now;
-      log.info(
+      log.fine(
         '[NativeResizePacing] flutter viewportRect '
         'count=$_debugViewportRectReportCount '
         'physical=($left,$top ${width}x$height) '

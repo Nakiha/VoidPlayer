@@ -228,7 +228,7 @@ void RendererRenderLoopCommandProcessor::run_body(
                                 preview_pts_s = preview.frames[ref_slot]->pts_us / 1e6;
                             }
                         }
-                        spdlog::info("[Renderer] Paused frame: pts={:.3f}s",
+                        spdlog::debug("[Renderer] Paused frame: pts={:.3f}s",
                                      preview_pts_s);
                         context.hooks.emit_seek_preview_presented_events(preview);
                     }
@@ -268,7 +268,7 @@ void RendererRenderLoopCommandProcessor::run_body(
             if (diagnostic.should_emit) {
                 const auto pacing =
                     loop_driver_.playback_pacing_diagnostics();
-                spdlog::info(
+                spdlog::debug(
                     "[diag] pacing: state={} requested={:.3f}x "
                     "effective={:.3f}x bottleneck={} buffer={}/{} "
                     "headroom={:.1f}ms rebuffers={}",
@@ -286,7 +286,7 @@ void RendererRenderLoopCommandProcessor::run_body(
                     diagnostics = track_controller_.render_loop_diagnostics();
                 }
                 for (const auto& track : diagnostics) {
-                    spdlog::info("[diag] track[{}]: pts={:.3f}s delta={:.1f}ms "
+                    spdlog::debug("[diag] track[{}]: pts={:.3f}s delta={:.1f}ms "
                                  "buf={}/{} state={} playing={}",
                                  track.slot,
                                  pts / 1e6,

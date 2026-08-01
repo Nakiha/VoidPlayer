@@ -62,7 +62,7 @@ void Renderer::Impl::apply_layout_impl(const LayoutState& state,
         layout_state_.set_pending(state, intent_revision);
         presentation_metrics_.note_layout_deferred_to_playback();
         if (log_layout || should_log_viewport_trace_event(false)) {
-            spdlog::info(
+            spdlog::debug(
                 "[ViewportTrace] native source={} layout_rev={} playing={} "
                 "defer_to_playback={} mode={} zoom={:.4f} offset=({:.1f},{:.1f}) "
                 "split={:.4f} pixel_mode={}",
@@ -85,7 +85,7 @@ void Renderer::Impl::apply_layout_impl(const LayoutState& state,
     apply_layout_locked(state, intent_revision, schedule_preview);
     if (log_layout || should_log_viewport_trace_event(false)) {
         const auto layout = layout_state_.current_for_draw();
-        spdlog::info(
+        spdlog::debug(
             "[ViewportTrace] native source={} layout_rev={} playing={} "
             "defer_to_playback={} mode={} zoom={:.4f} offset=({:.1f},{:.1f}) "
             "split={:.4f} pixel_mode={}",

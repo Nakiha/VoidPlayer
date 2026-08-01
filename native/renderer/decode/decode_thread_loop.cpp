@@ -49,7 +49,7 @@ bool DecodeThread::handle_buffering_eof(
     const std::function<void(AVFrame*)>& rescale_ts) {
     if (eof_action == EofDrainAction::BufferingExactSeekDrain) {
         drain_codec(frame, rescale_ts, exact_seek_target_us_);
-        spdlog::info("[DecodeThread] Exact seek EOF drain: candidate window has {} frames",
+        spdlog::debug("[DecodeThread] Exact seek EOF drain: candidate window has {} frames",
                      exact_seek_candidates_.reorder_count());
         publish_best_exact_seek_frame();
     } else {
@@ -60,16 +60,16 @@ bool DecodeThread::handle_buffering_eof(
     // Preroll check may complete if reorder flush added frames. Even with 0
     // frames, transition to Ready: the seek target is past this track duration.
     if (post_seek_) {
-        spdlog::info("[DecodeThread] === Preroll complete (EOF): {} frames, state->Ready",
+        spdlog::debug("[DecodeThread] === Preroll complete (EOF): {} frames, state->Ready",
                      output_buffer_.total_count());
         output_buffer_.set_state(TrackState::Ready);
         post_seek_ = false;
     } else {
-        spdlog::info("[DecodeThread] EOF seen during Buffering, deferring codec flush "
+        spdlog::debug("[DecodeThread] EOF seen during Buffering, deferring codec flush "
                      "(buf={}, pq={})",
                      output_buffer_.total_count(), input_queue_.size());
         if (should_complete_buffering_eof_preroll(output_buffer_.total_count())) {
-            spdlog::info("[DecodeThread] === Preroll complete (EOF hold): {} frames, state->Ready",
+            spdlog::debug("[DecodeThread] === Preroll complete (EOF hold): {} frames, state->Ready",
                          output_buffer_.total_count());
             output_buffer_.set_state(TrackState::Ready);
             if (pause_after_preroll_.load(std::memory_order_acquire)) {
@@ -139,7 +139,7 @@ struct DecodeThread::DecodeLoopScratch {
 };
 
 void DecodeThread::run() {
-    spdlog::info("[DecodeThread] Decode loop started (hw={})",
+    spdlog::debug("[DecodeThread] Decode loop started (hw={})",
                  decoder_.hardware_enabled());
 
     auto frame_owner = AvFrameOwner::allocate();
@@ -181,7 +181,7 @@ void DecodeThread::run() {
     }
 
     output_buffer_.set_state(TrackState::Flushing);
-    spdlog::info("[DecodeThread] Decode loop ended");
+    spdlog::debug("[DecodeThread] Decode loop ended");
 }
 
 DecodeThread::DecodeLoopStepResult DecodeThread::run_decode_loop_step(
@@ -433,7 +433,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
                     return exact_seek_candidates_.reorder_count();
                 },
                 [](size_t reorder_count) {
-                    spdlog::info("[DecodeThread] Exact seek EOF: codec drain, "
+                    spdlog::debug("[DecodeThread] Exact seek EOF: codec drain, "
                                  "candidate window now has {} frames",
                                  reorder_count);
                 },
@@ -448,7 +448,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
                     return first->pts_us;
                 },
                 [](std::optional<int64_t> first_pts_us) {
-                    spdlog::info("[DecodeThread] Exact seek candidate window: frames pushed, "
+                    spdlog::debug("[DecodeThread] Exact seek candidate window: frames pushed, "
                                  "first_pts={:.3f}s",
                                  first_pts_us.has_value()
                                      ? static_cast<double>(*first_pts_us) / 1e6

@@ -230,30 +230,30 @@ DecodeMemoryStats DecodeThread::memory_stats() const {
 }
 
 void DecodeThread::stop() {
-    spdlog::info("[DecodeThread] stop() begin");
+    spdlog::debug("[DecodeThread] stop() begin");
     running_.store(false);
     cancelled_.store(true, std::memory_order_release);
     input_queue_.clear_eof();
     input_queue_.abort();   // Unblock blocking pop
     output_buffer_.abort(); // Unblock blocking push_frame
     if (thread_.joinable()) {
-        spdlog::info("[DecodeThread] stop() waiting for decode thread join");
+        spdlog::debug("[DecodeThread] stop() waiting for decode thread join");
         thread_.join();
-        spdlog::info("[DecodeThread] stop() decode thread joined");
+        spdlog::debug("[DecodeThread] stop() decode thread joined");
     }
     exact_seek_candidates_.clear();
     // Release output frames BEFORE freeing hw resources.
     // TextureFrames hold hw_frame_ref (av_frame_ref) which reference
     // hw_frames_ctx -> hw_device_ctx. If hw_device_ctx is freed first,
     // the frame cleanup will access a freed device context (SIGSEGV).
-    spdlog::info("[DecodeThread] stop() clearing output frames");
+    spdlog::debug("[DecodeThread] stop() clearing output frames");
     output_buffer_.clear_frames();
-    spdlog::info("[DecodeThread] stop() output frames cleared");
+    spdlog::debug("[DecodeThread] stop() output frames cleared");
 
-    spdlog::info(
+    spdlog::debug(
         "[DecodeThread] stop() releasing shared decode session");
     decoder_.close();
-    spdlog::info("[DecodeThread] stop() end");
+    spdlog::debug("[DecodeThread] stop() end");
 }
 
 void DecodeThread::set_decode_paused(bool paused) {
@@ -286,7 +286,7 @@ void DecodeThread::begin_seek_epoch(AVFrame* frame, const DecodeSeekNotification
     cancelled_.store(false, std::memory_order_release);
     timestamp_normalizer_.reset();
 
-    spdlog::info("[DecodeThread] === SEEK START: target={:.3f}s, type={}, "
+    spdlog::debug("[DecodeThread] === SEEK START: target={:.3f}s, type={}, "
                  "input_pq={}, output_buf={}, buf_state={}",
                  notification.target_pts_us / 1e6,
                  decode_seek_type_name(notification.type),
@@ -302,7 +302,7 @@ void DecodeThread::begin_seek_epoch(AVFrame* frame, const DecodeSeekNotification
     // demux can race ahead and the decoder may have already accepted
     // packets even though no frames have been published yet.
     safe_flush_codec();
-    spdlog::info("[DecodeThread] Seek flush: codec buffers flushed (hw={})",
+    spdlog::debug("[DecodeThread] Seek flush: codec buffers flushed (hw={})",
                  decoder_.hardware_enabled());
 
     // NOTE: Do NOT drain input queue here! The DemuxThread already
@@ -313,7 +313,7 @@ void DecodeThread::begin_seek_epoch(AVFrame* frame, const DecodeSeekNotification
     exact_seek_target_us_ = state.exact_seek_target_us;
     exact_seek_prefer_after_target_ = is_step_forward_seek_type(notification.type);
     if (is_exact_seek_type(notification.type)) {
-        spdlog::info("[DecodeThread] Exact seek: will discard frames < {:.3f}s",
+        spdlog::debug("[DecodeThread] Exact seek: will discard frames < {:.3f}s",
                      notification.target_pts_us / 1e6);
     }
 
@@ -322,7 +322,7 @@ void DecodeThread::begin_seek_epoch(AVFrame* frame, const DecodeSeekNotification
     eof_flushed_ = state.eof_flushed;
     decode_paused_.store(state.decode_paused, std::memory_order_release);
     output_buffer_.set_state(state.output_state);
-    spdlog::info("[DecodeThread] === SEEK DONE: state->Buffering, post_seek fast preroll, waiting for new packets");
+    spdlog::debug("[DecodeThread] === SEEK DONE: state->Buffering, post_seek fast preroll, waiting for new packets");
 }
 
 void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*)>& rescale_ts, int64_t target_us) {
@@ -384,7 +384,7 @@ void DecodeThread::flush_reorder_buffer() {
             break;
         }
     }
-    spdlog::info("[DecodeThread] Exact seek candidate window: {} frames pushed",
+    spdlog::debug("[DecodeThread] Exact seek candidate window: {} frames pushed",
                  pushed_count);
     exact_seek_candidates_.clear_reorder();
     exact_seek_target_us_ = -1;
@@ -468,7 +468,7 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
     post_seek_ = completion.post_seek;
     exact_seek_target_us_ = completion.exact_seek_target_us;
     drain_decoder_before_next_packet_ = completion.drain_decoder_before_next_packet;
-    spdlog::info("[DecodeThread] Exact seek drain: preview frame ready pts={:.3f}s, published={} frames, pending={} frames, state->Ready",
+    spdlog::debug("[DecodeThread] Exact seek drain: preview frame ready pts={:.3f}s, published={} frames, pending={} frames, state->Ready",
                  completion.selected_pts_us / 1e6,
                  completion.published_count,
                  completion.pending_count);
@@ -488,7 +488,7 @@ bool DecodeThread::publish_best_exact_seek_frame() {
 
     const int64_t selected_pts = exact_seek_candidates_.reorder_at(*selected).pts_us;
     const size_t collected = exact_seek_candidates_.reorder_count();
-    spdlog::info("[DecodeThread] Exact seek candidate window: selected pts={:.3f}s from {} decoder-ordered frames (target={:.3f}s)",
+    spdlog::debug("[DecodeThread] Exact seek candidate window: selected pts={:.3f}s from {} decoder-ordered frames (target={:.3f}s)",
                  selected_pts / 1e6, collected, exact_seek_target_us_ / 1e6);
     publish_exact_seek_window(*selected);
     return true;
@@ -518,7 +518,7 @@ bool DecodeThread::complete_preroll_if_ready() {
         return false;
     }
 
-    spdlog::info("[DecodeThread] === Preroll complete: {} frames buffered, post_seek={}, state->Ready",
+    spdlog::debug("[DecodeThread] === Preroll complete: {} frames buffered, post_seek={}, state->Ready",
                  output_buffer_.total_count(), post_seek_);
     output_buffer_.set_state(decision.output_state);
     if (decision.pause_decode) {

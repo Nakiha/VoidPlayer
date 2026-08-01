@@ -1,6 +1,9 @@
 import 'dart:io';
+import 'dart:isolate';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:void_player/app_log.dart';
 
 void main() {
@@ -65,5 +68,101 @@ void main() {
       contents.indexOf('queued async file log record 0'),
       lessThan(contents.indexOf('queued async file log record 2')),
     );
+  });
+
+  test(
+    'INFO filters component diagnostics but keeps named operations',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'void_player_log_level_test_',
+      );
+      addTearDown(() async {
+        await shutdownLogging();
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+
+      await initLogging([
+        '--log-level=flutter=INFO',
+      ], logsDirOverride: tempDir.path);
+
+      final component = appLogger('TestComponent');
+      component.finer('per-event diagnostic');
+      component.info('bounded operation completed');
+      await flushLogFile();
+
+      final file = await tempDir
+          .list()
+          .where((entity) => entity is File)
+          .cast<File>()
+          .single;
+      final contents = await file.readAsString();
+      expect(
+        contents,
+        contains('[TestComponent]: bounded operation completed'),
+      );
+      expect(contents, isNot(contains('per-event diagnostic')));
+    },
+  );
+
+  test(
+    'reinitialization and shutdown restore the Flutter error hook',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'void_player_log_hook_test_',
+      );
+      final original = FlutterError.onError;
+      void sentinel(FlutterErrorDetails details) {}
+      FlutterError.onError = sentinel;
+      addTearDown(() async {
+        await shutdownLogging();
+        FlutterError.onError = original;
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+
+      await initLogging(const [], logsDirOverride: tempDir.path);
+      expect(identical(FlutterError.onError, sentinel), isFalse);
+
+      await initLogging(const [], logsDirOverride: tempDir.path);
+      expect(identical(FlutterError.onError, sentinel), isFalse);
+
+      await shutdownLogging();
+      expect(identical(FlutterError.onError, sentinel), isTrue);
+    },
+  );
+
+  test('concurrent log rotation tolerates files removed by peers', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'void_player_log_rotation_race_test_',
+    );
+    addTearDown(() async {
+      await shutdownLogging();
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+    for (var index = 0; index < 48; index++) {
+      final file = File(p.join(tempDir.path, 'void_player_stale_$index.log'));
+      await file.writeAsString('stale');
+      await file.setLastModified(
+        DateTime(2020, 1, 1).add(Duration(seconds: index)),
+      );
+    }
+    final logsDir = tempDir.path;
+
+    await Future.wait(
+      List.generate(
+        8,
+        (_) => Isolate.run(() async {
+          await initLogging(const [], logsDirOverride: logsDir);
+          await shutdownLogging();
+        }),
+      ),
+    );
+
+    expect(await tempDir.exists(), isTrue);
   });
 }

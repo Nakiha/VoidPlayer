@@ -940,7 +940,9 @@ class MainWindowQuickMarkCoordinator {
 
   void _traceAnchor(String route, QuickMarkAnchor anchor) {
     if (Platform.environment['VOIDPLAYER_QUICK_MARK_TRACE'] != '1') return;
-    log.info('[QuickMarkTrace] $route anchor=${_quickMarkAnchorTrace(anchor)}');
+    log.finer(
+      '[QuickMarkTrace] $route anchor=${_quickMarkAnchorTrace(anchor)}',
+    );
   }
 
   void _traceView(
@@ -972,7 +974,7 @@ class MainWindowQuickMarkCoordinator {
         'anchors=[$anchors] marks=[$marks]';
     if (signature == _lastViewTrace) return;
     _lastViewTrace = signature;
-    log.info('[QuickMarkTrace] view $signature');
+    log.finer('[QuickMarkTrace] view $signature');
   }
 }
 

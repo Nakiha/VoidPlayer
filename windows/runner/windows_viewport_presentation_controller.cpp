@@ -78,7 +78,7 @@ void WindowsViewportPresentationController::RequestLayoutFrame() {
   ++diagnostics_.latest_intent_serial;
   const uint64_t count = diagnostics_.layout_intent_count;
   if (count <= 12 || count % 120 == 0) {
-    spdlog::info(
+    spdlog::debug(
         "[WindowsInteraction] intent={} serial={} submitted={} superseded={} "
         "in_flight={}",
         count, diagnostics_.latest_intent_serial,
@@ -120,7 +120,7 @@ void WindowsViewportPresentationController::Run() {
     }
 
     if (submit_count <= 12 || submit_count % 120 == 0) {
-      spdlog::info(
+      spdlog::debug(
           "[WindowsInteraction] submit={} serial={} clock=dxgi-present-vsync",
           submit_count, serial);
     }
@@ -200,7 +200,7 @@ void WindowsViewportPresentationController::Run() {
                 : diagnostics_.layout_backpressure_count <= 8 ||
                       diagnostics_.layout_backpressure_count % 120 == 0));
       if (completed <= 32 || completed % 120 == 0 || log_failure) {
-        spdlog::info(
+        spdlog::debug(
             "[WindowsInteraction] complete={} serial={} success={} "
             "measured_hz={:.2f} nominal_hz={:.2f} pending={} "
             "not_ready={} backpressure={} error={}",

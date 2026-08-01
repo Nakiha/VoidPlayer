@@ -123,7 +123,7 @@ bool log_renderer_track_seek_application_results(
             preparation,
             execution,
             track_seek.buffered_frames_after);
-        spdlog::info(
+        spdlog::debug(
             "[Renderer] seek_internal: track[{}] cleared (buf={}->{}, pq={}->0), state->Flushing, target={:.3f}s",
             cleared_log.slot,
             cleared_log.buffered_frames_before,

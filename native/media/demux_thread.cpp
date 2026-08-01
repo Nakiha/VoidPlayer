@@ -66,15 +66,22 @@ bool DemuxThread::open() {
     };
     std::string input_error;
     if (!input_.open(file_path_, input_options, input_error)) {
-        spdlog::error(
-            "[DemuxThread] Failed to open input {}: {}",
-            file_path_,
-            input_error);
+        if (!running_.load(std::memory_order_acquire)) {
+            spdlog::debug(
+                "[DemuxThread] Open cancelled for {}: {}",
+                file_path_,
+                input_error);
+        } else {
+            spdlog::error(
+                "[DemuxThread] Failed to open input {}: {}",
+                file_path_,
+                input_error);
+        }
         return fail_open();
     }
     stats_ = input_.stats();
     if (!running_.load(std::memory_order_acquire)) {
-        spdlog::info(
+        spdlog::debug(
             "[DemuxThread] Open cancelled during probe: {}",
             file_path_);
         return fail_open();
@@ -109,7 +116,7 @@ bool DemuxThread::open() {
     {
         std::unique_lock<std::mutex> lock(lifecycle_mutex_);
         if (!running_.load(std::memory_order_acquire)) {
-            spdlog::info("[DemuxThread] Open cancelled before demux thread start: {}", file_path_);
+            spdlog::debug("[DemuxThread] Open cancelled before demux thread start: {}", file_path_);
             input_.close();
             opening_ = false;
             lock.unlock();
@@ -133,7 +140,7 @@ bool DemuxThread::start_thread() {
 }
 
 void DemuxThread::stop() {
-    spdlog::info("[DemuxThread] stop() begin for {}", file_path_);
+    spdlog::debug("[DemuxThread] stop() begin for {}", file_path_);
     {
         std::unique_lock<std::mutex> lock(lifecycle_mutex_);
         running_.store(false, std::memory_order_release);
@@ -141,18 +148,18 @@ void DemuxThread::stop() {
         lifecycle_cv_.wait(lock, [this] { return !opening_; });
     }
     if (thread_.joinable()) {
-        spdlog::info("[DemuxThread] stop() waiting for join: {}", file_path_);
+        spdlog::debug("[DemuxThread] stop() waiting for join: {}", file_path_);
         thread_.join();
-        spdlog::info("[DemuxThread] stop() joined: {}", file_path_);
+        spdlog::debug("[DemuxThread] stop() joined: {}", file_path_);
     }
     {
         std::lock_guard<std::mutex> lock(lifecycle_mutex_);
         if (input_.is_open()) {
-            spdlog::info("[DemuxThread] stop() closing input: {}", file_path_);
+            spdlog::debug("[DemuxThread] stop() closing input: {}", file_path_);
             input_.close();
         }
     }
-    spdlog::info("[DemuxThread] stop() end for {}", file_path_);
+    spdlog::debug("[DemuxThread] stop() end for {}", file_path_);
 }
 
 bool DemuxThread::add_output(DemuxStreamKind kind, PacketQueue& output_queue) {
@@ -235,7 +242,7 @@ AVRational DemuxThread::time_base_for_stream(int stream_index) const {
 }
 
 void DemuxThread::run() {
-    spdlog::info("[DemuxThread] Demux loop started");
+    spdlog::debug("[DemuxThread] Demux loop started");
 
     auto packet = AvPacketOwner::allocate();
     if (!packet) {
@@ -258,7 +265,7 @@ void DemuxThread::run() {
         if (req_opt.has_value()) {
             auto req = req_opt.value();
 
-            spdlog::info("[DemuxThread] Executing seek: target={:.3f}s, type={}, pq_size={}",
+            spdlog::debug("[DemuxThread] Executing seek: target={:.3f}s, type={}, pq_size={}",
                          req.target_pts_us / 1e6,
                          is_exact_seek_type(req.type) ? "Exact" : "Keyframe",
                          output_routes_.empty() || !output_routes_[0].queue
@@ -282,7 +289,7 @@ void DemuxThread::run() {
                 // Clear demuxer EOF/read-ahead state so av_read_frame() starts
                 // producing packets again after seeks from end-of-file.
                 input_.flush();
-                spdlog::info("[DemuxThread] av_seek_frame OK: target={:.3f}s", req.target_pts_us / 1e6);
+                spdlog::debug("[DemuxThread] av_seek_frame OK: target={:.3f}s", req.target_pts_us / 1e6);
             }
 
             SeekCallback seek_callback;
@@ -291,13 +298,13 @@ void DemuxThread::run() {
                 seek_callback = seek_callback_;
             }
             if (seek_callback) {
-                spdlog::info("[DemuxThread] Invoking seek callback -> DecodeThread");
+                spdlog::debug("[DemuxThread] Invoking seek callback -> DecodeThread");
                 seek_callback(req.target_pts_us, req.type);
             }
 
             eof_reached = false;
             packets_pushed = 0;
-            spdlog::info("[DemuxThread] Seek complete, resuming packet reads");
+            spdlog::debug("[DemuxThread] Seek complete, resuming packet reads");
             continue;
         }
 
@@ -314,11 +321,17 @@ void DemuxThread::run() {
             : input_.read_packet(pkt);
         if (ret < 0) {
             if (ret == AVERROR_EOF) {
-                spdlog::info("[DemuxThread] EOF reached after {} packets, waiting for seek",
+                spdlog::debug("[DemuxThread] EOF reached after {} packets, waiting for seek",
                              packets_pushed);
                 signal_outputs_eof();
                 eof_reached = true;
                 continue;
+            }
+            if (!running_.load(std::memory_order_acquire)) {
+                spdlog::debug(
+                    "[DemuxThread] Read cancelled: {:#x}",
+                    static_cast<unsigned>(ret));
+                break;
             }
             spdlog::error("[DemuxThread] Read error: {:#x}", static_cast<unsigned>(ret));
             emit_error(ret);
@@ -372,7 +385,7 @@ void DemuxThread::run() {
 
     // Signal decode thread that no more packets will come
     abort_outputs();
-    spdlog::info("[DemuxThread] Demux loop ended");
+    spdlog::debug("[DemuxThread] Demux loop ended");
 }
 
 } // namespace vr

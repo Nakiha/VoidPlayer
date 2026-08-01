@@ -1,6 +1,6 @@
-# AV1 and VP9 used to require FFmpeg-owned D3D11VA hwdownload because dense
-# exact seeks could crash the native path. Keep both independent-device GPU
-# snapshot pipelines alive while playing through three dense seek rounds.
+# Keep AV1 on the independent-device snapshot path while VP9 uses the Windows
+# D3D11VA download policy that avoids driver hangs beside other hardware tracks.
+# Exercise both through three dense seek rounds.
 @WINDOW,1600,900
 
 0.0,SET_DECODE_MODE,preferHardware
@@ -10,7 +10,7 @@
 1.5,ASSERT_TRACK_COUNT,2
 1.6,SET_RENDER_SIZE,1280,720
 1.8,ASSERT_NATIVE_DIAGNOSTIC_BOOL,hardwareDecodeActive,true
-1.9,ASSERT_NATIVE_DIAGNOSTIC_BOOL,hardwareDecodeDownloadsToCpu,false
+1.9,ASSERT_NATIVE_DIAGNOSTIC_BOOL,hardwareDecodeDownloadsToCpu,true
 1.92,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,hardwareDirectBindCount,1
 1.925,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,snapshotCompletionWaitCount,1
 1.927,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,snapshotCompletionWaitTimeoutCount,0,0

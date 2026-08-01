@@ -4,6 +4,7 @@ import '../actions/automation_action.dart';
 import '../actions/player_action.dart';
 import '../actions/player_assert.dart';
 import '../analysis/analysis_overlay.dart';
+import '../analysis/ui/testing/analysis_test_executor.dart';
 import '../app_log.dart';
 import '../preferences/playback_preferences.dart';
 
@@ -28,6 +29,12 @@ class ScriptAssert extends ScriptInstruction {
   const ScriptAssert(super.time, this.assertion);
 }
 
+class ScriptAnalysis extends ScriptInstruction {
+  final AnalysisTestCommand command;
+
+  const ScriptAnalysis(super.time, this.command);
+}
+
 class ScriptWait extends ScriptInstruction {
   final WaitState state;
   final Duration timeout;
@@ -36,16 +43,23 @@ class ScriptWait extends ScriptInstruction {
 
 enum WaitState { playing, paused }
 
-class ScriptWaitAnalysisProcessCount extends ScriptInstruction {
-  final int count;
-  final Duration timeout;
-  const ScriptWaitAnalysisProcessCount(super.time, this.count, this.timeout);
-}
-
 class ScriptWaitTrackCount extends ScriptInstruction {
   final int count;
   final Duration timeout;
   const ScriptWaitTrackCount(super.time, this.count, this.timeout);
+}
+
+class ScriptWaitAnalysisEntryCount extends ScriptInstruction {
+  final int count;
+  final Duration timeout;
+
+  const ScriptWaitAnalysisEntryCount(super.time, this.count, this.timeout);
+}
+
+class ScriptAssertAnalysisEntryCount extends ScriptInstruction {
+  final int count;
+
+  const ScriptAssertAnalysisEntryCount(super.time, this.count);
 }
 
 class ScriptWaitPresentedFrameRange extends ScriptInstruction {
@@ -63,11 +77,6 @@ class ScriptWaitPresentedFrameRange extends ScriptInstruction {
     required this.timeout,
     required this.interval,
   });
-}
-
-class ScriptSetAnalysisTestScript extends ScriptInstruction {
-  final String path;
-  const ScriptSetAnalysisTestScript(super.time, this.path);
 }
 
 class ScriptGenerateTestVideo extends ScriptInstruction {
@@ -118,6 +127,49 @@ class ScriptQuit extends ScriptInstruction {
 
 class ScriptCloseMainWindow extends ScriptInstruction {
   const ScriptCloseMainWindow(super.time);
+}
+
+class ScriptClickMainWindowDeckTab extends ScriptInstruction {
+  final String tabName;
+
+  const ScriptClickMainWindowDeckTab(super.time, this.tabName);
+}
+
+class ScriptDragMainWindowDeck extends ScriptInstruction {
+  final double deltaY;
+  final int steps;
+
+  const ScriptDragMainWindowDeck(super.time, this.deltaY, this.steps);
+}
+
+class ScriptToggleMainWindowDeckCollapsed extends ScriptInstruction {
+  const ScriptToggleMainWindowDeckCollapsed(super.time);
+}
+
+class ScriptClickMainWindowQualityAnalyze extends ScriptInstruction {
+  const ScriptClickMainWindowQualityAnalyze(super.time);
+}
+
+class ScriptClickMainWindowQualityCreateMarks extends ScriptInstruction {
+  const ScriptClickMainWindowQualityCreateMarks(super.time);
+}
+
+class ScriptWaitMainWindowQualityReport extends ScriptInstruction {
+  final Duration timeout;
+
+  const ScriptWaitMainWindowQualityReport(super.time, this.timeout);
+}
+
+class ScriptAssertMainWindowDeckTab extends ScriptInstruction {
+  final String tabName;
+
+  const ScriptAssertMainWindowDeckTab(super.time, this.tabName);
+}
+
+class ScriptAssertMainWindowDeckCollapsed extends ScriptInstruction {
+  final bool collapsed;
+
+  const ScriptAssertMainWindowDeckCollapsed(super.time, this.collapsed);
 }
 
 /// Parse a CSV automation script file into scheduled instructions.
@@ -842,19 +894,6 @@ ScriptInstruction? _parseInstruction(
         WaitState.paused,
         Duration(milliseconds: timeoutMs),
       );
-    case 'WAIT_ANALYSIS_PROCESS_COUNT':
-      if (args.isEmpty) {
-        log.warning(
-          'WAIT_ANALYSIS_PROCESS_COUNT missing count argument: $rawLine',
-        );
-        return null;
-      }
-      final timeoutMs = args.length >= 2 ? int.parse(args[1]) : 10000;
-      return ScriptWaitAnalysisProcessCount(
-        time,
-        int.parse(args[0]),
-        Duration(milliseconds: timeoutMs),
-      );
     case 'WAIT_TRACK_COUNT':
       if (args.isEmpty) {
         log.warning('WAIT_TRACK_COUNT missing count argument: $rawLine');
@@ -864,6 +903,23 @@ ScriptInstruction? _parseInstruction(
       return ScriptWaitTrackCount(
         time,
         int.parse(args[0]),
+        Duration(milliseconds: timeoutMs),
+      );
+    case 'WAIT_ANALYSIS_ENTRY_COUNT':
+      if (args.isEmpty) {
+        log.warning('WAIT_ANALYSIS_ENTRY_COUNT missing count: $rawLine');
+        return null;
+      }
+      final timeoutMs = args.length >= 2 ? int.parse(args[1]) : 10000;
+      return ScriptWaitAnalysisEntryCount(
+        time,
+        int.parse(args[0]),
+        Duration(milliseconds: timeoutMs),
+      );
+    case 'WAIT_MAIN_WINDOW_QUALITY_REPORT':
+      final timeoutMs = args.isNotEmpty ? int.parse(args[0]) : 30000;
+      return ScriptWaitMainWindowQualityReport(
+        time,
         Duration(milliseconds: timeoutMs),
       );
     case 'WAIT_PRESENTED_FRAME_RANGE':
@@ -883,12 +939,6 @@ ScriptInstruction? _parseInstruction(
         timeout: Duration(milliseconds: timeoutMs),
         interval: Duration(milliseconds: intervalMs),
       );
-    case 'SET_ANALYSIS_TEST_SCRIPT':
-      if (args.isEmpty) {
-        log.warning('SET_ANALYSIS_TEST_SCRIPT missing path argument: $rawLine');
-        return null;
-      }
-      return ScriptSetAnalysisTestScript(time, args[0]);
     case 'GENERATE_TEST_VIDEO':
     case 'GENERATE_TEST_VIDEO_WITH_AUDIO':
       if (args.isEmpty) {
@@ -1286,14 +1336,6 @@ ScriptInstruction? _parseInstruction(
               : double.infinity,
         ),
       );
-    case 'ASSERT_ANALYSIS_PROCESS_COUNT':
-      if (args.isEmpty) {
-        log.warning(
-          'ASSERT_ANALYSIS_PROCESS_COUNT missing count argument: $rawLine',
-        );
-        return null;
-      }
-      return ScriptAssert(time, AssertAnalysisProcessCount(int.parse(args[0])));
     case 'ASSERT_ANALYSIS_FFI_AVAILABLE':
       if (args.isEmpty) {
         log.warning(
@@ -1307,6 +1349,12 @@ ScriptInstruction? _parseInstruction(
           args[0] == '1' || args[0].toLowerCase() == 'true',
         ),
       );
+    case 'ASSERT_ANALYSIS_ENTRY_COUNT':
+      if (args.isEmpty) {
+        log.warning('ASSERT_ANALYSIS_ENTRY_COUNT missing count: $rawLine');
+        return null;
+      }
+      return ScriptAssertAnalysisEntryCount(time, int.parse(args[0]));
     case 'ASSERT_ANALYSIS_OVERLAY':
       if (args.isEmpty) {
         log.warning('ASSERT_ANALYSIS_OVERLAY needs active flag: $rawLine');
@@ -1382,8 +1430,47 @@ ScriptInstruction? _parseInstruction(
         time,
         AssertNativeSeekCountDelta(args[0], int.parse(args[1])),
       );
+    case 'ASSERT_MAIN_WINDOW_DECK_TAB':
+      if (args.isEmpty) {
+        log.warning('ASSERT_MAIN_WINDOW_DECK_TAB missing tab: $rawLine');
+        return null;
+      }
+      return ScriptAssertMainWindowDeckTab(time, args[0].toLowerCase());
+    case 'ASSERT_MAIN_WINDOW_DECK_COLLAPSED':
+      if (args.isEmpty) {
+        log.warning(
+          'ASSERT_MAIN_WINDOW_DECK_COLLAPSED missing value: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssertMainWindowDeckCollapsed(
+        time,
+        args[0] == '1' || args[0].toLowerCase() == 'true',
+      );
 
     // Control
+    case 'CLICK_MAIN_WINDOW_DECK_TAB':
+      if (args.isEmpty) {
+        log.warning('CLICK_MAIN_WINDOW_DECK_TAB missing tab: $rawLine');
+        return null;
+      }
+      return ScriptClickMainWindowDeckTab(time, args[0].toLowerCase());
+    case 'DRAG_MAIN_WINDOW_DECK':
+      if (args.isEmpty) {
+        log.warning('DRAG_MAIN_WINDOW_DECK missing deltaY: $rawLine');
+        return null;
+      }
+      return ScriptDragMainWindowDeck(
+        time,
+        double.parse(args[0]),
+        args.length >= 2 ? int.parse(args[1]) : 12,
+      );
+    case 'TOGGLE_MAIN_WINDOW_DECK_COLLAPSED':
+      return ScriptToggleMainWindowDeckCollapsed(time);
+    case 'CLICK_MAIN_WINDOW_QUALITY_ANALYZE':
+      return ScriptClickMainWindowQualityAnalyze(time);
+    case 'CLICK_MAIN_WINDOW_QUALITY_CREATE_MARKS':
+      return ScriptClickMainWindowQualityCreateMarks(time);
     case 'CLOSE_MAIN_WINDOW':
       return ScriptCloseMainWindow(time);
     case 'QUIT':
@@ -1391,7 +1478,10 @@ ScriptInstruction? _parseInstruction(
       return ScriptQuit(time, exitCode);
 
     default:
-      log.warning('Unknown test script command: $cmd');
-      return null;
+      final analysisCommand = tryParseAnalysisTestCommand(cmd, args);
+      if (analysisCommand != null) {
+        return ScriptAnalysis(time, analysisCommand);
+      }
+      throw FormatException('Unknown test script command: $cmd ($rawLine)');
   }
 }

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:void_player/windows/analysis/charts/analysis_chart_scroll.dart';
+import 'package:void_player/analysis/ui/charts/analysis_chart_scroll.dart';
 
 void main() {
   test('horizontal scroll intent tolerates small vertical drift', () {

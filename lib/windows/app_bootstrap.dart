@@ -1,9 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
-import 'package:window_manager/window_manager.dart' hide WindowManager;
+import 'package:window_manager/window_manager.dart';
 
 import '../app.dart';
 import '../app_log.dart';
@@ -14,12 +12,9 @@ import '../platform/platform_capabilities.dart';
 import '../platform/window_bootstrap_args.dart';
 import '../platform/window_bounds_policy.dart';
 import '../startup_options.dart';
-import 'analysis/analysis_window.dart';
-import 'analysis/ipc/analysis_ipc_client.dart';
 import 'system_accent_watcher.dart';
 import 'win32_pointer_button_state_provider.dart';
 import 'win32ffi.dart';
-import 'window_manager.dart';
 import 'windows_main_window_platform.dart';
 
 const MethodChannel _windowBootstrapChannel = MethodChannel(
@@ -80,18 +75,6 @@ Future<void> _showWindowForMode({required bool silent}) async {
   }
 }
 
-int _currentFlutterRunnerHwnd() {
-  final hwnds = Win32FFI.findCurrentProcessWindowsByClass(kMainWindowClass);
-  if (hwnds.isNotEmpty) return hwnds.first;
-  final foregroundHwnd = Win32FFI.getForegroundWindow();
-  return Win32FFI.isCurrentProcessWindowOfClass(
-        foregroundHwnd,
-        kMainWindowClass,
-      )
-      ? foregroundHwnd
-      : 0;
-}
-
 Color _getWindowsAccentColor() => Color(Win32FFI.getDwmAccentColorArgb());
 
 bool _isRestorableMainWindowRect(Rect? rect) {
@@ -144,8 +127,7 @@ Future<void> _applyInitialMainWindowBoundsWithWindowManager(
   }
 }
 
-/// Handles the close button: saves window state, closes analysis processes,
-/// then closes the main window.
+/// Handles the close button, saves window state, then closes the main window.
 class _CloseHandler with WindowListener {
   @override
   void onWindowClose() async {
@@ -172,141 +154,12 @@ class _CloseHandler with WindowListener {
     } catch (error, stack) {
       log.severe('[Startup] main window shutdown failed', error, stack);
     }
-    try {
-      await WindowManager.closeAllAnalysisWindows();
-    } catch (error, stack) {
-      log.warning('[Startup] analysis window close failed', error, stack);
-    }
     await windowManager.setPreventClose(false);
     await windowManager.close();
   }
 }
 
-/// Runs the analysis window as a standalone process.
-///
-/// Launched via `void_player.exe --standalone-analysis --hash=xxx ...`.
-/// This gives the analysis window its own process and keeps it isolated from
-/// the main window renderer.
-Future<void> _runStandaloneAnalysis(List<String> args) async {
-  final hashes = <String>[];
-  final fileNames = <String?>[];
-  String? testScriptPath;
-  final silentUiTest = hasCliFlag(args, '--silent-ui-test');
-  int x = 100, y = 100, width = 800, height = 600;
-  int accentColorValue = 0xFF0078D4;
-  int? analysisIpcPort;
-  String? analysisIpcToken;
-
-  for (var i = 0; i < args.length; i++) {
-    final arg = args[i];
-    if (arg.startsWith('--hash=')) {
-      hashes.add(arg.substring(7));
-    } else if (arg.startsWith('--fileName=')) {
-      final name = arg.substring(11);
-      fileNames.add(name.isEmpty ? null : name);
-    } else if (arg == '--test-script' && i + 1 < args.length) {
-      testScriptPath = args[++i];
-    } else if (arg.startsWith('--test-script=')) {
-      testScriptPath = arg.substring(14);
-    } else if (arg.startsWith('--x=')) {
-      x = int.tryParse(arg.substring(4)) ?? 100;
-    } else if (arg.startsWith('--y=')) {
-      y = int.tryParse(arg.substring(4)) ?? 100;
-    } else if (arg.startsWith('--width=')) {
-      width = int.tryParse(arg.substring(8)) ?? 800;
-    } else if (arg.startsWith('--height=')) {
-      height = int.tryParse(arg.substring(9)) ?? 600;
-    } else if (arg.startsWith('--accentColor=')) {
-      accentColorValue = int.tryParse(arg.substring(14)) ?? 0xFF0078D4;
-    } else if (arg.startsWith('--analysis-ipc-port=')) {
-      analysisIpcPort = int.tryParse(arg.substring(20));
-    } else if (arg.startsWith('--analysis-ipc-token=')) {
-      analysisIpcToken = arg.substring(21);
-    }
-  }
-
-  if (hashes.isEmpty) {
-    log.severe('[StandaloneAnalysis] --hash is required');
-    exit(1);
-  }
-
-  log.info(
-    '[StandaloneAnalysis] starting: hashes=$hashes, fileNames=$fileNames, '
-    'silentUiTest=$silentUiTest',
-  );
-
-  await windowManager.ensureInitialized();
-  final initialHwnd = _currentFlutterRunnerHwnd();
-  if (initialHwnd != 0) {
-    Win32FFI.moveWindow(initialHwnd, x, y, width, height);
-    log.info(
-      '[StandaloneAnalysis] applied initial rect via Win32: '
-      'hwnd=$initialHwnd, x=$x, y=$y, width=$width, height=$height',
-    );
-  } else {
-    await windowManager.setSize(Size(width.toDouble(), height.toDouble()));
-    await windowManager.setPosition(Offset(x.toDouble(), y.toDouble()));
-    log.warning(
-      '[StandaloneAnalysis] initial HWND unavailable, '
-      'falling back to window_manager position',
-    );
-  }
-  await windowManager.setMinimumSize(const Size(400, 300));
-
-  await Window.initialize();
-  await Window.setEffect(
-    effect: WindowEffect.mica,
-    color: const Color(0xCC222222),
-  );
-
-  final hwnd = initialHwnd != 0 ? initialHwnd : _currentFlutterRunnerHwnd();
-  if (hwnd != 0) {
-    final title = hashes.length == 1 && fileNames.isNotEmpty
-        ? 'Void Player - ${fileNames.first}'
-        : 'Void Player - Analysis';
-    Win32FFI.setWindowText(hwnd, title);
-  }
-
-  final accentColor = Color(accentColorValue);
-  final analysisIpcClient = analysisIpcPort != null && analysisIpcToken != null
-      ? await AnalysisIpcClient.connect(
-          port: analysisIpcPort,
-          token: analysisIpcToken,
-        )
-      : null;
-
-  if (hashes.length == 1 && analysisIpcClient == null) {
-    runApp(
-      AnalysisApp(
-        accentColor: accentColor,
-        hash: hashes.first,
-        fileName: fileNames.isNotEmpty ? fileNames.first : null,
-        testScriptPath: testScriptPath,
-      ),
-    );
-  } else {
-    runApp(
-      AnalysisWorkspaceApp(
-        accentColor: accentColor,
-        hashes: hashes,
-        fileNames: fileNames,
-        testScriptPath: testScriptPath,
-        ipcClient: analysisIpcClient,
-      ),
-    );
-  }
-
-  WidgetsBinding.instance.addPostFrameCallback((_) async {
-    await _showWindowForMode(silent: silentUiTest);
-  });
-}
-
 Future<void> runVoidPlayer(List<String> args) async {
-  if (args.contains('--standalone-analysis')) {
-    await _runStandaloneAnalysis(args);
-    return;
-  }
-
   final startupTrace = _StartupTrace();
   String? testScriptPath;
   final silentUiTest = hasCliFlag(args, '--silent-ui-test');
@@ -325,8 +178,6 @@ Future<void> runVoidPlayer(List<String> args) async {
   startupTrace.mark('arguments parsed');
 
   await AppConfig.initialize();
-  final analysisProcesses = WindowManager.analysisProcesses;
-  analysisProcesses.silentUiTest = silentUiTest;
   startupTrace.mark('config initialized');
 
   await windowManager.ensureInitialized();
@@ -349,13 +200,11 @@ Future<void> runVoidPlayer(List<String> args) async {
   startupTrace.mark('close handler installed');
 
   final accentColor = _getWindowsAccentColor();
-  analysisProcesses.accentColorValue = accentColor.toARGB32();
   startupTrace.mark('accent color loaded');
   log.info('Application starting (main window), silentUiTest=$silentUiTest');
   runApp(
     VoidPlayerApp(
       accentColor: accentColor,
-      analysisProcesses: analysisProcesses,
       platformCapabilities: PlatformCapabilities.windows,
       systemAccentWatcherFactory: WindowsSystemAccentWatcher.new,
       platformWindow: const WindowsMainWindowPlatform(),

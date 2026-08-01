@@ -30,7 +30,7 @@ extension MainWindowComposition on MainWindowController {
     );
     analysisCoordinator = MainWindowAnalysisCoordinator(
       trackManager: trackManager,
-      analysisProcesses: analysisProcesses,
+      stateStore: stateStore,
       analysisGeneration: analysisGeneration,
       analysisOverlaysEnabled: platformCapabilities.analysisOverlays,
       presentedFrameProvider: player.currentPresentedFrame,
@@ -159,7 +159,6 @@ extension MainWindowComposition on MainWindowController {
         scriptPath: path,
         automation: UiAutomationBridge(
           controller: player,
-          analysisProcesses: analysisProcesses,
           testHarness: testHarness,
           effectiveDurationUs: () => timelineMetrics.effectiveDurationUs,
           timelinePtsUs: () => stateStore.value.currentPtsUs,
@@ -201,6 +200,10 @@ extension MainWindowComposition on MainWindowController {
           },
           dartViewportDiagnostics: () =>
               ViewportInteractionDiagnostics.instance.snapshot(),
+          analysisTestHosts: analysisTestHosts,
+          analysisEntryCount: () => analysisCoordinator.entries.value.length,
+          mainWindowDeckTabName: () => stateStore.value.deckTab.name,
+          mainWindowDeckCollapsed: () => stateStore.value.deckCollapsed,
           actionRegistry: actionRegistry,
         ),
       ).run();

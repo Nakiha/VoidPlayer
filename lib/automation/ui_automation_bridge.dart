@@ -2,7 +2,7 @@ import '../actions/action_registry.dart';
 import '../actions/automation_action.dart';
 import '../actions/player_action.dart';
 import '../analysis/analysis_overlay.dart';
-import '../platform/analysis_process_host.dart';
+import '../analysis/ui/testing/analysis_test_host.dart';
 import '../video_renderer_controller.dart';
 import 'main_window_harness.dart';
 
@@ -14,7 +14,6 @@ import 'main_window_harness.dart';
 /// user action binding lifecycle.
 class UiAutomationBridge {
   final NativePlayerController controller;
-  final AnalysisProcessHost analysisProcesses;
   final MainWindowTestHarness testHarness;
   final int Function() effectiveDurationUs;
   final int Function() timelinePtsUs;
@@ -33,11 +32,14 @@ class UiAutomationBridge {
   setAnalysisOverlayLayers;
   final void Function(double opacity) setAnalysisOverlayOpacity;
   final Map<String, Object> Function() dartViewportDiagnostics;
+  final AnalysisTestHostRegistry analysisTestHosts;
+  final int Function() analysisEntryCount;
+  final String Function() mainWindowDeckTabName;
+  final bool Function() mainWindowDeckCollapsed;
   final ActionRegistry _actionRegistry;
 
   const UiAutomationBridge({
     required this.controller,
-    required this.analysisProcesses,
     required this.testHarness,
     required this.effectiveDurationUs,
     required this.timelinePtsUs,
@@ -54,24 +56,14 @@ class UiAutomationBridge {
     required this.setAnalysisOverlayLayers,
     required this.setAnalysisOverlayOpacity,
     required this.dartViewportDiagnostics,
+    required this.analysisTestHosts,
+    required this.analysisEntryCount,
+    required this.mainWindowDeckTabName,
+    required this.mainWindowDeckCollapsed,
     required ActionRegistry actionRegistry,
   }) : _actionRegistry = actionRegistry;
 
   Future<void> executePlayerAction(PlayerAction action) {
     return _actionRegistry.executeAndWait(action.name, action);
   }
-
-  Future<bool> waitForAnalysisProcessCount(int count, Duration timeout) =>
-      analysisProcesses.waitForAnalysisProcessCount(count, timeout);
-
-  int get analysisProcessCount => analysisProcesses.analysisProcessCount;
-
-  Map<String, int> get analysisExitCodes => analysisProcesses.analysisExitCodes;
-
-  set analysisTestScriptPath(String? value) {
-    analysisProcesses.analysisTestScriptPath = value;
-  }
-
-  Future<void> closeAllAnalysisWindows() =>
-      analysisProcesses.closeAllAnalysisWindows();
 }

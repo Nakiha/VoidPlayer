@@ -178,6 +178,64 @@ final class NakiAnalysisGenerationServiceStats extends Struct {
   external int submittedJobs;
 }
 
+final class NakiQualityDistribution extends Struct {
+  @Uint64()
+  external int count;
+  @Double()
+  external double mean;
+  @Double()
+  external double p95;
+  @Double()
+  external double maximum;
+}
+
+final class NakiQualitySummary extends Struct {
+  @Uint32()
+  external int schemaVersion;
+  @Int32()
+  external int videoWidth;
+  @Int32()
+  external int videoHeight;
+  @Int32()
+  external int bitDepth;
+  @Int64()
+  external int sampleIntervalUs;
+  @Uint32()
+  external int maxSamples;
+  @Int32()
+  external int truncated;
+  @Uint64()
+  external int unsupportedPixelFrames;
+  @Uint64()
+  external int sampleCount;
+  external NakiQualityDistribution blockiness;
+  external NakiQualityDistribution banding;
+  external NakiQualityDistribution blur;
+  external NakiQualityDistribution noise;
+  external NakiQualityDistribution flicker;
+}
+
+final class NakiQualitySample extends Struct {
+  @Uint64()
+  external int sampleIndex;
+  @Uint64()
+  external int decodedFrameIndex;
+  @Int64()
+  external int ptsUs;
+  @Double()
+  external double blockiness;
+  @Double()
+  external double banding;
+  @Double()
+  external double blur;
+  @Double()
+  external double noise;
+  @Double()
+  external double flicker;
+  @Double()
+  external double averageQp;
+}
+
 // ===========================================================================
 // FFI function typedefs
 // ===========================================================================
@@ -287,6 +345,26 @@ typedef _HandleGetFrameBucketsDart =
 typedef _AbiIntNative = Int32 Function();
 typedef _AbiIntDart = int Function();
 
+typedef _LastErrorNative = Int32 Function(Pointer<Int8>, Int32);
+typedef _LastErrorDart = int Function(Pointer<Int8>, int);
+
+typedef _QualityAnalyzeNative =
+    Pointer<Void> Function(Pointer<Utf8>, Int64, Uint32);
+typedef _QualityAnalyzeDart = Pointer<Void> Function(Pointer<Utf8>, int, int);
+
+typedef _QualityCloseNative = Void Function(Pointer<Void>);
+typedef _QualityCloseDart = void Function(Pointer<Void>);
+
+typedef _QualityGetSummaryNative =
+    Int32 Function(Pointer<Void>, Pointer<NakiQualitySummary>);
+typedef _QualityGetSummaryDart =
+    int Function(Pointer<Void>, Pointer<NakiQualitySummary>);
+
+typedef _QualityGetSamplesNative =
+    Int32 Function(Pointer<Void>, Int32, Pointer<NakiQualitySample>, Int32);
+typedef _QualityGetSamplesDart =
+    int Function(Pointer<Void>, int, Pointer<NakiQualitySample>, int);
+
 // ===========================================================================
 // Native symbol lookup
 // ===========================================================================
@@ -324,6 +402,9 @@ class _AnalysisNativeBindings {
     );
     sizeofOverlayState = library.lookupFunction<_AbiIntNative, _AbiIntDart>(
       'naki_analysis_sizeof_overlay_state',
+    );
+    lastError = library.lookupFunction<_LastErrorNative, _LastErrorDart>(
+      'naki_analysis_last_error',
     );
 
     setOverlay = library.lookupFunction<_SetOverlayNative, _SetOverlayDart>(
@@ -405,6 +486,37 @@ class _AnalysisNativeBindings {
           _HandleGetFrameBucketsNative,
           _HandleGetFrameBucketsDart
         >('naki_analysis_handle_get_frame_buckets');
+    try {
+      sizeofQualitySummary = library.lookupFunction<_AbiIntNative, _AbiIntDart>(
+        'naki_analysis_sizeof_quality_summary',
+      );
+      sizeofQualitySample = library.lookupFunction<_AbiIntNative, _AbiIntDart>(
+        'naki_analysis_sizeof_quality_sample',
+      );
+      qualityAnalyze = library
+          .lookupFunction<_QualityAnalyzeNative, _QualityAnalyzeDart>(
+            'naki_analysis_quality_analyze',
+          );
+      qualityClose = library
+          .lookupFunction<_QualityCloseNative, _QualityCloseDart>(
+            'naki_analysis_quality_close',
+          );
+      qualityGetSummary = library
+          .lookupFunction<_QualityGetSummaryNative, _QualityGetSummaryDart>(
+            'naki_analysis_quality_get_summary',
+          );
+      qualityGetSamples = library
+          .lookupFunction<_QualityGetSamplesNative, _QualityGetSamplesDart>(
+            'naki_analysis_quality_get_samples',
+          );
+    } catch (_) {
+      sizeofQualitySummary = null;
+      sizeofQualitySample = null;
+      qualityAnalyze = null;
+      qualityClose = null;
+      qualityGetSummary = null;
+      qualityGetSamples = null;
+    }
 
     _validateAbi();
   }
@@ -471,6 +583,9 @@ class _AnalysisNativeBindings {
   late final _AbiIntDart sizeofNaluInfo;
   late final _AbiIntDart sizeofFrameBucket;
   late final _AbiIntDart sizeofOverlayState;
+  late final _LastErrorDart lastError;
+  late final _AbiIntDart? sizeofQualitySummary;
+  late final _AbiIntDart? sizeofQualitySample;
 
   late final _SetOverlayDart setOverlay;
   late final _SetOverlayTrackDart setOverlayTrack;
@@ -491,11 +606,23 @@ class _AnalysisNativeBindings {
   late final _HandleIndexMapDart handleFrameToNalu;
   late final _HandleIndexMapDart handleNaluToFrame;
   late final _HandleGetFrameBucketsDart handleGetFrameBuckets;
+  late final _QualityAnalyzeDart? qualityAnalyze;
+  late final _QualityCloseDart? qualityClose;
+  late final _QualityGetSummaryDart? qualityGetSummary;
+  late final _QualityGetSamplesDart? qualityGetSamples;
 
   bool get hasGenerationService =>
       submitVac2OverlayChunk != null &&
       pollGenerationJobs != null &&
       getGenerationServiceStats != null;
+
+  bool get hasQualityAnalysis =>
+      sizeofQualitySummary != null &&
+      sizeofQualitySample != null &&
+      qualityAnalyze != null &&
+      qualityClose != null &&
+      qualityGetSummary != null &&
+      qualityGetSamples != null;
 
   void _validateAbi() {
     final version = abiVersion();
@@ -522,6 +649,18 @@ class _AnalysisNativeBindings {
       sizeofOverlayState(),
       sizeOf<NakiOverlayState>(),
     );
+    if (hasQualityAnalysis) {
+      _validateSize(
+        'NakiQualitySummary',
+        sizeofQualitySummary!(),
+        sizeOf<NakiQualitySummary>(),
+      );
+      _validateSize(
+        'NakiQualitySample',
+        sizeofQualitySample!(),
+        sizeOf<NakiQualitySample>(),
+      );
+    }
   }
 
   void _validateSize(String name, int nativeSize, int dartSize) {
@@ -801,6 +940,424 @@ class AnalysisGenerationServiceStats {
       backpressureDropCount: stats.backpressureDropCount,
       submittedJobs: stats.submittedJobs,
     );
+  }
+}
+
+enum AnalysisQualityMetric { blockiness, banding, blur, noise, flicker }
+
+class AnalysisQualityDistribution {
+  final int count;
+  final double mean;
+  final double p95;
+  final double maximum;
+
+  const AnalysisQualityDistribution({
+    required this.count,
+    required this.mean,
+    required this.p95,
+    required this.maximum,
+  });
+
+  factory AnalysisQualityDistribution.fromNative(
+    NakiQualityDistribution distribution,
+  ) {
+    return AnalysisQualityDistribution(
+      count: distribution.count,
+      mean: distribution.mean,
+      p95: distribution.p95,
+      maximum: distribution.maximum,
+    );
+  }
+}
+
+class AnalysisQualitySample {
+  final int sampleIndex;
+  final int decodedFrameIndex;
+  final int ptsUs;
+  final double blockiness;
+  final double banding;
+  final double blur;
+  final double noise;
+  final double? flicker;
+  final double? averageQp;
+  final List<AnalysisQualitySpatialRegion> spatialRegions;
+
+  const AnalysisQualitySample({
+    required this.sampleIndex,
+    required this.decodedFrameIndex,
+    required this.ptsUs,
+    required this.blockiness,
+    required this.banding,
+    required this.blur,
+    required this.noise,
+    required this.flicker,
+    required this.averageQp,
+    this.spatialRegions = const [],
+  });
+
+  double? valueFor(AnalysisQualityMetric metric) {
+    return switch (metric) {
+      AnalysisQualityMetric.blockiness => blockiness,
+      AnalysisQualityMetric.banding => banding,
+      AnalysisQualityMetric.blur => blur,
+      AnalysisQualityMetric.noise => noise,
+      AnalysisQualityMetric.flicker => flicker,
+    };
+  }
+
+  factory AnalysisQualitySample.fromNative(NakiQualitySample sample) {
+    return AnalysisQualitySample(
+      sampleIndex: sample.sampleIndex,
+      decodedFrameIndex: sample.decodedFrameIndex,
+      ptsUs: sample.ptsUs,
+      blockiness: sample.blockiness,
+      banding: sample.banding,
+      blur: sample.blur,
+      noise: sample.noise,
+      flicker: sample.flicker < 0 ? null : sample.flicker,
+      averageQp: sample.averageQp < 0 ? null : sample.averageQp,
+    );
+  }
+}
+
+class AnalysisQualityReport {
+  final int schemaVersion;
+  final String metricVersion;
+  final String? resultKey;
+  final int videoWidth;
+  final int videoHeight;
+  final int bitDepth;
+  final int sampleIntervalUs;
+  final int maxSamples;
+  final bool truncated;
+  final int unsupportedPixelFrames;
+  final Map<AnalysisQualityMetric, AnalysisQualityDistribution> distributions;
+  final List<AnalysisQualitySample> samples;
+  final List<AnalysisQualityTileSample> tileSamples;
+  final List<AnalysisQualityEvent> events;
+
+  const AnalysisQualityReport({
+    required this.schemaVersion,
+    required this.metricVersion,
+    this.resultKey,
+    required this.videoWidth,
+    required this.videoHeight,
+    required this.bitDepth,
+    required this.sampleIntervalUs,
+    required this.maxSamples,
+    required this.truncated,
+    required this.unsupportedPixelFrames,
+    required this.distributions,
+    required this.samples,
+    this.tileSamples = const [],
+    this.events = const [],
+  });
+
+  /// Whether this report came from the quality CLI process protocol. Reports
+  /// produced through the in-process FFI path have no [resultKey]; only the
+  /// CLI emits candidate events and a cache identity.
+  bool get hasEventCandidates => resultKey != null;
+
+  AnalysisQualityTileSample? tileSampleAt(int sampleIndex) {
+    if (sampleIndex >= 0 && sampleIndex < tileSamples.length) {
+      final direct = tileSamples[sampleIndex];
+      if (direct.sampleIndex == sampleIndex) return direct;
+    }
+    for (final sample in tileSamples) {
+      if (sample.sampleIndex == sampleIndex) return sample;
+    }
+    return null;
+  }
+}
+
+class AnalysisQualityTileMetricData {
+  final bool available;
+  final String algorithm;
+  final List<double?>? values;
+
+  const AnalysisQualityTileMetricData({
+    required this.available,
+    required this.algorithm,
+    required this.values,
+  });
+}
+
+class AnalysisQualityTilePeak {
+  final int column;
+  final int row;
+  final double value;
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+
+  const AnalysisQualityTilePeak({
+    required this.column,
+    required this.row,
+    required this.value,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+  });
+}
+
+class AnalysisQualityTileSample {
+  final int sampleIndex;
+  final int decodedFrameIndex;
+  final int ptsUs;
+  final String tileMetricVersion;
+  final int frameWidth;
+  final int frameHeight;
+  final int targetTileWidth;
+  final int targetTileHeight;
+  final int columns;
+  final int rows;
+  final Map<AnalysisQualityMetric, AnalysisQualityTileMetricData> metrics;
+
+  const AnalysisQualityTileSample({
+    required this.sampleIndex,
+    required this.decodedFrameIndex,
+    required this.ptsUs,
+    required this.tileMetricVersion,
+    required this.frameWidth,
+    required this.frameHeight,
+    required this.targetTileWidth,
+    required this.targetTileHeight,
+    required this.columns,
+    required this.rows,
+    required this.metrics,
+  });
+
+  AnalysisQualityTilePeak? strongestTileFor(AnalysisQualityMetric metric) {
+    final data = metrics[metric];
+    final values = data?.values;
+    if (data == null || !data.available || values == null) return null;
+    if (columns <= 0 || rows <= 0 || values.length != columns * rows) {
+      return null;
+    }
+    var strongestIndex = -1;
+    var strongestValue = -1.0;
+    for (var index = 0; index < values.length; index++) {
+      final value = values[index];
+      if (value != null && value > strongestValue) {
+        strongestIndex = index;
+        strongestValue = value;
+      }
+    }
+    if (strongestIndex < 0) return null;
+    final column = strongestIndex % columns;
+    final row = strongestIndex ~/ columns;
+    if (frameWidth <= 0 || frameHeight <= 0) return null;
+    final pixelLeft = column * frameWidth ~/ columns;
+    final pixelTop = row * frameHeight ~/ rows;
+    final pixelRight = (column + 1) * frameWidth ~/ columns;
+    final pixelBottom = (row + 1) * frameHeight ~/ rows;
+    final left = pixelLeft / frameWidth;
+    final top = pixelTop / frameHeight;
+    final right = pixelRight / frameWidth;
+    final bottom = pixelBottom / frameHeight;
+    return AnalysisQualityTilePeak(
+      column: column,
+      row: row,
+      value: strongestValue,
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+    );
+  }
+}
+
+class AnalysisQualitySpatialRegion {
+  final double score;
+  final double detectionThreshold;
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final int pixelX;
+  final int pixelY;
+  final int pixelWidth;
+  final int pixelHeight;
+
+  const AnalysisQualitySpatialRegion({
+    required this.score,
+    required this.detectionThreshold,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.pixelX,
+    required this.pixelY,
+    required this.pixelWidth,
+    required this.pixelHeight,
+  });
+}
+
+enum AnalysisQualityEventClassification { relativeOutlier, spatialCandidate }
+
+/// A candidate quality event emitted by the CLI. Events are experimental
+/// evidence, not calibrated pass/fail labels; thresholding and grouping are
+/// owned by the CLI event policy and must not be reproduced here.
+class AnalysisQualityEvent {
+  final String eventId;
+  final AnalysisQualityMetric metric;
+  final AnalysisQualityEventClassification classification;
+  final int startPtsUs;
+  final int endPtsUs;
+  final int peakPtsUs;
+  final int startSampleIndex;
+  final int endSampleIndex;
+  final int peakSampleIndex;
+  final double peakScore;
+  final int evidenceSampleCount;
+  final double threshold;
+  final AnalysisQualitySpatialRegion? region;
+
+  const AnalysisQualityEvent({
+    required this.eventId,
+    required this.metric,
+    required this.classification,
+    required this.startPtsUs,
+    required this.endPtsUs,
+    required this.peakPtsUs,
+    required this.startSampleIndex,
+    required this.endSampleIndex,
+    required this.peakSampleIndex,
+    required this.peakScore,
+    required this.evidenceSampleCount,
+    required this.threshold,
+    required this.region,
+  });
+}
+
+class AnalysisQualityNative {
+  const AnalysisQualityNative._();
+
+  static bool get isAvailable {
+    try {
+      return _native.hasQualityAnalysis;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static AnalysisQualityReport analyzeSync(
+    String videoPath, {
+    int sampleIntervalUs = 1000000,
+    int maxSamples = 0,
+  }) {
+    if (videoPath.trim().isEmpty || sampleIntervalUs <= 0 || maxSamples < 0) {
+      throw ArgumentError(
+        'videoPath, sampleIntervalUs, and maxSamples must be valid',
+      );
+    }
+    final bindings = _native;
+    final analyze = bindings.qualityAnalyze;
+    final close = bindings.qualityClose;
+    final getSummary = bindings.qualityGetSummary;
+    final getSamples = bindings.qualityGetSamples;
+    if (analyze == null ||
+        close == null ||
+        getSummary == null ||
+        getSamples == null) {
+      throw const AnalysisFfiUnavailable(
+        'Native quality analysis symbols are unavailable.',
+      );
+    }
+
+    final path = videoPath.toNativeUtf8(allocator: calloc);
+    Pointer<Void> handle = nullptr;
+    try {
+      handle = analyze(path, sampleIntervalUs, maxSamples);
+      if (handle == nullptr) {
+        throw StateError(
+          _analysisLastError(bindings, 'Quality analysis failed'),
+        );
+      }
+      final summary = calloc<NakiQualitySummary>();
+      try {
+        if (getSummary(handle, summary) == 0) {
+          throw StateError(
+            _analysisLastError(bindings, 'Quality summary is unavailable'),
+          );
+        }
+        final native = summary.ref;
+        final samples = <AnalysisQualitySample>[];
+        const chunkSize = 256;
+        final chunk = calloc<NakiQualitySample>(chunkSize);
+        try {
+          var offset = 0;
+          while (offset < native.sampleCount) {
+            final requested = (native.sampleCount - offset)
+                .clamp(0, chunkSize)
+                .toInt();
+            final count = getSamples(handle, offset, chunk, requested);
+            if (count <= 0) {
+              throw StateError(
+                _analysisLastError(
+                  bindings,
+                  'Quality timeline ended before the reported sample count',
+                ),
+              );
+            }
+            for (var index = 0; index < count; index++) {
+              samples.add(AnalysisQualitySample.fromNative(chunk[index]));
+            }
+            offset += count;
+          }
+        } finally {
+          calloc.free(chunk);
+        }
+        return AnalysisQualityReport(
+          schemaVersion: native.schemaVersion,
+          // The in-process FFI path predates the CLI process protocol: it has
+          // no metric-version string, no result key and no event candidates.
+          metricVersion: '',
+          resultKey: null,
+          events: const [],
+          videoWidth: native.videoWidth,
+          videoHeight: native.videoHeight,
+          bitDepth: native.bitDepth,
+          sampleIntervalUs: native.sampleIntervalUs,
+          maxSamples: native.maxSamples,
+          truncated: native.truncated != 0,
+          unsupportedPixelFrames: native.unsupportedPixelFrames,
+          distributions: Map.unmodifiable({
+            AnalysisQualityMetric.blockiness:
+                AnalysisQualityDistribution.fromNative(native.blockiness),
+            AnalysisQualityMetric.banding:
+                AnalysisQualityDistribution.fromNative(native.banding),
+            AnalysisQualityMetric.blur: AnalysisQualityDistribution.fromNative(
+              native.blur,
+            ),
+            AnalysisQualityMetric.noise: AnalysisQualityDistribution.fromNative(
+              native.noise,
+            ),
+            AnalysisQualityMetric.flicker:
+                AnalysisQualityDistribution.fromNative(native.flicker),
+          }),
+          samples: List.unmodifiable(samples),
+        );
+      } finally {
+        calloc.free(summary);
+      }
+    } finally {
+      calloc.free(path);
+      if (handle != nullptr) close(handle);
+    }
+  }
+}
+
+String _analysisLastError(_AnalysisNativeBindings bindings, String fallback) {
+  final buffer = calloc<Int8>(512);
+  try {
+    bindings.lastError(buffer, 512);
+    final message = buffer.cast<Utf8>().toDartString().trim();
+    return message.isEmpty ? fallback : message;
+  } finally {
+    calloc.free(buffer);
   }
 }
 

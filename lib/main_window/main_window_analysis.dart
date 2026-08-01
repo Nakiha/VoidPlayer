@@ -1,17 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as p;
 
 import '../analysis/analysis_manager.dart';
 import '../analysis/analysis_overlay.dart';
+import '../analysis/ui/workspace/analysis_workspace_models.dart';
 import '../app_log.dart';
 import '../native_player/native_player_protocol.dart';
-import '../platform/analysis_process_host.dart';
 import '../track_manager.dart';
 import '../utils/async_guard.dart';
-import '../windows/analysis/ipc/analysis_ipc_models.dart';
-import '../windows/analysis/ipc/analysis_ipc_server.dart';
+import 'main_window_state.dart';
 
 class MainWindowAnalysisCoordinator {
   static const Duration _overlayPlaybackPrefetchInterval = Duration(
@@ -19,14 +17,16 @@ class MainWindowAnalysisCoordinator {
   );
 
   final TrackManager trackManager;
-  final AnalysisProcessHost analysisProcesses;
+  final MainWindowStateStore stateStore;
   final AnalysisGenerationService analysisGeneration;
   final bool analysisOverlaysEnabled;
   final Future<PresentedFrameTiming?> Function(int fileId)?
   presentedFrameProvider;
   final void Function()? onOverlayStateChanged;
-  final AnalysisIpcServer _ipcServer = AnalysisIpcServer();
   final Map<int, String> _hashesByFileId = <int, String>{};
+  final ValueNotifier<List<AnalysisWorkspaceEntry>> _entries = ValueNotifier(
+    const <AnalysisWorkspaceEntry>[],
+  );
 
   bool _disposed = false;
   bool _overlayPanelRequested = false;
@@ -38,7 +38,7 @@ class MainWindowAnalysisCoordinator {
 
   MainWindowAnalysisCoordinator({
     required this.trackManager,
-    required this.analysisProcesses,
+    required this.stateStore,
     this.analysisOverlaysEnabled = true,
     AnalysisGenerationService? analysisGeneration,
     this.presentedFrameProvider,
@@ -52,23 +52,25 @@ class MainWindowAnalysisCoordinator {
     _analysisGenerationListenable?.addListener(
       _handleAnalysisGenerationChanged,
     );
-    _ipcServer.publishAccentColor(analysisProcesses.accentColorValue);
+    trackManager.addListener(_handleTrackManagerChanged);
+    _syncEntries();
   }
+
+  ValueListenable<List<AnalysisWorkspaceEntry>> get entries => _entries;
 
   Future<void> dispose() async {
     _disposed = true;
     _analysisGenerationListenable?.removeListener(
       _handleAnalysisGenerationChanged,
     );
+    trackManager.removeListener(_handleTrackManagerChanged);
     _stopOverlayPlaybackPrefetch();
     _hashesByFileId.clear();
-    analysisProcesses.analysisIpcPort = null;
-    analysisProcesses.analysisIpcToken = null;
-    await _ipcServer.dispose();
+    _entries.dispose();
   }
 
-  Future<void> triggerAnalysis() {
-    return _enqueueOperation(_triggerAnalysisImpl);
+  Future<void> enterAnalysis() {
+    return _enqueueOperation(_enterAnalysisImpl);
   }
 
   Future<void> toggleOverlay(TrackEntry track, String hash) {
@@ -100,6 +102,7 @@ class MainWindowAnalysisCoordinator {
       );
       if (_disposed || hash == null) return null;
       _hashesByFileId[entry.fileId] = hash;
+      _syncEntries();
       return hash;
     });
   }
@@ -213,6 +216,7 @@ class MainWindowAnalysisCoordinator {
       if (_disposed || !_overlayPanelRequested) return;
       if (hash == null) continue;
       _hashesByFileId[entry.fileId] = hash;
+      _syncEntries();
       final presentedFrame = await _presentedFrameForTrack(entry);
       if (_disposed || !_overlayPanelRequested) return;
       sources.add(
@@ -266,40 +270,51 @@ class MainWindowAnalysisCoordinator {
     }
   }
 
-  Future<void> _triggerAnalysisImpl() async {
+  Future<void> _enterAnalysisImpl() async {
     if (trackManager.isEmpty) return;
-    if (!analysisProcesses.supportsExternalAnalysisWindows) return;
-    if (analysisProcesses.activateAnalysisWindows()) return;
-    final windows = <AnalysisWindowRequest>[];
-    await _ipcServer.start();
-    if (_disposed) return;
-    _ipcServer.publishAccentColor(analysisProcesses.accentColorValue);
-    analysisProcesses.analysisIpcPort = _ipcServer.port;
-    analysisProcesses.analysisIpcToken = _ipcServer.token;
-    for (final entry in trackManager.entries) {
+    _syncEntries();
+    stateStore.setDeckCollapsed(false);
+    stateStore.setDeckTab(MainWindowDeckTab.analysis);
+    final requestedEntries = trackManager.entries.toList(growable: false);
+    await _ensureAnalysisEntries(requestedEntries);
+  }
+
+  Future<void> _ensureAnalysisEntries(List<TrackEntry> requestedEntries) async {
+    // AnalysisManager's cache metadata connection is process-scoped. Keep
+    // multi-track generation deterministic instead of issuing concurrent
+    // metadata/cache operations now that analysis lives in the main process.
+    for (final entry in requestedEntries) {
       final hash = await analysisGeneration.ensureGenerated(entry.path);
       if (_disposed) return;
-      if (hash != null) {
-        _hashesByFileId[entry.fileId] = hash;
-        windows.add((hash: hash, fileName: p.basename(entry.path)));
-      }
+      if (hash == null) continue;
+      final stillOpen = trackManager.entries.any(
+        (current) =>
+            current.fileId == entry.fileId && current.path == entry.path,
+      );
+      if (!stillOpen) continue;
+      _hashesByFileId[entry.fileId] = hash;
+      _syncEntries();
     }
-    await _publishTrackSnapshotImpl();
-    if (_disposed) return;
-    await analysisProcesses.showAnalysisWindows(
-      windows,
-      onExit: _handleAnalysisWindowExited,
+  }
+
+  void _handleTrackManagerChanged() {
+    _syncEntries();
+    if (stateStore.value.deckTab != MainWindowDeckTab.analysis ||
+        trackManager.isEmpty) {
+      return;
+    }
+    final unresolved = trackManager.entries
+        .where((entry) {
+          if (_hashesByFileId.containsKey(entry.fileId)) return false;
+          return _readyHash(analysisGeneration.statusForPath(entry.path)) ==
+              null;
+        })
+        .toList(growable: false);
+    if (unresolved.isEmpty) return;
+    fireAndLogFine(
+      'generate analysis for added tracks',
+      _enqueueOperation(() => _ensureAnalysisEntries(unresolved)),
     );
-  }
-
-  Future<void> publishTrackSnapshot() async {
-    return _enqueueOperation(_publishTrackSnapshotImpl);
-  }
-
-  void publishAccentColor(int colorValue) {
-    if (_disposed) return;
-    analysisProcesses.accentColorValue = colorValue;
-    _ipcServer.publishAccentColor(colorValue);
   }
 
   Future<void> _toggleOverlayImpl(TrackEntry track, String hash) async {
@@ -346,6 +361,7 @@ class MainWindowAnalysisCoordinator {
       return;
     }
     _hashesByFileId[track.fileId] = hash;
+    _syncEntries();
     _startOverlayPlaybackPrefetch();
     _notifyOverlayStateChanged();
   }
@@ -367,6 +383,7 @@ class MainWindowAnalysisCoordinator {
       if (_disposed || (isCurrent != null && !isCurrent())) return;
       if (hash == null) continue;
       _hashesByFileId[entry.fileId] = hash;
+      _syncEntries();
       final presentedFrame =
           presentedFrameOverrides?[entry.fileId] ??
           await _presentedFrameForTrack(entry);
@@ -449,57 +466,28 @@ class MainWindowAnalysisCoordinator {
     }
   }
 
-  Future<void> _publishTrackSnapshotImpl() async {
-    if (!_ipcServer.isStarted) return;
-    if (!_ipcServer.hasClients) return;
-    final tracks = <AnalysisIpcTrack>[];
+  void _syncEntries() {
+    if (_disposed) return;
     final liveFileIds = trackManager.entries.map((e) => e.fileId).toSet();
     _hashesByFileId.removeWhere((fileId, _) => !liveFileIds.contains(fileId));
-
-    for (final entry in trackManager.entries) {
-      var hash = _hashesByFileId[entry.fileId];
-      if (hash == null) {
-        hash = await analysisGeneration.ensureGenerated(entry.path);
-        if (_disposed) return;
-        if (hash == null) continue;
-        _hashesByFileId[entry.fileId] = hash;
-      }
-      if (_disposed) return;
-      tracks.add(
-        AnalysisIpcTrack(
+    final next = <AnalysisWorkspaceEntry>[
+      for (final entry in trackManager.entries)
+        AnalysisWorkspaceEntry(
           fileId: entry.fileId,
-          slot: entry.slot,
           path: entry.path,
           fileName: entry.fileName,
-          hash: hash,
-          durationUs: entry.info.durationUs,
+          hash:
+              _hashesByFileId[entry.fileId] ??
+              _readyHash(analysisGeneration.statusForPath(entry.path)),
+          generationStatus: analysisGeneration.statusForPath(entry.path),
         ),
-      );
-    }
-
-    if (_disposed) return;
-    _ipcServer.publishTracks(tracks);
+    ];
+    if (listEquals(_entries.value, next)) return;
+    _entries.value = List.unmodifiable(next);
   }
 
-  void _handleAnalysisWindowExited() {
-    fireAndLogFine(
-      'deactivate analysis IPC workspace',
-      _enqueueOperation(_deactivateIpcWorkspace),
-    );
-  }
-
-  Future<void> _deactivateIpcWorkspace() async {
-    final port = _ipcServer.port;
-    final token = _ipcServer.token;
-    await _ipcServer.dispose();
-    _hashesByFileId.clear();
-    if (_disposed) return;
-    if (analysisProcesses.analysisIpcPort == port &&
-        analysisProcesses.analysisIpcToken == token) {
-      analysisProcesses.analysisIpcPort = null;
-      analysisProcesses.analysisIpcToken = null;
-    }
-  }
+  String? _readyHash(AnalysisTrackGenerationStatus? status) =>
+      (status?.isCached ?? false) ? status?.hash : null;
 
   Future<void> _enqueueOperation(Future<void> Function() operation) {
     if (_disposed) return Future.value();
@@ -551,6 +539,7 @@ class MainWindowAnalysisCoordinator {
 
   void _handleAnalysisGenerationChanged() {
     if (_disposed) return;
+    _syncEntries();
     final revision = analysisGeneration.overlayPresentationRevision;
     if (revision == _observedOverlayPresentationRevision) return;
     _observedOverlayPresentationRevision = revision;

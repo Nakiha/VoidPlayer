@@ -8,17 +8,19 @@ import '../platform/pointer_button_state_provider.dart';
 import '../viewport/viewport_display_state.dart';
 import '../widgets/app_feedback_host.dart';
 import '../widgets/axtree_region.dart';
-import '../widgets/quick_mark_sidebar.dart';
 import '../widgets/resizable_divider.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/viewport_panel.dart';
+import 'main_window_deck.dart';
+import 'main_window_inspector.dart';
+import 'main_window_list_sidebar.dart';
 import 'main_window_media_sections.dart';
 import 'main_window_overlays.dart';
 import 'main_window_state.dart';
 import 'main_window_view_handles.dart';
 import 'main_window_view_model.dart';
 
-class MainWindowScaffold extends StatelessWidget {
+class MainWindowScaffold extends StatefulWidget {
   final MainWindowViewModel model;
   final MainWindowViewHandles handles;
   final MainWindowViewActions actions;
@@ -33,14 +35,33 @@ class MainWindowScaffold extends StatelessWidget {
   });
 
   @override
+  State<MainWindowScaffold> createState() => _MainWindowScaffoldState();
+}
+
+class _MainWindowScaffoldState extends State<MainWindowScaffold> {
+  final _analysisFocus = ValueNotifier<MainWindowAnalysisFocus?>(null);
+
+  @override
+  void dispose() {
+    _analysisFocus.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final model = widget.model;
+    final handles = widget.handles;
+    final actions = widget.actions;
+    final pointerButtonStateProvider = widget.pointerButtonStateProvider;
     final viewport = model.viewport;
     final media = model.media;
     final overlays = model.overlays;
     final capabilities = model.session.capabilities;
     final toolbarActions = actions.toolbar;
-    final viewportActions = actions.viewport;
     final overlayActions = actions.overlays;
+    final inspectorVisible = !model.selection.isEmpty;
+    final leftPanelVisible = overlays.marksSidebarVisible;
+    final rightPanelVisible = inspectorVisible;
     final nativeCompositor = NativeCompositorFlags.nativeCompositor;
     final nativeCompositorViewportActive =
         nativeCompositor &&
@@ -50,14 +71,16 @@ class MainWindowScaffold extends StatelessWidget {
     if (overlays.settingsVisible ||
         overlays.mediaInfoVisible ||
         overlays.profilerVisible ||
-        overlays.marksSidebarVisible) {
+        leftPanelVisible ||
+        rightPanelVisible) {
       log.fine(
         '[NativeCompositorDebug] scaffold overlay build '
         'nativeHole=$nativeCompositorViewportActive '
         'settings=${overlays.settingsVisible} '
         'mediaInfo=${overlays.mediaInfoVisible} '
         'profiler=${overlays.profilerVisible} '
-        'sidebar=${overlays.marksSidebarVisible}',
+        'leftPanel=$leftPanelVisible '
+        'rightPanel=$rightPanelVisible',
       );
     }
     final shellBackgroundColor = Theme.of(context).scaffoldBackgroundColor;
@@ -73,7 +96,7 @@ class MainWindowScaffold extends StatelessWidget {
             'global=${event.position} local=${event.localPosition} '
             'buttons=${event.buttons} tracks=${media.tracks.length} '
             'nativeHole=$nativeCompositorViewportActive '
-            'marksSidebar=${overlays.marksSidebarVisible} '
+            'rightPanel=$rightPanelVisible '
             'settings=${overlays.settingsVisible} '
             'dragging=${overlays.dragging}',
           );
@@ -119,18 +142,17 @@ class MainWindowScaffold extends StatelessWidget {
                           media.networkMediaPlaybackCapability,
                           media.sshRemoteMediaPlaybackCapability,
                         ]),
-                        analysisDisabledTooltip: firstCapabilityUserMessage([
-                          media.externalAnalysisWindowsCapability,
-                          media.analysisOverlaysCapability,
-                        ]),
+                        analysisDisabledTooltip: null,
                         canAddTrack: capabilities.canAddTrack,
                         canOpenLocalMedia: capabilities.canOpenLocalMedia,
                         canOpenNetworkMedia: capabilities.canOpenNetworkMedia,
                         canOpenSshMedia: capabilities.canOpenSshMedia,
                         canOpenMediaInfo: capabilities.canOpenMediaInfo,
                         canOpenProfiler: capabilities.canOpenProfiler,
-                        canRunAnalysis: capabilities.canRunAnalysis,
+                        canRunAnalysis: media.tracks.isNotEmpty,
                         analysisEnabled: media.analysisEnabled,
+                        analysisWorkspaceActive:
+                            model.deck.tab != MainWindowDeckTab.timeline,
                         mediaInfoActive: overlays.mediaInfoVisible,
                         profilerActive: overlays.profilerVisible,
                         marksSidebarActive: overlays.marksSidebarVisible,
@@ -142,89 +164,58 @@ class MainWindowScaffold extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Expanded(
-                            child: Column(
-                              children: [
-                                Expanded(
-                                  child: ViewportPanel(
-                                    key: handles.viewportKey,
-                                    textureId: viewport.textureId,
-                                    viewportState: viewport.viewportState,
-                                    errorText: viewport.viewportState.errorText,
-                                    layout: viewport.layout,
-                                    onPan: viewportActions.onPan,
-                                    onSplit: viewportActions.onSplit,
-                                    onZoom: viewportActions.onZoom,
-                                    onPointerButton:
-                                        viewportActions.onPointerButton,
-                                    onResize: viewportActions.onResize,
-                                    onNativeCompositorViewportRect:
-                                        viewportActions
-                                            .onNativeCompositorViewportRect,
-                                    trackGeometry: viewport.tracks,
-                                    quickMarks: viewport.quickMarks,
-                                    quickMarkDraft: viewport.quickMarkDraft,
-                                    selectedQuickMarkId:
-                                        viewport.selectedQuickMarkId,
-                                    onQuickMarkStart:
-                                        viewportActions.onQuickMarkStart,
-                                    onQuickMarkUpdate:
-                                        viewportActions.onQuickMarkUpdate,
-                                    onQuickMarkInteraction:
-                                        viewportActions.onQuickMarkInteraction,
-                                    onQuickMarkEnd:
-                                        viewportActions.onQuickMarkEnd,
-                                    onQuickMarkCancel:
-                                        viewportActions.onQuickMarkCancel,
-                                    onQuickMarkSelect:
-                                        viewportActions.onQuickMarkSelect,
-                                    onQuickMarkChanged:
-                                        viewportActions.onQuickMarkChanged,
-                                    onQuickMarkDeleted:
-                                        viewportActions.onQuickMarkDeleted,
-                                    onQuickMarkFocus:
-                                        viewportActions.onQuickMarkFocus,
-                                    pointerButtonStateProvider:
-                                        pointerButtonStateProvider,
-                                    nativePlaybackAvailable:
-                                        media.nativePlaybackAvailable,
-                                    nativeCompositorHole:
-                                        nativeCompositorViewportActive,
-                                  ),
-                                ),
-                                if (!overlays.fullScreen &&
-                                    media.tracks.isNotEmpty)
-                                  AxTreeRegion(
-                                    label: 'Playback timeline',
-                                    child: _NativeCompositorOpaqueRegion(
-                                      enabled: nativeCompositorViewportActive,
-                                      color: shellBackgroundColor,
-                                      child: MediaTimelineSection(
-                                        model: model,
-                                        handles: handles,
-                                        actions: actions,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          if (overlays.marksSidebarVisible)
+                          if (leftPanelVisible)
                             _NativeCompositorOpaqueRegion(
                               enabled: nativeCompositorViewportActive,
                               color: shellBackgroundColor,
-                              child: QuickMarkSidebar(
+                              child: MainWindowListSidebar(
                                 width: overlays.marksSidebarWidth,
-                                marks: model.marks,
-                                actions: actions.marks,
+                                model: model,
+                                actions: actions,
+                                analysisFocus: _analysisFocus,
                                 onClose: overlayActions.onCloseMarksSidebar,
+                              ),
+                            ),
+                          Expanded(
+                            child: _MainPlaybackArea(
+                              model: model,
+                              handles: handles,
+                              actions: actions,
+                              pointerButtonStateProvider:
+                                  pointerButtonStateProvider,
+                              analysisFocus: _analysisFocus,
+                              nativeCompositorViewportActive:
+                                  nativeCompositorViewportActive,
+                              shellBackgroundColor: shellBackgroundColor,
+                            ),
+                          ),
+                          if (rightPanelVisible)
+                            _NativeCompositorOpaqueRegion(
+                              enabled: nativeCompositorViewportActive,
+                              color: shellBackgroundColor,
+                              child: MainWindowInspector(
+                                width: overlays.marksSidebarWidth,
+                                selection: model.selection,
+                                marks: model.marks,
+                                media: model.media,
+                                markActions: actions.marks,
+                                onClose: () =>
+                                    overlayActions.onCloseInspector?.call(),
                               ),
                             ),
                         ],
                       ),
-                      if (overlays.marksSidebarVisible)
-                        _MarksSidebarResizeHandle(
+                      if (leftPanelVisible)
+                        _SidebarResizeHandle(
                           width: overlays.marksSidebarWidth,
+                          fromLeft: true,
+                          onWidthChanged:
+                              overlayActions.onMarksSidebarWidthChanged,
+                        ),
+                      if (rightPanelVisible)
+                        _SidebarResizeHandle(
+                          width: overlays.marksSidebarWidth,
+                          fromLeft: false,
                           onWidthChanged:
                               overlayActions.onMarksSidebarWidthChanged,
                         ),
@@ -277,12 +268,105 @@ class MainWindowScaffold extends StatelessWidget {
   }
 }
 
-class _MarksSidebarResizeHandle extends StatelessWidget {
+class _MainPlaybackArea extends StatelessWidget {
+  final MainWindowViewModel model;
+  final MainWindowViewHandles handles;
+  final MainWindowViewActions actions;
+  final PointerButtonStateProvider pointerButtonStateProvider;
+  final ValueNotifier<MainWindowAnalysisFocus?> analysisFocus;
+  final bool nativeCompositorViewportActive;
+  final Color shellBackgroundColor;
+
+  const _MainPlaybackArea({
+    required this.model,
+    required this.handles,
+    required this.actions,
+    required this.pointerButtonStateProvider,
+    required this.analysisFocus,
+    required this.nativeCompositorViewportActive,
+    required this.shellBackgroundColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final viewport = model.viewport;
+    final media = model.media;
+    final overlays = model.overlays;
+    final viewportActions = actions.viewport;
+    return LayoutBuilder(
+      builder: (context, constraints) => Column(
+        children: [
+          Expanded(
+            child: ViewportPanel(
+              key: handles.viewportKey,
+              textureId: viewport.textureId,
+              viewportState: viewport.viewportState,
+              errorText: viewport.viewportState.errorText,
+              layout: viewport.layout,
+              onPan: viewportActions.onPan,
+              onSplit: viewportActions.onSplit,
+              onZoom: viewportActions.onZoom,
+              onPointerButton: viewportActions.onPointerButton,
+              onResize: viewportActions.onResize,
+              onNativeCompositorViewportRect:
+                  viewportActions.onNativeCompositorViewportRect,
+              trackGeometry: viewport.tracks,
+              quickMarks: viewport.quickMarks,
+              quickMarkDraft: viewport.quickMarkDraft,
+              selectedQuickMarkId: viewport.selectedQuickMarkId,
+              onQuickMarkStart: viewportActions.onQuickMarkStart,
+              onQuickMarkUpdate: viewportActions.onQuickMarkUpdate,
+              onQuickMarkInteraction: viewportActions.onQuickMarkInteraction,
+              onQuickMarkEnd: viewportActions.onQuickMarkEnd,
+              onQuickMarkCancel: viewportActions.onQuickMarkCancel,
+              onQuickMarkSelect: viewportActions.onQuickMarkSelect,
+              onQuickMarkChanged: viewportActions.onQuickMarkChanged,
+              onQuickMarkDeleted: viewportActions.onQuickMarkDeleted,
+              onQuickMarkFocus: viewportActions.onQuickMarkFocus,
+              pointerButtonStateProvider: pointerButtonStateProvider,
+              nativePlaybackAvailable: media.nativePlaybackAvailable,
+              nativeCompositorHole: nativeCompositorViewportActive,
+            ),
+          ),
+          if (!overlays.fullScreen && media.tracks.isNotEmpty)
+            AxTreeRegion(
+              label: 'Playback timeline',
+              child: _NativeCompositorOpaqueRegion(
+                enabled: nativeCompositorViewportActive,
+                color: shellBackgroundColor,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    PinnedPlaybackChrome(
+                      model: model,
+                      handles: handles,
+                      actions: actions,
+                    ),
+                    MainWindowDeck(
+                      model: model,
+                      handles: handles,
+                      actions: actions,
+                      availableHeight: constraints.maxHeight,
+                      analysisFocus: analysisFocus,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SidebarResizeHandle extends StatelessWidget {
   final double width;
+  final bool fromLeft;
   final ValueChanged<double> onWidthChanged;
 
-  const _MarksSidebarResizeHandle({
+  const _SidebarResizeHandle({
     required this.width,
+    required this.fromLeft,
     required this.onWidthChanged,
   });
 
@@ -294,7 +378,8 @@ class _MarksSidebarResizeHandle extends StatelessWidget {
         children: [
           Positioned(
             top: 0,
-            right: width,
+            left: fromLeft ? width : null,
+            right: fromLeft ? null : width,
             bottom: 0,
             width: 1,
             child: ExcludeSemantics(
@@ -303,7 +388,8 @@ class _MarksSidebarResizeHandle extends StatelessWidget {
           ),
           Positioned(
             top: 0,
-            right: width - kMarksSidebarResizeHandleWidth / 2,
+            left: fromLeft ? width - kMarksSidebarResizeHandleWidth / 2 : null,
+            right: fromLeft ? null : width - kMarksSidebarResizeHandleWidth / 2,
             bottom: 0,
             width: kMarksSidebarResizeHandleWidth,
             child: ExcludeSemantics(
@@ -312,7 +398,7 @@ class _MarksSidebarResizeHandle extends StatelessWidget {
                 value: width,
                 minValue: kMinMarksSidebarWidth,
                 maxValue: kMaxMarksSidebarWidth,
-                deltaScale: -1,
+                deltaScale: fromLeft ? 1 : -1,
                 onValueChanged: onWidthChanged,
               ),
             ),

@@ -35,8 +35,8 @@ abstract class AgentRequestHandler {
 
 /// Resident loopback control channel for agents.
 ///
-/// Transport mirrors the analysis IPC: line-delimited JSON over a loopback
-/// TCP socket with a secure random token handshake. On start the port and
+/// Transport uses line-delimited JSON over a loopback TCP socket with a secure
+/// random token handshake. On start the port and
 /// token are written atomically to a connection file the launching agent
 /// polls. After `{"type":"hello","token":...}` is acknowledged, the client
 /// sends `{"id","method","params"}` requests and receives `{"id","result"}`

@@ -1,12 +1,19 @@
 @WINDOW,1600,900
 
+# A 4K D3D11VA track next to VP9 used to leave the VP9 decoder blocked in
+# shared-snapshot completion and hang shutdown. VP9 stays hardware decoded but
+# uses deterministic CPU frame download on Windows.
 0.0,SET_DECODE_MODE,preferHardware
-0.1,ADD_MEDIA,resources/video/vp9_10s_1920x1080.webm
-0.8,SET_RENDER_SIZE,1280,720
-1.5,CAPTURE_VIEWPORT,after_add
-1.6,ASSERT_CAPTURE_NOT_BLACK,after_add,0.01,4.0
-1.8,SEEK_TO,3500000
-2.6,CAPTURE_VIEWPORT,after_seek
-2.7,ASSERT_CAPTURE_NOT_BLACK,after_seek,0.01,4.0
-2.8,ASSERT_CAPTURE_CHANGED,after_add,after_seek
-3.0,QUIT,0
+0.1,ADD_MEDIA,resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+0.4,ADD_MEDIA,resources/video/vp9_10s_1920x1080.webm
+1.0,WAIT_TRACK_COUNT,2,10000
+1.1,ASSERT_NATIVE_DIAGNOSTIC_BOOL,hardwareDecodeActive,true
+1.2,ASSERT_NATIVE_DIAGNOSTIC_BOOL,hardwareDecodeDownloadsToCpu,true
+1.3,SET_RENDER_SIZE,1280,720
+2.0,CAPTURE_VIEWPORT,after_add
+2.1,ASSERT_CAPTURE_NOT_BLACK,after_add,0.01,4.0
+2.3,SEEK_TO,2500000
+3.1,CAPTURE_VIEWPORT,after_seek
+3.2,ASSERT_CAPTURE_NOT_BLACK,after_seek,0.01,4.0
+3.3,ASSERT_CAPTURE_CHANGED,after_add,after_seek
+3.5,QUIT,0

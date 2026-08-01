@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../l10n/app_localizations.dart';
 
 /// Side-by-side / Split-screen toggle matching PySide6 SegmentedWidget (240x32).

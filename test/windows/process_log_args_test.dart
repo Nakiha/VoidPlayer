@@ -1,30 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:void_player/windows/process_log_args.dart';
+import 'package:void_player/app_log.dart';
 
 void main() {
-  test('redacts analysis ipc token passed with equals syntax', () {
+  test('Flutter process logs always use the main-window role', () {
+    expect(LogConfig.defaultsFor(const []).processRole, 'main');
     expect(
-      redactProcessArgsForLog([
-        '--standalone-analysis',
-        '--analysis-ipc-token=secret-token',
-        '--hash=abc',
-      ]),
-      [
-        '--standalone-analysis',
-        '--analysis-ipc-token=$redactedProcessArgValue',
-        '--hash=abc',
-      ],
-    );
-  });
-
-  test('redacts analysis ipc token passed as the next argument', () {
-    expect(
-      redactProcessArgsForLog([
-        '--analysis-ipc-token',
-        'secret-token',
+      LogConfig.defaultsFor(const [
+        '--test-script',
+        'smoke.csv',
         '--silent-ui-test',
-      ]),
-      ['--analysis-ipc-token', redactedProcessArgValue, '--silent-ui-test'],
+      ]).processRole,
+      'main',
     );
   });
 }

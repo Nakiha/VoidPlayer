@@ -1,4 +1,10 @@
+import 'package:flutter/foundation.dart';
+
+import '../analysis/analysis_quality_service.dart';
 import '../analysis/analysis_toolbar_data_source.dart';
+import '../analysis/ui/analysis_ui_selection.dart';
+import '../analysis/ui/testing/analysis_test_host.dart';
+import '../analysis/ui/workspace/analysis_workspace_models.dart';
 import '../marks/quick_mark.dart';
 import '../marks/quick_mark_store.dart';
 import '../marks/quick_mark_thumbnail.dart';
@@ -9,6 +15,8 @@ import '../track_manager.dart';
 import '../video_renderer_controller.dart';
 import '../viewport/display_geometry.dart';
 import '../viewport/viewport_display_state.dart';
+import 'main_window_selection.dart';
+import 'main_window_state.dart';
 import 'main_window_view_model.dart';
 
 class MainWindowViewModelFactory {
@@ -46,11 +54,41 @@ class MainWindowViewModelFactory {
     required bool profilerVisible,
     required bool settingsVisible,
     required bool analysisOverlayControlsVisible,
+    required MainWindowDeckTab deckTab,
+    required double deckHeight,
+    required bool deckCollapsed,
+    required ValueListenable<List<AnalysisWorkspaceEntry>> analysisEntries,
+    required AnalysisTestHostRegistry analysisTestHosts,
+    required AnalysisQualityDataSource qualityDataSource,
+    required AnalysisUiSelection? analysisSelection,
+    required int? selectedTrackFileId,
+    required Map<int, QuickMarkAnchor> presentedFrameAnchors,
     required bool marksSidebarVisible,
     required double marksSidebarWidth,
     required bool fullScreen,
     required bool fullScreenControlsVisible,
   }) {
+    QuickMark? selectedMark;
+    TrackInfo? selectedTrack;
+    for (final mark in markView.allMarks) {
+      if (mark.id == markView.selectedMarkId) {
+        selectedMark = mark;
+        break;
+      }
+    }
+    for (final entry in tracks) {
+      if (entry.fileId == selectedTrackFileId) {
+        selectedTrack = entry.info;
+        break;
+      }
+    }
+    final selection = selectedMark != null
+        ? MainWindowQuickMarkSelection(selectedMark)
+        : analysisSelection != null
+        ? MainWindowAnalysisSelection(analysisSelection)
+        : selectedTrack != null
+        ? MainWindowTrackSelection(selectedTrack)
+        : const MainWindowNoSelection();
     return MainWindowViewModel(
       session: MainWindowSessionVm.fromSession(session),
       viewport: MainWindowViewportVm(
@@ -77,8 +115,7 @@ class MainWindowViewModelFactory {
         currentPtsUs: currentPtsUs,
       ),
       media: MainWindowMediaVm(
-        analysisEnabled:
-            platformCapabilities.externalAnalysisWindows && tracks.isNotEmpty,
+        analysisEnabled: tracks.isNotEmpty,
         analysisOverlayEnabled:
             platformCapabilities.analysisOverlays && tracks.isNotEmpty,
         nativePlaybackAvailable:
@@ -96,8 +133,6 @@ class MainWindowViewModelFactory {
             platformCapabilities.sshRemoteMediaPlaybackCapability,
         nativeFilePickerCapability:
             platformCapabilities.nativeFilePickerCapability,
-        externalAnalysisWindowsCapability:
-            platformCapabilities.externalAnalysisWindowsCapability,
         analysisOverlaysCapability:
             platformCapabilities.analysisOverlaysCapability,
         tracks: tracks,
@@ -119,6 +154,23 @@ class MainWindowViewModelFactory {
         loopEndUs: loopEndUs,
         controlsWidth: controlsWidth,
       ),
+      deck: MainWindowDeckVm(
+        tab: deckTab,
+        height: deckHeight,
+        collapsed: deckCollapsed,
+        analysisEntries: analysisEntries,
+        analysisTestHosts: analysisTestHosts,
+        qualityDataSource: qualityDataSource,
+        analysisPlaybackByFileId: {
+          for (final entry in presentedFrameAnchors.entries)
+            entry.key: AnalysisPlaybackPosition(
+              ptsUs: entry.value.ptsUs,
+              dtsUs: entry.value.dtsUs,
+              analysisFrameIndex: entry.value.analysisFrameIndex,
+            ),
+        },
+      ),
+      selection: selection,
       overlays: MainWindowOverlayVm(
         dragging: dragging,
         mediaInfoVisible: mediaInfoVisible,

@@ -38,16 +38,14 @@ lib/
 │   │   ├── main_window_layout.dart
 │   │   ├── main_window_playback.dart
 │   │   └── main_window_analysis.dart
-│   ├── analysis/                  # analysis 窗口 app entry 和 feature 子模块
-│   │   ├── analysis_window.dart   # analysis app entry
-│   │   ├── page/                  # 单页 controller/state/view
-│   │   ├── workspace/             # 多 track workspace tabs/split
-│   │   ├── charts/                # reference pyramid / frame trend
-│   │   ├── widgets/               # NALU、controls、style、split layout
-│   │   ├── ipc/                   # analysis IPC model/server/client
-│   │   └── testing/               # analysis 子窗体测试 host/runner
-│   ├── app_bootstrap.dart         # 主窗口和 standalone analysis 启动分发
-│   └── window_manager.dart        # analysis 进程 / Win32 窗口协调
+│   ├── app_bootstrap.dart         # 主窗口启动
+│   └── ...                        # Windows runner/platform services
+├── analysis/ui/                   # 主窗口 deck 内嵌 analysis UI
+│   ├── page/                      # 单页 controller/state/view
+│   ├── workspace/                 # 多 track workspace tabs/split
+│   ├── charts/                    # reference pyramid / frame trend
+│   ├── widgets/                   # NALU、controls、style、split layout
+│   └── testing/                   # analysis 页面测试窄接口
 ├── video_renderer_controller.dart # native MethodChannel API wrapper
 └── main.dart                      # app bootstrap 入口
 ```
@@ -63,9 +61,9 @@ Widgets / Views
 MainWindowController
   ↓ 组合 state store / coordinators / services
 Coordinators
-  ↓ 调用 NativePlayerController、TrackManager、WindowManager
+  ↓ 调用 NativePlayerController、TrackManager、platform services
 Platform / Native bridge
-  ↓ MethodChannel / Win32 FFI / analysis IPC
+  ↓ MethodChannel / Win32 FFI / analysis FFI
 Native renderer
 ```
 
@@ -87,7 +85,7 @@ View 层只做布局和控件组合。
 - playback: 播放、暂停、seek、polling、loop range
 - layout: viewport resize、pan、zoom、split、layout flush
 - media: open/add/remove track、offset、effective duration
-- analysis: analysis IPC snapshot 和窗口触发
+- analysis: cache 生成、deck entries 和 overlay 编排
 - actions: ActionRegistry 绑定和解绑
 
 规则：
@@ -143,4 +141,4 @@ View 层只做布局和控件组合。
 
 ## Analysis UI
 
-Analysis 窗口代码集中在 `lib/windows/analysis/`。`analysis_window.dart` 只保留 app entry 和主题壳；页面状态、workspace、chart painter、NALU browser/detail、测试脚本 runner 分文件维护，并使用普通 `import` 连接，禁止重新引入 `part` / `part of`。修改 analysis UI 时优先参考 [ANALYSIS_WINDOW_ARCHITECTURE.md](ANALYSIS_WINDOW_ARCHITECTURE.md)，并从 `ui_tests/analysis/` 选择主窗口 spawn 或子窗体脚本做闭环验证。
+Analysis UI 集中在 `lib/analysis/ui/`，由主窗口 deck 的 `IndexedStack` 保活。页面状态、workspace、chart painter 与 NALU browser/detail 分文件维护，并使用普通 `import` 连接，禁止重新引入 `part` / `part of`。修改 analysis UI 时优先参考 [ANALYSIS_WINDOW_ARCHITECTURE.md](ANALYSIS_WINDOW_ARCHITECTURE.md)。

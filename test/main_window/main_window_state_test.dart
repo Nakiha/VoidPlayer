@@ -3,6 +3,9 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:void_player/analysis/analysis_ffi.dart';
+import 'package:void_player/analysis/nalu_types.dart';
+import 'package:void_player/analysis/ui/analysis_ui_selection.dart';
 import 'package:void_player/main_window/main_window_media.dart';
 import 'package:void_player/main_window/main_window_playback.dart';
 import 'package:void_player/main_window/main_window_state.dart';
@@ -28,6 +31,9 @@ void main() {
     store.setLoopRange(0, 0);
     store.setLayout(const LayoutState());
     store.setSyncOffsets(const {});
+    store.setDeckTab(MainWindowDeckTab.timeline);
+    store.setDeckHeight(kDefaultDeckHeight);
+    store.setDeckCollapsed(false);
 
     expect(notifications, 0);
 
@@ -98,6 +104,65 @@ void main() {
     expect(store.value.marksSidebarWidth, kMaxMarksSidebarWidth);
   });
 
+  test('deck height is clamped and collapse state skips redundant updates', () {
+    final store = MainWindowStateStore();
+    addTearDown(store.dispose);
+    var notifications = 0;
+    store.addListener(() => notifications++);
+
+    store.setDeckHeight(kMinDeckHeight - 100);
+    expect(store.value.deckHeight, kMinDeckHeight);
+    store.setDeckHeight(kMaxDeckHeight + 100);
+    expect(store.value.deckHeight, kMaxDeckHeight);
+    store.setDeckHeight(kMaxDeckHeight + 200);
+    expect(notifications, 2);
+
+    store.setDeckCollapsed(true);
+    store.setDeckCollapsed(true);
+    expect(store.value.deckCollapsed, isTrue);
+    expect(notifications, 3);
+  });
+
+  test('mark, analysis, and track selections are mutually exclusive', () {
+    final store = MainWindowStateStore();
+    addTearDown(store.dispose);
+    final selection = AnalysisNaluSelection(
+      fileId: 7,
+      codec: AnalysisCodec.h264,
+      naluIndex: 3,
+      nalu: NaluInfo(
+        offset: 12,
+        size: 8,
+        nalType: 7,
+        temporalId: 0,
+        layerId: 0,
+        flags: 0,
+      ),
+    );
+
+    store.setSelectedQuickMarkId(4);
+    store.setAnalysisSelection(selection);
+    expect(store.value.selectedQuickMarkId, isNull);
+    expect(store.value.analysisSelection, same(selection));
+
+    store.setSelectedQuickMarkId(4);
+    expect(store.value.selectedQuickMarkId, 4);
+    expect(store.value.analysisSelection, isNull);
+
+    store.setSelectedTrackFileId(9);
+    expect(store.value.selectedTrackFileId, 9);
+    expect(store.value.selectedQuickMarkId, isNull);
+    expect(store.value.analysisSelection, isNull);
+
+    store.setAnalysisSelection(selection);
+    expect(store.value.analysisSelection, same(selection));
+    expect(store.value.selectedTrackFileId, isNull);
+
+    store.setSelectedQuickMarkId(4);
+    expect(store.value.selectedQuickMarkId, 4);
+    expect(store.value.selectedTrackFileId, isNull);
+  });
+
   test('seek preview clears stale presented frame anchors', () {
     final store = MainWindowStateStore();
     addTearDown(store.dispose);
@@ -116,6 +181,38 @@ void main() {
     expect(store.value.currentPtsUs, 1500000);
     expect(store.value.pendingSeekUs, 1500000);
     expect(store.value.presentedFrameAnchors, isEmpty);
+  });
+
+  testWidgets('analysis deck polls presented analysis frame anchors', (
+    tester,
+  ) async {
+    final fixture = _PlaybackFixture();
+    try {
+      await fixture.controller.createPlayer(
+        ['clip.mp4'],
+        width: 1920,
+        height: 1080,
+      );
+      fixture.store
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
+        ..setDeckTab(MainWindowDeckTab.analysis);
+      fixture.api.presentedFrameTiming = const PresentedFrameTiming(
+        ptsUs: 1000000,
+        dtsUs: 1000000,
+        analysisFrameIndex: 17,
+      );
+
+      fixture.coordinator.startPolling();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(fixture.api.calls, contains('getPlaybackSnapshot:true'));
+      expect(
+        fixture.store.value.presentedFrameAnchors[1]?.analysisFrameIndex,
+        17,
+      );
+    } finally {
+      fixture.dispose();
+    }
   });
 
   testWidgets('pending seek suppresses stale presented frame anchors', (

@@ -96,11 +96,11 @@ Failed to update ui::AXTree, error: <id> will not be in the tree and is not the 
 | seek slider | `lib/widgets/timeline_slider.dart` |
 | loop range | `lib/widgets/loop_range_bar.dart` |
 | track row / clip visual | `lib/widgets/track_row.dart` |
-| analysis app 根 | `lib/windows/analysis/analysis_window.dart` |
-| analysis page 布局 | `lib/windows/analysis/page/analysis_page_view.dart` |
-| analysis charts | `lib/windows/analysis/charts/` |
-| NALU browser/detail | `lib/windows/analysis/widgets/analysis_nalu.dart` |
-| workspace tabs/split | `lib/windows/analysis/workspace/` |
+| analysis deck 根 | `lib/main_window/main_window_deck.dart` |
+| analysis page 布局 | `lib/analysis/ui/page/analysis_page_view.dart` |
+| analysis charts | `lib/analysis/ui/charts/` |
+| NALU browser/detail | `lib/analysis/ui/widgets/analysis_nalu.dart` |
+| workspace tabs/split | `lib/analysis/ui/workspace/` |
 
 ## 验证
 

@@ -952,7 +952,9 @@ class MainWindowPlaybackCoordinator {
   }
 
   bool get _needsPresentedFrameAnchors =>
-      _state.quickMarks.isNotEmpty || _state.quickMarkDraft != null;
+      _state.quickMarks.isNotEmpty ||
+      _state.quickMarkDraft != null ||
+      (_state.deckTab == MainWindowDeckTab.analysis && !_state.deckCollapsed);
 
   Map<int, QuickMarkAnchor>? _anchorsFromSnapshot(
     PlaybackSnapshot snapshot, {

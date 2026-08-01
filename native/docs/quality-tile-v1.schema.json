@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voidplayer.local/schemas/quality-tile-v1.schema.json",
+  "title": "VoidPlayer quality tile sample v1",
+  "type": "object",
+  "required": [
+    "type",
+    "tileSchemaVersion",
+    "tileSchemaId",
+    "tileMetricVersion",
+    "metricVersion",
+    "requestId",
+    "sampleIndex",
+    "decodedFrameIndex",
+    "ptsUs",
+    "grid",
+    "metrics"
+  ],
+  "properties": {
+    "type": {"const": "qualityTileSample"},
+    "tileSchemaVersion": {"const": 1},
+    "tileSchemaId": {"const": "quality-tile-v1"},
+    "tileMetricVersion": {"const": "quality-tile-metrics-v1"},
+    "metricVersion": {"type": "string", "minLength": 1},
+    "requestId": {"type": "string", "minLength": 1, "maxLength": 128},
+    "sampleIndex": {"type": "integer", "minimum": 0},
+    "decodedFrameIndex": {"type": "integer", "minimum": 0},
+    "ptsUs": {"type": "integer"},
+    "grid": {
+      "type": "object",
+      "required": [
+        "coordinateSpace",
+        "order",
+        "partition",
+        "frameWidth",
+        "frameHeight",
+        "targetTileWidth",
+        "targetTileHeight",
+        "columns",
+        "rows"
+      ],
+      "properties": {
+        "coordinateSpace": {"const": "decodedLumaPixels"},
+        "order": {"const": "rowMajor"},
+        "partition": {"const": "balanced"},
+        "frameWidth": {"type": "integer", "minimum": 1},
+        "frameHeight": {"type": "integer", "minimum": 1},
+        "targetTileWidth": {"const": 64},
+        "targetTileHeight": {"const": 64},
+        "columns": {"type": "integer", "minimum": 1},
+        "rows": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "blockiness": {"$ref": "#/$defs/tileMetric"},
+        "banding": {"$ref": "#/$defs/tileMetric"},
+        "blur": {"$ref": "#/$defs/tileMetric"},
+        "noise": {"$ref": "#/$defs/tileMetric"},
+        "flicker": {"$ref": "#/$defs/tileMetric"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "tileMetric": {
+      "type": "object",
+      "required": ["available", "algorithm", "values"],
+      "properties": {
+        "available": {"type": "boolean"},
+        "algorithm": {"type": "string", "minLength": 1},
+        "values": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": ["number", "null"],
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"available": {"const": false}}},
+          "then": {"properties": {"values": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"available": {"const": true}}},
+          "then": {"properties": {"values": {"type": "array", "minItems": 1}}}
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

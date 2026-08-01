@@ -1,16 +1,16 @@
-# macOS runner smoke for analysis capability split:
-# - external analysis windows remain gated on macOS;
-# - native FFI cache generation and native-target overlay activation are enabled.
+# macOS runner smoke for inline analysis and native-target overlay activation.
 #   python dev.py mac-ui-test ui_tests/macos/analysis_gated_smoke.csv
 0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
 1.4, ASSERT_NATIVE_BACKEND, macos-native-player, true
 1.5, ASSERT_ANALYSIS_FFI_AVAILABLE, true
 1.6, GENERATE_ANALYSIS_CACHE, 0
 1.8, RUN_ANALYSIS
-2.0, ASSERT_ANALYSIS_PROCESS_COUNT, 0
-2.1, CLICK_MEDIA_HEADER_OVERLAY_BUTTON
-2.4, ASSERT_MEDIA_HEADER_OVERLAY_PANEL_VISIBLE, true
-2.5, TOGGLE_ANALYSIS_OVERLAY_PANEL
+1.9, WAIT_ANALYSIS_LOADED, 30000
+2.0, ASSERT_ANALYSIS_CODEC, h264
+2.1, ASSERT_ANALYSIS_ENTRY_COUNT, 1
+2.2, CLICK_MEDIA_HEADER_OVERLAY_BUTTON
+2.5, ASSERT_MEDIA_HEADER_OVERLAY_PANEL_VISIBLE, true
+2.6, TOGGLE_ANALYSIS_OVERLAY_PANEL
 3.3, ASSERT_ANALYSIS_OVERLAY, true, cu, 0.55, 0.02, 1
 3.5, TOGGLE_ANALYSIS_OVERLAY_PANEL
 3.9, ASSERT_ANALYSIS_OVERLAY, false

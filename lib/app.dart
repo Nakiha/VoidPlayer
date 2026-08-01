@@ -7,7 +7,6 @@ import 'config/app_settings_repository.dart';
 import 'feedback/app_feedback.dart';
 import 'l10n/app_localizations.dart';
 import 'main_window/main_window.dart';
-import 'platform/analysis_process_host.dart';
 import 'platform/main_window_platform.dart';
 import 'platform/native_file_picker.dart';
 import 'platform/platform_capabilities.dart';
@@ -20,7 +19,6 @@ import 'theme/app_typography.dart';
 
 class VoidPlayerApp extends StatefulWidget {
   final Color accentColor;
-  final AnalysisProcessHost analysisProcesses;
   final PlatformCapabilities platformCapabilities;
   final SystemAccentWatcher Function({required ValueChanged<Color> onChanged})
   systemAccentWatcherFactory;
@@ -33,7 +31,6 @@ class VoidPlayerApp extends StatefulWidget {
   const VoidPlayerApp({
     super.key,
     required this.accentColor,
-    required this.analysisProcesses,
     required this.platformCapabilities,
     required this.systemAccentWatcherFactory,
     required this.platformWindow,
@@ -64,25 +61,18 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
     _appearance = AppAppearanceController.load(
       settings: _settingsRepository,
       systemAccentColor: widget.accentColor,
-    )..addListener(_syncAccentColor);
+    );
     _systemAccentWatcher = widget.systemAccentWatcherFactory(
       onChanged: _appearance.setSystemAccentColor,
     )..start();
-    _syncAccentColor();
   }
 
   @override
   void dispose() {
     _systemAccentWatcher.dispose();
-    _appearance.removeListener(_syncAccentColor);
     _appearance.dispose();
     _feedbackController.dispose();
     super.dispose();
-  }
-
-  void _syncAccentColor() {
-    widget.analysisProcesses.accentColorValue = _appearance.accentColor
-        .toARGB32();
   }
 
   @override
@@ -133,14 +123,12 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
                     actionRegistry: _actionRegistry,
                     testScriptPath: widget.testScriptPath,
                     startupOptions: widget.startupOptions,
-                    analysisProcesses: widget.analysisProcesses,
                     platformCapabilities: widget.platformCapabilities,
                     platformWindow: widget.platformWindow,
                     nativeFilePicker: widget.nativeFilePicker,
                     pointerButtonStateProvider:
                         widget.pointerButtonStateProvider,
                     appSettings: _settingsRepository,
-                    accentColor: accentColor,
                     playbackPreferences: AppConfigPlaybackPreferences(
                       _settingsRepository,
                     ),

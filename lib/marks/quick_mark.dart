@@ -257,6 +257,11 @@ class QuickMark {
   int get fileId => anchor.fileId;
   int get ptsUs => anchor.ptsUs;
 
+  /// Marks with `scope: 'time'` carry no spatial evidence (for example a
+  /// relative-outlier quality event). They must not be painted or hit-tested
+  /// as an on-video rectangle; the timeline and sidebar still expose them.
+  bool get isTimeOnly => attributes['scope'] == 'time';
+
   Offset get effectiveSourceStart => sourceStart ?? sourceRect.topLeft;
   Offset get effectiveSourceEnd => sourceEnd ?? sourceRect.bottomRight;
 

@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
+import '../analysis/analysis_ffi.dart';
 import '../app_log.dart';
 import '../app_paths.dart';
 import '../marks/quick_mark.dart';
@@ -260,7 +261,11 @@ class MainWindowQuickMarkCoordinator {
       return;
     }
     _pendingJumpMarkId = id;
-    stateStore.setSelectedQuickMarkId(null);
+    // Keep the inspector anchored to the item the user just clicked while the
+    // target frame is being sought. The viewport deliberately exposes only a
+    // *visible* selected mark, so this does not draw the mark on the stale
+    // frame; it only avoids a transient no-selection state and sidebar flash.
+    stateStore.setSelectedQuickMarkId(id);
     playbackCoordinator.seekTo(mark.anchor.ptsUs);
   }
 
@@ -313,6 +318,32 @@ class MainWindowQuickMarkCoordinator {
         ),
       ),
     );
+  }
+
+  int addMetricMarks({
+    required int fileId,
+    required AnalysisQualityMetric metric,
+    required double threshold,
+    required AnalysisQualityReport report,
+  }) {
+    if (!trackManager.entries.any((entry) => entry.fileId == fileId)) {
+      return 0;
+    }
+    final candidates = buildQualityMetricMarks(
+      existingMarks: _quickMarks,
+      fileId: fileId,
+      metric: metric,
+      threshold: threshold,
+      report: report,
+    );
+    var nextStore = store;
+    for (final candidate in candidates) {
+      nextStore = nextStore.add(candidate);
+    }
+    if (candidates.isNotEmpty) {
+      _applyStore(nextStore);
+    }
+    return candidates.length;
   }
 
   int get markCount => _quickMarks.length;
@@ -846,6 +877,17 @@ class MainWindowQuickMarkCoordinator {
       timing: timing,
       fallbackPtsUs: _currentPtsUs,
     );
+    if (timing?.isValid == true &&
+        mounted() &&
+        !shuttingDown() &&
+        _state.pendingSeekUs == null &&
+        trackManager.entries.any((entry) => entry.fileId == fileId)) {
+      // A paused player does not emit another playback-clock event after a
+      // mark gesture resolves the displayed frame. Publish the same native
+      // frame anchor immediately so a non-zero first-frame PTS remains
+      // visible while the global timeline is still at 00:00.000.
+      stateStore.setPresentedFrameAnchor(anchor);
+    }
     _traceAnchor('anchor-for-file fileId=$fileId', anchor);
     return anchor;
   }
@@ -939,3 +981,175 @@ String _quickMarkAnchorTrace(QuickMarkAnchor anchor) =>
     'afi=${anchor.analysisFrameIndex},mode=${anchor.frameIdentityMode},'
     'spi=${anchor.sourcePacketIndex},sps=${anchor.sourcePacketSize},'
     'spp=${anchor.sourcePacketPos}';
+
+String _qualityMetricDefectType(AnalysisQualityMetric metric) =>
+    switch (metric) {
+      AnalysisQualityMetric.blockiness => QuickMarkDefectTypes.blocking,
+      AnalysisQualityMetric.banding => QuickMarkDefectTypes.banding,
+      AnalysisQualityMetric.blur => QuickMarkDefectTypes.blur,
+      AnalysisQualityMetric.noise => 'noise',
+      AnalysisQualityMetric.flicker => QuickMarkDefectTypes.flicker,
+    };
+
+List<QuickMark> buildQualityMetricMarks({
+  required List<QuickMark> existingMarks,
+  required int fileId,
+  required AnalysisQualityMetric metric,
+  required double threshold,
+  required AnalysisQualityReport report,
+}) {
+  if (report.hasEventCandidates) {
+    return _buildQualityEventMarks(
+      existingMarks: existingMarks,
+      fileId: fileId,
+      metric: metric,
+      report: report,
+    );
+  }
+  final existingPtsUs = {
+    for (final mark in existingMarks)
+      if (mark.fileId == fileId &&
+          mark.origin == QuickMarkOrigin.metric &&
+          mark.attributes['metric'] == metric.name)
+        mark.ptsUs,
+  };
+  final candidates = <QuickMark>[];
+  for (final sample in report.samples) {
+    final value = sample.valueFor(metric);
+    if (value == null ||
+        value < threshold ||
+        existingPtsUs.contains(sample.ptsUs)) {
+      continue;
+    }
+    candidates.add(
+      QuickMark(
+        id: 0,
+        anchor: QuickMarkAnchor(
+          fileId: fileId,
+          ptsUs: sample.ptsUs,
+          dtsUs: sample.ptsUs,
+        ),
+        // Quality proxies are frame-level rather than spatial detectors. Keep
+        // the frame outline slightly inside the image so its stroke is not
+        // clipped away at the viewport boundary.
+        sourceRect: const Rect.fromLTWH(0.015, 0.015, 0.97, 0.97),
+        color: const Color(0xFFFFA726),
+        text: 'Quality: ${metric.name} ${value.toStringAsFixed(3)}',
+        syncAcrossTracks: false,
+        origin: QuickMarkOrigin.metric,
+        defectType: _qualityMetricDefectType(metric),
+        attributes: {
+          'metric': metric.name,
+          'value': value,
+          'threshold': threshold,
+          'sampleIndex': sample.sampleIndex,
+          'decodedFrameIndex': sample.decodedFrameIndex,
+          'schemaVersion': report.schemaVersion,
+          'scope': 'frame',
+        },
+      ),
+    );
+    existingPtsUs.add(sample.ptsUs);
+  }
+  return List.unmodifiable(candidates);
+}
+
+/// Builds marks from CLI candidate events. The CLI owns thresholding,
+/// grouping and spatial matching; the GUI only translates each event of the
+/// focused metric into one mark anchored at the event's peak.
+///
+/// Events with spatial evidence become region marks. For a relative outlier,
+/// tile evidence may locate the strongest local response on the event's peak
+/// sample. This is visualization evidence, not a replacement for CLI event
+/// classification. If tile evidence is unavailable, the event remains a
+/// time-only mark and is never painted as a synthetic full-frame rectangle.
+List<QuickMark> _buildQualityEventMarks({
+  required List<QuickMark> existingMarks,
+  required int fileId,
+  required AnalysisQualityMetric metric,
+  required AnalysisQualityReport report,
+}) {
+  final resultKey = report.resultKey!;
+  final existingEvents = <(String?, String)>{};
+  for (final mark in existingMarks) {
+    if (mark.fileId != fileId ||
+        mark.origin != QuickMarkOrigin.metric ||
+        mark.attributes['metric'] != metric.name) {
+      continue;
+    }
+    final eventId = mark.attributes['eventId'];
+    if (eventId is String) {
+      final existingResultKey = mark.attributes['resultKey'];
+      existingEvents.add((
+        existingResultKey is String ? existingResultKey : null,
+        eventId,
+      ));
+    }
+  }
+  final candidates = <QuickMark>[];
+  for (final event in report.events) {
+    if (event.metric != metric ||
+        existingEvents.contains((resultKey, event.eventId))) {
+      continue;
+    }
+    final region = event.region;
+    final tileSample = region == null
+        ? report.tileSampleAt(event.peakSampleIndex)
+        : null;
+    final tilePeak = tileSample?.strongestTileFor(metric);
+    final scope = region != null
+        ? 'region'
+        : (tilePeak != null ? 'tile' : 'time');
+    final left = (region?.x ?? tilePeak?.x ?? 0.0).clamp(0.0, 1.0);
+    final top = (region?.y ?? tilePeak?.y ?? 0.0).clamp(0.0, 1.0);
+    final width = region?.width ?? tilePeak?.width;
+    final height = region?.height ?? tilePeak?.height;
+    final value = region?.score ?? event.peakScore;
+    candidates.add(
+      QuickMark(
+        id: 0,
+        anchor: QuickMarkAnchor(
+          fileId: fileId,
+          ptsUs: event.peakPtsUs,
+          dtsUs: event.peakPtsUs,
+        ),
+        sourceRect: width == null || height == null
+            // Time-only marks are not painted; the inset frame rect only
+            // seeds the sidebar thumbnail crop.
+            ? const Rect.fromLTWH(0.015, 0.015, 0.97, 0.97)
+            : Rect.fromLTWH(
+                left,
+                top,
+                width.clamp(0.0, 1.0 - left),
+                height.clamp(0.0, 1.0 - top),
+              ),
+        color: const Color(0xFFFFA726),
+        text: 'Quality: ${metric.name} ${value.toStringAsFixed(3)}',
+        syncAcrossTracks: false,
+        origin: QuickMarkOrigin.metric,
+        defectType: _qualityMetricDefectType(metric),
+        attributes: {
+          'metric': metric.name,
+          'value': value,
+          'threshold': event.threshold,
+          'eventId': event.eventId,
+          'resultKey': resultKey,
+          'classification': event.classification.name,
+          'startPtsUs': event.startPtsUs,
+          'endPtsUs': event.endPtsUs,
+          'schemaVersion': report.schemaVersion,
+          'scope': scope,
+          if (tilePeak != null) ...{
+            'tileMetricVersion': tileSample!.tileMetricVersion,
+            'tileAlgorithm': tileSample.metrics[metric]!.algorithm,
+            'tileColumn': tilePeak.column,
+            'tileRow': tilePeak.row,
+            'tileValue': tilePeak.value,
+          },
+        },
+      ),
+    );
+    existingEvents.add((resultKey, event.eventId));
+  }
+  return List.unmodifiable(candidates);
+}

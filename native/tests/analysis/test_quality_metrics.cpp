@@ -1,13 +1,20 @@
 #include "analysis/quality/quality_metrics.h"
+#include "analysis/quality/quality_event_aggregator.h"
+#include "analysis/quality/quality_video_analyzer.h"
 #include "analysis/quality/quality_wgpu_backend.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <vector>
+
+#ifndef VIDEO_TEST_DIR
+#define VIDEO_TEST_DIR ""
+#endif
 
 namespace {
 
@@ -29,11 +36,220 @@ LumaPlaneView make_u8_view(const std::vector<uint8_t>& pixels,
 
 }  // namespace
 
+TEST_CASE("quality video analyzer cancellation reaches media input",
+          "[analysis][quality][cancel]") {
+    using namespace vr::analysis::quality;
+    bool cancel = false;
+    std::vector<QualityAnalysisPhase> phases;
+    QualityVideoAnalyzerOptions options;
+    options.backend = QualityComputeBackend::Cpu;
+    options.max_samples = 2;
+    options.cancel_requested = [&cancel]() { return cancel; };
+    options.progress_callback =
+        [&](const QualityAnalysisProgress& progress) {
+            phases.push_back(progress.phase);
+            if (progress.phase == QualityAnalysisPhase::Decoding) {
+                cancel = true;
+            }
+        };
+
+    QualityReport report;
+    std::string error;
+    REQUIRE_FALSE(analyze_video_quality(
+        std::string(VIDEO_TEST_DIR) + "/h265_10s_1920x1080.mp4",
+        options,
+        report,
+        error));
+    REQUIRE(error == kQualityAnalysisCancelledError);
+    REQUIRE(phases.size() >= 2);
+    REQUIRE(phases.front() == QualityAnalysisPhase::Opening);
+    REQUIRE(std::find(
+                phases.begin(),
+                phases.end(),
+                QualityAnalysisPhase::Decoding) != phases.end());
+}
+
+TEST_CASE("quality timeline normalization reindexes samples after PTS sort",
+          "[analysis][quality][timeline]") {
+    using namespace vr::analysis::quality;
+    QualityReport report;
+    for (const auto [sample_index, decoded_frame_index, pts_us] :
+         std::array<std::array<int64_t, 3>, 4>{{
+             {{0, 10, 2'000}},
+             {{1, 11, 1'000}},
+             {{2, 12, 1'000}},
+             {{3, 13, 3'000}},
+         }}) {
+        FrameQualitySample sample;
+        sample.sample_index = static_cast<uint64_t>(sample_index);
+        sample.decoded_frame_index =
+            static_cast<uint64_t>(decoded_frame_index);
+        sample.pts_us = pts_us;
+        report.timeline.push_back(sample);
+    }
+
+    normalize_quality_timeline_order(report);
+
+    REQUIRE(report.timeline.size() == 4);
+    CHECK(report.timeline[0].pts_us == 1'000);
+    CHECK(report.timeline[0].decoded_frame_index == 11);
+    CHECK(report.timeline[1].pts_us == 1'000);
+    CHECK(report.timeline[1].decoded_frame_index == 12);
+    CHECK(report.timeline[2].pts_us == 2'000);
+    CHECK(report.timeline[3].pts_us == 3'000);
+    for (size_t index = 0; index < report.timeline.size(); ++index) {
+        CHECK(report.timeline[index].sample_index == index);
+    }
+}
+
+TEST_CASE("quality event aggregation emits only robust relative outliers",
+          "[analysis][quality][event]") {
+    using namespace vr::analysis::quality;
+    QualityReport report;
+    report.sample_interval_us = 1'000'000;
+    const std::array<double, 8> scores{
+        0.10, 0.10, 0.11, 0.09, 0.10, 0.10, 0.80, 0.80};
+    for (size_t index = 0; index < scores.size(); ++index) {
+        FrameQualitySample sample;
+        sample.sample_index = index;
+        sample.pts_us = static_cast<int64_t>(index) * 1'000'000;
+        sample.blockiness = scores[index];
+        report.timeline.push_back(sample);
+    }
+
+    QualityEventAggregationOptions options;
+    options.metric_mask = QualityMetricBlockiness;
+    const auto events = aggregate_quality_events(report, options);
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].metric == "blockiness");
+    CHECK(
+        events[0].classification ==
+        QualityEventClassification::RelativeOutlier);
+    CHECK(events[0].start_sample_index == 6);
+    CHECK(events[0].end_sample_index == 7);
+    CHECK(events[0].evidence_sample_count == 2);
+    CHECK(events[0].peak_score == Catch::Approx(0.80));
+    CHECK_FALSE(events[0].has_spatial_region);
+    CHECK(
+        events[0].threshold.kind ==
+        QualityEventThresholdKind::RobustRelative);
+    CHECK(events[0].threshold.median == Catch::Approx(0.10));
+
+    for (auto& sample : report.timeline) {
+        sample.blockiness = 0.25;
+    }
+    CHECK(aggregate_quality_events(report, options).empty());
+}
+
+TEST_CASE("quality event aggregation preserves precise banding evidence",
+          "[analysis][quality][event][region]") {
+    using namespace vr::analysis::quality;
+    QualityReport report;
+    report.sample_interval_us = 1'000'000;
+    for (uint64_t index = 0; index < 3; ++index) {
+        FrameQualitySample sample;
+        sample.sample_index = index;
+        sample.pts_us = static_cast<int64_t>(index) * 1'000'000;
+        sample.banding = 0.20 + 0.05 * index;
+        QualitySpatialRegion region;
+        region.metric = "banding";
+        region.score = index == 1 ? 0.90 : 0.60;
+        region.detection_threshold = 0.40;
+        region.x = index < 2 ? static_cast<int>(16 + index * 4) : 160;
+        region.y = index < 2 ? 16 : 120;
+        region.width = 48;
+        region.height = 48;
+        region.tile_count = 9;
+        region.tile_span_columns = 3;
+        region.tile_span_rows = 3;
+        region.fill_ratio = 1.0;
+        sample.spatial_regions.push_back(region);
+        if (index < 2) {
+            QualitySpatialRegion second = region;
+            second.score = index == 1 ? 0.80 : 0.70;
+            second.x = static_cast<int>(200 + index * 4);
+            second.y = 16;
+            sample.spatial_regions.push_back(second);
+        }
+        report.timeline.push_back(sample);
+    }
+
+    QualityEventAggregationOptions options;
+    options.metric_mask = QualityMetricBanding;
+    const auto events = aggregate_quality_events(report, options);
+    REQUIRE(events.size() == 3);
+    CHECK(
+        events[0].classification ==
+        QualityEventClassification::SpatialCandidate);
+    CHECK(events[0].start_sample_index == 0);
+    CHECK(events[0].end_sample_index == 1);
+    CHECK(events[0].peak_sample_index == 1);
+    CHECK(events[0].evidence_sample_count == 2);
+    REQUIRE(events[0].has_spatial_region);
+    CHECK(events[0].spatial_region.x == 20);
+    CHECK(events[0].spatial_region.score == Catch::Approx(0.90));
+    CHECK(
+        events[0].threshold.kind ==
+        QualityEventThresholdKind::SpatialDetection);
+    CHECK(events[1].start_sample_index == 0);
+    CHECK(events[1].end_sample_index == 1);
+    CHECK(events[1].peak_sample_index == 1);
+    REQUIRE(events[1].has_spatial_region);
+    CHECK(events[1].spatial_region.x == 204);
+    CHECK(events[1].spatial_region.score == Catch::Approx(0.80));
+    CHECK(events[2].start_sample_index == 2);
+    CHECK(events[2].end_sample_index == 2);
+
+    options.include_spatial_regions = false;
+    CHECK(aggregate_quality_events(report, options).empty());
+}
+
+TEST_CASE("quality event aggregation tracks gradually moving regions",
+          "[analysis][quality][event][region]") {
+    using namespace vr::analysis::quality;
+    QualityReport report;
+    report.sample_interval_us = 1'000'000;
+    for (uint64_t index = 0; index < 3; ++index) {
+        FrameQualitySample sample;
+        sample.sample_index = index;
+        sample.pts_us = static_cast<int64_t>(index) * 1'000'000;
+        sample.banding = 0.20;
+        QualitySpatialRegion region;
+        region.metric = "banding";
+        region.score = 0.90 - 0.10 * index;
+        region.detection_threshold = 0.40;
+        region.x = static_cast<int>(index) * 30;
+        region.y = 16;
+        region.width = 48;
+        region.height = 48;
+        region.tile_count = 9;
+        region.tile_span_columns = 3;
+        region.tile_span_rows = 3;
+        region.fill_ratio = 1.0;
+        sample.spatial_regions.push_back(region);
+        report.timeline.push_back(sample);
+    }
+
+    QualityEventAggregationOptions options;
+    options.metric_mask = QualityMetricBanding;
+    const auto events = aggregate_quality_events(report, options);
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].start_sample_index == 0);
+    CHECK(events[0].end_sample_index == 2);
+    CHECK(events[0].peak_sample_index == 0);
+    CHECK(events[0].evidence_sample_count == 3);
+    REQUIRE(events[0].has_spatial_region);
+    CHECK(events[0].spatial_region.x == 0);
+}
+
 TEST_CASE("quality metrics reject invalid luma planes", "[analysis][quality]") {
     LumaPlaneView invalid;
     REQUIRE_FALSE(vr::analysis::quality::is_valid_luma_plane(invalid));
     REQUIRE(vr::analysis::quality::measure_blockiness(invalid) == 0.0);
     REQUIRE(vr::analysis::quality::measure_banding_proxy(invalid) == 0.0);
+    REQUIRE(
+        vr::analysis::quality::measure_banding_with_regions(invalid)
+            .regions.empty());
     REQUIRE(vr::analysis::quality::measure_blur_proxy(invalid) == 0.0);
     REQUIRE(vr::analysis::quality::measure_noise_proxy(invalid) == 0.0);
     LumaTemporalSignature signature;
@@ -306,6 +522,107 @@ TEST_CASE("banding proxy separates quantized plateaus from a smooth ramp",
     REQUIRE(banded_score > smooth_score + 0.10);
 }
 
+TEST_CASE("banding spatial output merges adjacent high-score tiles",
+          "[analysis][quality][spatial]") {
+    constexpr int width = 96;
+    constexpr int height = 64;
+    std::vector<uint8_t> luma(width * height);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            uint8_t value = static_cast<uint8_t>(48 + (x % 16));
+            if (x >= 32 && x < 64 && y >= 16 && y < 48) {
+                value = static_cast<uint8_t>(96 + ((x - 32) % 16) / 4 * 2);
+            }
+            luma[static_cast<size_t>(y * width + x)] = value;
+        }
+    }
+
+    const LumaPlaneView view = make_u8_view(luma, width, height);
+    const auto scalar = vr::analysis::quality::measure_banding_with_regions(
+        view, vr::analysis::quality::QualityCpuMode::Scalar);
+    const auto automatic =
+        vr::analysis::quality::measure_banding_with_regions(view);
+    const auto score_only =
+        vr::analysis::quality::measure_banding_with_regions(
+            view,
+            vr::analysis::quality::QualityCpuMode::Auto,
+            false);
+
+    REQUIRE(scalar.score == Catch::Approx(automatic.score).margin(1e-12));
+    REQUIRE(score_only.score ==
+            Catch::Approx(automatic.score).margin(1e-12));
+    REQUIRE(score_only.regions.empty());
+    REQUIRE(scalar.regions.size() == 1);
+    REQUIRE(automatic.regions.size() == scalar.regions.size());
+    const auto& region = automatic.regions.front();
+    REQUIRE(region.metric == "banding");
+    REQUIRE(region.score >= region.detection_threshold);
+    REQUIRE(region.x == 32);
+    REQUIRE(region.y == 16);
+    REQUIRE(region.width == 32);
+    REQUIRE(region.height == 32);
+    REQUIRE(region.tile_count == 4);
+    REQUIRE(region.tile_span_columns == 2);
+    REQUIRE(region.tile_span_rows == 2);
+    REQUIRE(region.fill_ratio == Catch::Approx(1.0));
+}
+
+TEST_CASE("banding spatial output rejects single-tile-thick strips",
+          "[analysis][quality][spatial]") {
+    constexpr int width = 128;
+    constexpr int height = 64;
+    std::vector<uint8_t> luma(width * height);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            uint8_t value = static_cast<uint8_t>(48 + (x % 16));
+            if (x >= 16 && x < 112 && y >= 16 && y < 32) {
+                value = static_cast<uint8_t>(96 + ((x - 16) % 16) / 4 * 2);
+            }
+            luma[static_cast<size_t>(y * width + x)] = value;
+        }
+    }
+
+    const auto measurement =
+        vr::analysis::quality::measure_banding_with_regions(
+            make_u8_view(luma, width, height));
+
+    REQUIRE(measurement.score > 0.04);
+    REQUIRE(measurement.regions.empty());
+}
+
+TEST_CASE("banding spatial output rejects sparse connected components",
+          "[analysis][quality][spatial]") {
+    constexpr int width = 128;
+    constexpr int height = 128;
+    constexpr std::array<std::array<int, 2>, 7> sparse_tiles{{
+        {{1, 1}}, {{2, 1}}, {{2, 2}}, {{3, 2}},
+        {{3, 3}}, {{4, 3}}, {{4, 4}},
+    }};
+    std::vector<uint8_t> luma(width * height);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            bool in_sparse_component = false;
+            for (const auto& tile : sparse_tiles) {
+                if (x / 16 == tile[0] && y / 16 == tile[1]) {
+                    in_sparse_component = true;
+                    break;
+                }
+            }
+            luma[static_cast<size_t>(y * width + x)] =
+                in_sparse_component
+                    ? static_cast<uint8_t>(96 + (x % 16) / 4 * 2)
+                    : static_cast<uint8_t>(48 + (x % 16));
+        }
+    }
+
+    const auto measurement =
+        vr::analysis::quality::measure_banding_with_regions(
+            make_u8_view(luma, width, height));
+
+    REQUIRE(measurement.score > 0.02);
+    REQUIRE(measurement.regions.empty());
+}
+
 TEST_CASE("quality metrics preserve behavior for little-endian 10-bit luma",
           "[analysis][quality]") {
     constexpr int width = 64;
@@ -516,6 +833,82 @@ TEST_CASE("flicker proxy detects alternating exposure but ignores linear fades",
     REQUIRE(linear_fade == Catch::Approx(0.0));
     REQUIRE(alternating > 0.50);
     REQUIRE(scene_cut < 0.0);
+}
+
+TEST_CASE("quality tile metrics share a balanced row-major grid",
+          "[analysis][quality][tiles]") {
+    using namespace vr::analysis::quality;
+    constexpr int width = 130;
+    constexpr int height = 70;
+    std::vector<uint8_t> luma(
+        static_cast<size_t>(width * height));
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            luma[static_cast<size_t>(y * width + x)] =
+                static_cast<uint8_t>(
+                    (x * 5 + y * 3 + ((x / 8 + y / 8) % 2) * 47) &
+                    0xff);
+        }
+    }
+    const LumaPlaneView view = make_u8_view(luma, width, height);
+    constexpr std::array<QualityTileMetric, 4> metrics{
+        QualityTileMetric::Blockiness,
+        QualityTileMetric::Banding,
+        QualityTileMetric::Blur,
+        QualityTileMetric::Noise,
+    };
+    for (const QualityTileMetric metric : metrics) {
+        const QualityTileMeasurement measurement =
+            measure_quality_tiles(
+                view, metric, QualityCpuMode::Scalar);
+        REQUIRE(measurement.columns == 3);
+        REQUIRE(measurement.rows == 2);
+        REQUIRE(measurement.scores.size() == 6);
+        for (const double score : measurement.scores) {
+            REQUIRE(score >= 0.0);
+            REQUIRE(score <= 1.0);
+        }
+    }
+}
+
+TEST_CASE("flicker tile metrics preserve local temporal curvature",
+          "[analysis][quality][tiles]") {
+    using namespace vr::analysis::quality;
+    constexpr int width = 128;
+    constexpr int height = 64;
+    auto frame = [](uint8_t left, uint8_t right) {
+        std::vector<uint8_t> pixels(
+            static_cast<size_t>(width * height));
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                pixels[static_cast<size_t>(y * width + x)] =
+                    x < width / 2 ? left : right;
+            }
+        }
+        return pixels;
+    };
+    const auto first = frame(100, 100);
+    const auto middle = frame(120, 100);
+    const auto last = frame(100, 100);
+    LumaTemporalSignature first_signature;
+    LumaTemporalSignature middle_signature;
+    LumaTemporalSignature last_signature;
+    REQUIRE(make_temporal_tile_signature(
+        make_u8_view(first, width, height), first_signature));
+    REQUIRE(make_temporal_tile_signature(
+        make_u8_view(middle, width, height), middle_signature));
+    REQUIRE(make_temporal_tile_signature(
+        make_u8_view(last, width, height), last_signature));
+
+    std::vector<double> tile_scores;
+    const double frame_score = measure_flicker_proxy_with_tiles(
+        first_signature, middle_signature, last_signature, tile_scores);
+    REQUIRE(first_signature.columns == 2);
+    REQUIRE(first_signature.rows == 1);
+    REQUIRE(tile_scores.size() == 2);
+    REQUIRE(frame_score > 0.0);
+    REQUIRE(tile_scores[0] > 0.50);
+    REQUIRE(tile_scores[1] == Catch::Approx(0.0));
 }
 
 TEST_CASE("wgpu quality backend matches CPU reference for 8 and 10 bit luma",

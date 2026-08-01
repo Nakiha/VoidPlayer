@@ -80,9 +80,14 @@ extension MainWindowViewActionBinding on MainWindowController {
             'tracks=${trackManager.count}',
           );
           if (!_capabilities.canRunAnalysis) return Future<void>.value();
+          if (_state.deckTab != MainWindowDeckTab.timeline) {
+            stateStore.setDeckCollapsed(false);
+            stateStore.setDeckTab(MainWindowDeckTab.timeline);
+            return Future<void>.value();
+          }
           return _runUserAction(
             'run analysis',
-            analysisCoordinator.triggerAnalysis,
+            analysisCoordinator.enterAnalysis,
           );
         },
         onAnalysisOverlayPanelToggle: () {
@@ -188,6 +193,9 @@ extension MainWindowViewActionBinding on MainWindowController {
         onMarkDeleted: quickMarkCoordinator.delete,
         onFocusVisibleMark: quickMarkCoordinator.focus,
       ),
+      lists: MainWindowListActions(
+        onTrackSelected: stateStore.setSelectedTrackFileId,
+      ),
       mediaTimeline: MainWindowMediaTimelineActions(
         onMediaSwapped: (slotIndex, targetTrackIndex) {
           if (!_capabilities.canReorderTrack) return;
@@ -262,6 +270,46 @@ extension MainWindowViewActionBinding on MainWindowController {
           stateStore.setTimelineControlsWidth(width);
         },
       ),
+      deck: MainWindowDeckActions(
+        onTabChanged: (tab) {
+          if (tab == MainWindowDeckTab.analysis) {
+            _fireUserAction(
+              'enter analysis deck',
+              analysisCoordinator.enterAnalysis,
+            );
+            return;
+          }
+          stateStore.setDeckTab(tab);
+        },
+        onHeightChanged: stateStore.setDeckHeight,
+        onCollapsedChanged: stateStore.setDeckCollapsed,
+        onAnalysisSelectionChanged: stateStore.setAnalysisSelection,
+        onAnalysisFrameSeekRequested: (request) {
+          if (!_capabilities.canSeek) return;
+          final timelinePtsUs =
+              request.trackPtsUs + (_state.syncOffsets[request.fileId] ?? 0);
+          _boostNativeCompositorFlutterInteraction(
+            reason: 'analysis-frame-seek',
+          );
+          playbackCoordinator.seekTo(timelinePtsUs);
+        },
+        onQualitySeekRequested: (fileId, trackPtsUs) {
+          if (!_capabilities.canSeek) return;
+          final timelinePtsUs = trackPtsUs + (_state.syncOffsets[fileId] ?? 0);
+          _boostNativeCompositorFlutterInteraction(
+            reason: 'quality-sample-seek',
+          );
+          playbackCoordinator.seekTo(timelinePtsUs);
+        },
+        onQualityMarksRequested: (request) async {
+          return quickMarkCoordinator.addMetricMarks(
+            fileId: request.fileId,
+            metric: request.metric,
+            threshold: request.threshold,
+            report: request.report,
+          );
+        },
+      ),
       analysisOverlay: MainWindowAnalysisOverlayActions(
         onTypeChanged: (type) {
           final config = analysisGeneration.overlayConfig.withTypeDefaults(
@@ -287,6 +335,15 @@ extension MainWindowViewActionBinding on MainWindowController {
         onCloseSettings: () => stateStore.setSettingsVisible(false),
         onCloseMarksSidebar: () =>
             layoutCoordinator.setMarksSidebarVisible(false),
+        onCloseInspector: () {
+          if (_state.selectedQuickMarkId != null) {
+            quickMarkCoordinator.select(null);
+          } else if (_state.analysisSelection != null) {
+            stateStore.setAnalysisSelection(null);
+          } else {
+            stateStore.setSelectedTrackFileId(null);
+          }
+        },
         onMarksSidebarWidthChanged: layoutCoordinator.setMarksSidebarWidth,
         onViewportPixelSizeModeChanged: (mode) =>
             layoutCoordinator.setPixelSizeMode(mode.layoutValue),

@@ -7,6 +7,7 @@
 #include "analysis/cache/vacache_store.h"
 #include "analysis/generators/analysis_generator.h"
 #include "analysis/parsers/vachunk_parser.h"
+#include "analysis/quality/quality_video_analyzer.h"
 #include "common/win_utf8.h"
 
 #include <algorithm>
@@ -44,6 +45,9 @@ std::mutex g_generation_mutex;
 std::mutex g_handle_registry_mutex;
 std::unordered_map<uintptr_t, std::shared_ptr<vr::analysis::AnalysisSession>> g_handles;
 std::atomic<uintptr_t> g_next_handle_id{1};
+std::unordered_map<uintptr_t, std::shared_ptr<vr::analysis::quality::QualityReport>>
+    g_quality_handles;
+std::atomic<uintptr_t> g_next_quality_handle_id{1};
 std::atomic<uint64_t> g_overlay_staging_counter{1};
 
 constexpr uint64_t kOverlayVachunkFeatureFlags =
@@ -61,6 +65,25 @@ void set_error(int32_t status, std::string message) {
 
 void set_ok() {
     set_error(NAKI_ANALYSIS_OK, {});
+}
+
+std::shared_ptr<vr::analysis::quality::QualityReport> quality_report_for_handle(
+    NakiQualityHandle handle) {
+    const auto id = reinterpret_cast<uintptr_t>(handle);
+    if (id == 0) return {};
+    std::lock_guard<std::mutex> lock(g_handle_registry_mutex);
+    const auto found = g_quality_handles.find(id);
+    return found == g_quality_handles.end() ? nullptr : found->second;
+}
+
+NakiQualityDistribution quality_distribution(
+    const vr::analysis::quality::DistributionSummary& summary) {
+    return NakiQualityDistribution{
+        summary.count,
+        summary.mean,
+        summary.p95,
+        summary.maximum,
+    };
 }
 
 const char* safe_cstr(const char* value) {
@@ -426,6 +449,14 @@ extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_sizeof_frame_bucket_v2
 
 extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_sizeof_overlay_state_v2() {
     return static_cast<int32_t>(sizeof(NakiOverlayStateV2));
+}
+
+extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_sizeof_quality_summary() {
+    return static_cast<int32_t>(sizeof(NakiQualitySummary));
+}
+
+extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_sizeof_quality_sample() {
+    return static_cast<int32_t>(sizeof(NakiQualitySample));
 }
 
 extern "C" NAKI_ANALYSIS_FFI_EXPORT void naki_analysis_set_overlay(const NakiOverlayState* state) {
@@ -920,4 +951,128 @@ extern "C" NAKI_ANALYSIS_FFI_EXPORT void naki_analysis_get_generation_service_st
     NakiAnalysisGenerationServiceStats* out) {
     if (!out) return;
     generation_service().copy_stats(*out);
+}
+
+extern "C" NAKI_ANALYSIS_FFI_EXPORT NakiQualityHandle naki_analysis_quality_analyze(
+    const char* video_path,
+    int64_t sample_interval_us,
+    uint32_t max_samples) {
+    if (!video_path || video_path[0] == '\0' || sample_interval_us <= 0) {
+        set_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                  "video_path and a positive sample_interval_us are required");
+        return nullptr;
+    }
+
+    auto report = std::make_shared<vr::analysis::quality::QualityReport>();
+    vr::analysis::quality::QualityVideoAnalyzerOptions options;
+    options.sample_interval_us = sample_interval_us;
+    options.max_samples = max_samples;
+    options.backend = vr::analysis::quality::QualityComputeBackend::Cpu;
+    std::string error;
+    try {
+        if (!vr::analysis::quality::analyze_video_quality(
+                video_path, options, *report, error)) {
+            set_error(NAKI_ANALYSIS_ERR_OPEN_FAILED,
+                      error.empty() ? "quality analysis failed" : std::move(error));
+            return nullptr;
+        }
+    } catch (const std::exception& exception) {
+        set_error(NAKI_ANALYSIS_ERR_INTERNAL, exception.what());
+        return nullptr;
+    } catch (...) {
+        set_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                  "quality analysis failed with an unknown exception");
+        return nullptr;
+    }
+
+    uintptr_t id = g_next_quality_handle_id.fetch_add(1, std::memory_order_relaxed);
+    if (id == 0) {
+        id = g_next_quality_handle_id.fetch_add(1, std::memory_order_relaxed);
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_handle_registry_mutex);
+        g_quality_handles[id] = std::move(report);
+    }
+    set_ok();
+    return reinterpret_cast<NakiQualityHandle>(id);
+}
+
+extern "C" NAKI_ANALYSIS_FFI_EXPORT void naki_analysis_quality_close(
+    NakiQualityHandle handle) {
+    const auto id = reinterpret_cast<uintptr_t>(handle);
+    if (id == 0) return;
+    std::lock_guard<std::mutex> lock(g_handle_registry_mutex);
+    g_quality_handles.erase(id);
+}
+
+extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_quality_get_summary(
+    NakiQualityHandle handle,
+    NakiQualitySummary* out) {
+    if (!out) {
+        set_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT, "summary output is required");
+        return 0;
+    }
+    const auto report = quality_report_for_handle(handle);
+    if (!report) {
+        set_error(NAKI_ANALYSIS_ERR_CLOSED, "quality analysis handle is closed");
+        return 0;
+    }
+    *out = NakiQualitySummary{
+        report->schema_version,
+        report->width,
+        report->height,
+        report->bit_depth,
+        report->sample_interval_us,
+        report->max_samples,
+        report->truncated ? 1 : 0,
+        report->unsupported_pixel_frames,
+        static_cast<uint64_t>(report->timeline.size()),
+        quality_distribution(report->blockiness),
+        quality_distribution(report->banding),
+        quality_distribution(report->blur),
+        quality_distribution(report->noise),
+        quality_distribution(report->flicker),
+    };
+    set_ok();
+    return 1;
+}
+
+extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_quality_get_samples(
+    NakiQualityHandle handle,
+    int32_t start,
+    NakiQualitySample* out,
+    int32_t max_count) {
+    if (start < 0 || max_count < 0 || (max_count > 0 && !out)) {
+        set_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                  "start, output, and max_count must describe a valid range");
+        return 0;
+    }
+    const auto report = quality_report_for_handle(handle);
+    if (!report) {
+        set_error(NAKI_ANALYSIS_ERR_CLOSED, "quality analysis handle is closed");
+        return 0;
+    }
+    const size_t begin = static_cast<size_t>(start);
+    if (begin >= report->timeline.size() || max_count == 0) {
+        set_ok();
+        return 0;
+    }
+    const size_t count = std::min(
+        static_cast<size_t>(max_count), report->timeline.size() - begin);
+    for (size_t index = 0; index < count; ++index) {
+        const auto& sample = report->timeline[begin + index];
+        out[index] = NakiQualitySample{
+            sample.sample_index,
+            sample.decoded_frame_index,
+            sample.pts_us,
+            sample.blockiness,
+            sample.banding,
+            sample.blur,
+            sample.noise,
+            sample.flicker,
+            sample.average_qp,
+        };
+    }
+    set_ok();
+    return static_cast<int32_t>(count);
 }

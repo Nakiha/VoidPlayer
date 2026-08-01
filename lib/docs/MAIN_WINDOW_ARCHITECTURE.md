@@ -42,7 +42,7 @@ MainWindowView
 | `lib/main_window/main_window_playback.dart` | play/pause/seek、polling、loop range、timeline hover |
 | `lib/main_window/main_window_layout.dart` | viewport resize debounce、pan/zoom/split、native layout flush |
 | `lib/main_window/main_window_media.dart` | open/add/remove media、track offset、effective duration |
-| `lib/main_window/main_window_analysis.dart` | analysis IPC snapshot、analysis window trigger、main-window overlay activation/refresh |
+| `lib/main_window/main_window_analysis.dart` | inline analysis entries/cache generation、deck entry、main-window overlay activation/refresh |
 | `lib/automation/main_window_harness.dart` | UI 自动化专用 pointer simulation、frame capture（automation 层，主窗口只注入 GlobalKey/getter） |
 
 ## 生命周期
@@ -61,7 +61,7 @@ MainWindow.dispose
       → Action unbind
       → playback/layout timers stop
       → state store dispose
-      → analysis IPC dispose
+      → analysis entries notifier dispose
       → track manager dispose
       → native player dispose
 ```
@@ -173,14 +173,13 @@ Timeline slider hover
 
 拥有：
 
-- analysis IPC server
 - fileId → analysis hash cache
-- snapshot serial
+- workspace entries notifier
 
 负责：
 
-- 触发 analysis window
-- 发布 track snapshot 到 analysis IPC
+- 生成所有 track cache 并切换 analysis deck tab
+- 根据 track/hash/status 发布进程内 workspace entries
 - 激活/关闭主窗口 analysis overlay
 - 基于 renderer presented PTS+DTS 请求当前帧 overlay VACHUNK
 - seek settle 后刷新 overlay track 并触发 paused-frame redraw

@@ -41,7 +41,7 @@ std::vector<HwDecodeProviderDescriptor> registered_hw_decode_providers() {
         "D3D11VA",
         RenderBackendKind::NativeD3D11,
         RenderBackendKind::Unknown,
-        false,
+        true,
         &create_d3d11va_provider,
     });
 #endif
@@ -60,7 +60,9 @@ std::vector<HwDecodeProviderDescriptor> registered_hw_decode_providers() {
 bool provider_matches_request(const HwDecodeProviderDescriptor& provider,
                               const HwDecodeInitParams& params) {
     if (params.device_mode == DecodeDeviceMode::FfmpegOwnedHwDownloadDevice) {
-        return provider.allow_ffmpeg_owned_hwdownload;
+        return provider.allow_ffmpeg_owned_hwdownload &&
+               (provider.backend == params.backend ||
+                provider.secondary_backend == params.backend);
     }
     if (provider.backend == params.backend) {
         return true;

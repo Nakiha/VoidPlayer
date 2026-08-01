@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voidplayer.local/schemas/quality-output-v5.schema.json",
+  "title": "VoidPlayer quality CLI output v5",
+  "oneOf": [
+    {"$ref": "#/$defs/report"},
+    {"$ref": "#/$defs/frameRecord"},
+    {"$ref": "#/$defs/error"}
+  ],
+  "$defs": {
+    "metricName": {
+      "enum": ["blockiness", "banding", "blur", "noise", "flicker"]
+    },
+    "distribution": {
+      "type": "object",
+      "required": ["available", "count", "mean", "p10", "p50", "p90", "p95", "max"],
+      "properties": {
+        "available": {"type": "boolean"},
+        "count": {"type": "integer", "minimum": 0},
+        "mean": {"type": "number"},
+        "p10": {"type": "number"},
+        "p50": {"type": "number"},
+        "p90": {"type": "number"},
+        "p95": {"type": "number"},
+        "max": {"type": "number"}
+      },
+      "additionalProperties": false
+    },
+    "nullableScore": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "spatialRegion": {
+      "type": "object",
+      "required": ["metric", "score", "detectionThreshold", "rect", "pixelRect", "tileCount", "tileSpan", "fillRatio"],
+      "properties": {
+        "metric": {"const": "banding"},
+        "score": {"type": "number", "minimum": 0, "maximum": 1},
+        "detectionThreshold": {"type": "number", "minimum": 0, "maximum": 1},
+        "rect": {
+          "type": "object",
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": {"type": "number", "minimum": 0, "maximum": 1},
+            "y": {"type": "number", "minimum": 0, "maximum": 1},
+            "width": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+            "height": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}
+          },
+          "additionalProperties": false
+        },
+        "pixelRect": {
+          "type": "object",
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": {"type": "integer", "minimum": 0},
+            "y": {"type": "integer", "minimum": 0},
+            "width": {"type": "integer", "minimum": 1},
+            "height": {"type": "integer", "minimum": 1}
+          },
+          "additionalProperties": false
+        },
+        "tileCount": {"type": "integer", "minimum": 1},
+        "tileSpan": {
+          "type": "object",
+          "required": ["columns", "rows"],
+          "properties": {
+            "columns": {"type": "integer", "minimum": 2},
+            "rows": {"type": "integer", "minimum": 2}
+          },
+          "additionalProperties": false
+        },
+        "fillRatio": {"type": "number", "minimum": 0.5, "maximum": 1}
+      },
+      "additionalProperties": false
+    },
+    "sample": {
+      "type": "object",
+      "required": ["sampleIndex", "decodedFrameIndex", "ptsUs", "blockiness", "banding", "blur", "noise", "flicker", "averageQp", "spatialRegions"],
+      "properties": {
+        "sampleIndex": {"type": "integer", "minimum": 0},
+        "decodedFrameIndex": {"type": "integer", "minimum": 0},
+        "ptsUs": {"type": "integer"},
+        "blockiness": {"$ref": "#/$defs/nullableScore"},
+        "banding": {"$ref": "#/$defs/nullableScore"},
+        "blur": {"$ref": "#/$defs/nullableScore"},
+        "noise": {"$ref": "#/$defs/nullableScore"},
+        "flicker": {"$ref": "#/$defs/nullableScore"},
+        "averageQp": {"type": ["number", "null"]},
+        "spatialRegions": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/spatialRegion"},
+          "maxItems": 8
+        }
+      },
+      "additionalProperties": false
+    },
+    "metricResult": {
+      "type": "object",
+      "required": ["selected", "kind", "distribution"],
+      "properties": {
+        "selected": {"type": "boolean"},
+        "kind": {"enum": ["proxy", "temporalProxy"]},
+        "distribution": {"$ref": "#/$defs/distribution"}
+      },
+      "additionalProperties": true
+    },
+    "regionSummary": {
+      "type": "object",
+      "required": ["available", "metric", "sampledFrames", "framesWithRegions", "regionCount", "maxRegionsPerFrame", "score", "detectionThreshold", "normalizedArea", "frameCoverage"],
+      "properties": {
+        "available": {"type": "boolean"},
+        "metric": {"const": "banding"},
+        "sampledFrames": {"type": "integer", "minimum": 0},
+        "framesWithRegions": {"type": "integer", "minimum": 0},
+        "regionCount": {"type": "integer", "minimum": 0},
+        "maxRegionsPerFrame": {"type": "integer", "minimum": 0},
+        "score": {"$ref": "#/$defs/distribution"},
+        "detectionThreshold": {"$ref": "#/$defs/distribution"},
+        "normalizedArea": {"$ref": "#/$defs/distribution"},
+        "frameCoverage": {"$ref": "#/$defs/distribution"}
+      },
+      "additionalProperties": false
+    },
+    "execution": {
+      "type": "object",
+      "required": ["requestedBackend", "resolvedBackend", "cpuMode", "cpuDispatch", "decodeThreadsMode", "decodeThreadsRequested", "decoderThreadCount", "decoderThreadTypes", "cpuWorkers", "cpuInFlight", "cpuWorkerPoolActive", "gpuAdapter", "gpuInFlight", "scheduling"],
+      "properties": {
+        "requestedBackend": {"enum": ["auto", "cpu", "wgpu"]},
+        "resolvedBackend": {"type": "string"},
+        "cpuMode": {"enum": ["auto", "scalar"]},
+        "cpuDispatch": {"type": "string"},
+        "decodeThreadsMode": {"enum": ["auto", "explicit"]},
+        "decodeThreadsRequested": {"type": ["integer", "null"], "minimum": 1},
+        "decoderThreadCount": {"type": "integer", "minimum": 0},
+        "decoderThreadTypes": {"type": "array", "items": {"enum": ["frame", "slice"]}, "uniqueItems": true},
+        "cpuWorkers": {"type": "integer", "minimum": 1},
+        "cpuInFlight": {"type": "integer", "minimum": 1},
+        "cpuWorkerPoolActive": {"type": "boolean"},
+        "gpuAdapter": {"type": ["string", "null"]},
+        "gpuInFlight": {"type": "integer", "minimum": 0},
+        "scheduling": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "report": {
+      "type": "object",
+      "required": ["type", "schemaVersion", "schemaId", "metricVersion", "ok", "backend", "backendDiagnostic", "input", "elapsedMs", "capabilities", "warnings", "selectedMetrics", "execution", "metricDefinitions", "timingSemantics", "video", "sampling", "stream", "metrics", "regionSummary", "timingsMs"],
+      "properties": {
+        "type": {"const": "qualityReport"},
+        "schemaVersion": {"const": 5},
+        "schemaId": {"const": "quality-output-v5"},
+        "metricVersion": {"type": "string"},
+        "ok": {"const": true},
+        "backend": {"type": "string"},
+        "backendDiagnostic": {"type": "string"},
+        "input": {"type": "string"},
+        "elapsedMs": {"type": "number", "minimum": 0},
+        "capabilities": {
+          "type": "object",
+          "required": ["timelineIncluded", "timelineEncoding", "spatialRegionsIncluded", "spatialRegionSummaryIncluded", "requestedRegionOutput", "effectiveRegionOutput", "spatialRegionMetrics", "spatialRegionCoordinateSpace", "absoluteThresholdsCalibrated", "crossMetricAggregationSupported"],
+          "properties": {
+            "timelineIncluded": {"type": "boolean"},
+            "timelineEncoding": {"enum": ["inline", "jsonl", "omitted"]},
+            "spatialRegionsIncluded": {"type": "boolean"},
+            "spatialRegionSummaryIncluded": {"type": "boolean"},
+            "requestedRegionOutput": {"enum": ["none", "summary", "full"]},
+            "effectiveRegionOutput": {"enum": ["none", "summary", "full"]},
+            "spatialRegionMetrics": {"type": "array", "items": {"const": "banding"}, "uniqueItems": true},
+            "spatialRegionCoordinateSpace": {"const": "normalizedLuma"},
+            "absoluteThresholdsCalibrated": {"const": false},
+            "crossMetricAggregationSupported": {"const": false}
+          },
+          "additionalProperties": false
+        },
+        "warnings": {"type": "array", "items": {"type": "string"}},
+        "selectedMetrics": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/metricName"},
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "execution": {"$ref": "#/$defs/execution"},
+        "metricDefinitions": {"type": "object"},
+        "timingSemantics": {"type": "object"},
+        "video": {"type": "object"},
+        "sampling": {"type": "object"},
+        "stream": {"type": "object"},
+        "metrics": {
+          "type": "object",
+          "required": ["blockiness", "banding", "blur", "noise", "flicker"],
+          "properties": {
+            "blockiness": {"$ref": "#/$defs/metricResult"},
+            "banding": {"$ref": "#/$defs/metricResult"},
+            "blur": {"$ref": "#/$defs/metricResult"},
+            "noise": {"$ref": "#/$defs/metricResult"},
+            "flicker": {"$ref": "#/$defs/metricResult"}
+          },
+          "additionalProperties": false
+        },
+        "regionSummary": {"$ref": "#/$defs/regionSummary"},
+        "timingsMs": {"type": "object"},
+        "timeline": {"type": "array", "items": {"$ref": "#/$defs/sample"}}
+      },
+      "additionalProperties": false
+    },
+    "frameRecord": {
+      "type": "object",
+      "required": ["type", "schemaVersion", "schemaId", "metricVersion", "sample"],
+      "properties": {
+        "type": {"const": "qualityFrameSample"},
+        "schemaVersion": {"const": 5},
+        "schemaId": {"const": "quality-output-v5"},
+        "metricVersion": {"type": "string"},
+        "sample": {"$ref": "#/$defs/sample"}
+      },
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "required": ["type", "schemaVersion", "schemaId", "ok", "code", "message"],
+      "properties": {
+        "type": {"const": "qualityError"},
+        "schemaVersion": {"const": 5},
+        "schemaId": {"const": "quality-output-v5"},
+        "ok": {"const": false},
+        "protocolVersion": {"const": 1},
+        "requestId": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!-~]+$"},
+        "code": {"type": "string"},
+        "message": {"type": "string"}
+      },
+      "dependentRequired": {
+        "protocolVersion": ["requestId"],
+        "requestId": ["protocolVersion"]
+      },
+      "additionalProperties": false
+    }
+  }
+}

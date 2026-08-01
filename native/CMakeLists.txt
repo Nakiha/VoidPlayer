@@ -97,6 +97,8 @@ if(BUILD_ANALYSIS AND BUILD_TESTS)
     void_apply_native_compile_options(quality_metrics_tests)
     target_include_directories(quality_metrics_tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/analysis")
+    target_compile_definitions(quality_metrics_tests PRIVATE
+        VIDEO_TEST_DIR="${VIDEO_TEST_DIR}")
     target_link_libraries(quality_metrics_tests PRIVATE
         analysis_lib
         Catch2::Catch2

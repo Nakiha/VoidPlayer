@@ -49,6 +49,7 @@ class AppToolBar extends StatelessWidget {
   final bool canOpenProfiler;
   final bool canRunAnalysis;
   final bool analysisEnabled;
+  final bool analysisWorkspaceActive;
   final bool mediaInfoActive;
   final bool profilerActive;
   final bool marksSidebarActive;
@@ -83,6 +84,7 @@ class AppToolBar extends StatelessWidget {
     this.canOpenProfiler = true,
     this.canRunAnalysis = true,
     this.analysisEnabled = false,
+    this.analysisWorkspaceActive = false,
     this.mediaInfoActive = false,
     this.profilerActive = false,
     this.marksSidebarActive = false,
@@ -95,6 +97,13 @@ class AppToolBar extends StatelessWidget {
       padding: const EdgeInsets.all(4),
       child: Row(
         children: [
+          _ToolbarToggleButton(
+            active: marksSidebarActive,
+            onPressed: onMarksSidebarToggle,
+            customIcon: const _LeftSidebarToggleIcon(),
+            tooltip: AppLocalizations.of(context)!.mainWindowLeftPanelToggle,
+          ),
+          const SizedBox(width: 4),
           // View mode selector (240x32)
           Opacity(
             opacity: viewModeEnabled ? 1.0 : 0.5,
@@ -145,6 +154,7 @@ class AppToolBar extends StatelessWidget {
           // Analysis button
           _AnalysisButton(
             enabled: canRunAnalysis && analysisEnabled,
+            active: analysisWorkspaceActive,
             tracks: tracks,
             dataSource: analysisDataSource,
             disabledTooltip: analysisDisabledTooltip,
@@ -162,13 +172,6 @@ class AppToolBar extends StatelessWidget {
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints.tightFor(width: 32, height: 32),
             ),
-          ),
-          const SizedBox(width: 4),
-          _ToolbarToggleButton(
-            active: marksSidebarActive,
-            onPressed: onMarksSidebarToggle,
-            customIcon: const _SidebarToggleIcon(),
-            tooltip: AppLocalizations.of(context)!.quickMarkSidebarToggle,
           ),
         ],
       ),
@@ -461,13 +464,13 @@ class _ToolbarToggleButton extends StatelessWidget {
   }
 }
 
-class _SidebarToggleIcon extends StatelessWidget {
-  const _SidebarToggleIcon();
+class _LeftSidebarToggleIcon extends StatelessWidget {
+  const _LeftSidebarToggleIcon();
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: _SidebarToggleIconPainter(
+      painter: _LeftSidebarToggleIconPainter(
         color: IconTheme.of(context).color ?? Colors.black,
       ),
       size: const Size(18, 18),
@@ -475,10 +478,10 @@ class _SidebarToggleIcon extends StatelessWidget {
   }
 }
 
-class _SidebarToggleIconPainter extends CustomPainter {
+class _LeftSidebarToggleIconPainter extends CustomPainter {
   final Color color;
 
-  const _SidebarToggleIconPainter({required this.color});
+  const _LeftSidebarToggleIconPainter({required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -497,36 +500,32 @@ class _SidebarToggleIconPainter extends CustomPainter {
     );
     canvas.drawRRect(outer, stroke);
 
-    final sideRect = Rect.fromLTWH(
-      size.width - 7.0,
-      4.8,
-      3.6,
-      size.height - 9.6,
-    );
+    final sideRect = Rect.fromLTWH(3.4, 4.8, 3.6, size.height - 9.6);
     canvas.drawRect(sideRect, fill);
     canvas.drawLine(
-      Offset(size.width - 8.2, 4.2),
-      Offset(size.width - 8.2, size.height - 4.2),
+      const Offset(8.2, 4.2),
+      Offset(8.2, size.height - 4.2),
       stroke,
     );
 
     final arrow = Path()
-      ..moveTo(5.0, size.height / 2)
+      ..moveTo(13.0, size.height / 2)
       ..lineTo(9.0, size.height / 2)
-      ..moveTo(7.4, size.height / 2 - 1.8)
+      ..moveTo(10.6, size.height / 2 - 1.8)
       ..lineTo(9.2, size.height / 2)
-      ..lineTo(7.4, size.height / 2 + 1.8);
+      ..lineTo(10.6, size.height / 2 + 1.8);
     canvas.drawPath(arrow, stroke..strokeCap = StrokeCap.round);
   }
 
   @override
-  bool shouldRepaint(covariant _SidebarToggleIconPainter oldDelegate) {
+  bool shouldRepaint(covariant _LeftSidebarToggleIconPainter oldDelegate) {
     return oldDelegate.color != color;
   }
 }
 
 class _AnalysisButton extends StatefulWidget {
   final bool enabled;
+  final bool active;
   final List<TrackEntry> tracks;
   final AnalysisToolbarDataSource dataSource;
   final String? disabledTooltip;
@@ -534,6 +533,7 @@ class _AnalysisButton extends StatefulWidget {
 
   const _AnalysisButton({
     required this.enabled,
+    required this.active,
     required this.tracks,
     required this.dataSource,
     this.disabledTooltip,
@@ -597,9 +597,13 @@ class _AnalysisButtonState extends State<_AnalysisButton>
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    final tooltip = widget.enabled
+    final tooltip = widget.active
+        ? '${MaterialLocalizations.of(context).closeButtonTooltip} '
+              '${l.deckAnalysisTab}'
+        : widget.enabled
         ? l.analysisClickToAnalyze
         : widget.disabledTooltip ?? l.analysisClickToAnalyze;
+    final colors = Theme.of(context).colorScheme;
     return MouseRegion(
       onEnter: (_) {
         _hoveringButton = true;
@@ -613,28 +617,45 @@ class _AnalysisButtonState extends State<_AnalysisButton>
         link: _layerLink,
         child: Tooltip(
           message: tooltip,
-          child: SizedBox(
-            width: 32,
-            height: 32,
-            child: IconButton(
-              onPressed: !widget.enabled || _isWorking
-                  ? null
-                  : () => fireAndLog('run analysis', _handlePressed()),
-              icon: _isWorking
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(
-                      _isError ? Icons.error_outline : Icons.analytics_outlined,
-                      size: 18,
-                      color: _isError
-                          ? Theme.of(context).colorScheme.error
-                          : null,
-                    ),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          child: Semantics(
+            selected: widget.active,
+            child: SizedBox(
+              width: 32,
+              height: 32,
+              child: IconButton(
+                onPressed: !widget.enabled || (_isWorking && !widget.active)
+                    ? null
+                    : () => fireAndLog(
+                        'toggle analysis workspace',
+                        _handlePressed(),
+                      ),
+                style: IconButton.styleFrom(
+                  foregroundColor: widget.active
+                      ? colors.onPrimaryContainer
+                      : null,
+                  backgroundColor: widget.active
+                      ? colors.primaryContainer
+                      : Colors.transparent,
+                ),
+                icon: _isWorking && !widget.active
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        _isError
+                            ? Icons.error_outline
+                            : Icons.analytics_outlined,
+                        size: 18,
+                        color: _isError ? colors.error : null,
+                      ),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 32,
+                  height: 32,
+                ),
+              ),
             ),
           ),
         ),

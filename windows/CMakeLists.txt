@@ -11,6 +11,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/Dependencies.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/FFmpeg.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/NativeSources.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/VideoDecodeCoreTarget.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/AnalysisCliTarget.cmake")
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
@@ -61,6 +62,7 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis"
                  "${CMAKE_BINARY_DIR}/native-analysis")
+void_add_analysis_cli(VoidPlayerCli)
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../native/renderer"
                  "${CMAKE_BINARY_DIR}/native-renderer")
 
@@ -90,7 +92,8 @@ endif()
 set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
 
-install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
+install(TARGETS ${BINARY_NAME} VoidPlayerCli
+  RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"

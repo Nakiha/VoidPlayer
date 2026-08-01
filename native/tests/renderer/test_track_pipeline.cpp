@@ -26,6 +26,20 @@
 using namespace vr;
 using namespace vr::test;
 
+TEST_CASE(
+    "Windows D3D11 VP9 defaults to hardware decode with CPU frame download",
+    "[track_pipeline][windows][vp9]") {
+    REQUIRE(default_decode_device_mode(
+                AV_CODEC_ID_VP9, RenderBackendKind::NativeD3D11) ==
+            DecodeDeviceMode::FfmpegOwnedHwDownloadDevice);
+    REQUIRE(default_decode_device_mode(
+                AV_CODEC_ID_HEVC, RenderBackendKind::NativeD3D11) ==
+            DecodeDeviceMode::IndependentDevice);
+    REQUIRE(default_decode_device_mode(
+                AV_CODEC_ID_VP9, RenderBackendKind::Metal) ==
+            DecodeDeviceMode::IndependentDevice);
+}
+
 TEST_CASE("TrackPipelineFactory creates opened pipeline before demux worker start",
           "[track_pipeline]") {
     TrackPipelineFactory factory;

@@ -5,6 +5,20 @@
 
 namespace vr {
 
+DecodeDeviceMode default_decode_device_mode(
+    AVCodecID codec_id,
+    RenderBackendKind render_backend) {
+    // Some Windows drivers can indefinitely block a D3D11 shared-snapshot
+    // query when VP9 is added beside a high-resolution hardware track. Keep
+    // D3D11VA decode, but download VP9 frames to deterministic CPU NV12 so
+    // this codec never enters the cross-device snapshot path.
+    if (render_backend == RenderBackendKind::NativeD3D11 &&
+        codec_id == AV_CODEC_ID_VP9) {
+        return DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
+    }
+    return DecodeDeviceMode::IndependentDevice;
+}
+
 std::unique_ptr<TrackPipeline> TrackPipelineFactory::create_opened_pipeline(
     const std::string& path,
     bool hw_decode,
@@ -80,8 +94,13 @@ std::unique_ptr<TrackPipeline> TrackPipelineFactory::create_opened_pipeline(
     }
 
     if (hw_decode) {
+        const auto decode_device_mode =
+            options.use_default_decode_device_mode
+                ? default_decode_device_mode(
+                      stats.codec_params->codec_id, options.render_backend)
+                : options.decode_device_mode;
         pipeline->decode_thread->enable_hardware_decode(
-            options.decode_device_mode,
+            decode_device_mode,
             options.render_device,
             options.device_mutex,
             options.render_backend);

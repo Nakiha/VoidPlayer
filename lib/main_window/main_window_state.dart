@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../analysis/ui/analysis_ui_selection.dart';
 import '../marks/quick_mark.dart';
 import '../marks/quick_mark_thumbnail.dart';
 import '../preferences/playback_preferences.dart';
@@ -12,6 +13,11 @@ const double kDefaultMarksSidebarWidth = 340.0;
 const double kMinMarksSidebarWidth = 260.0;
 const double kMaxMarksSidebarWidth = 560.0;
 const double kMarksSidebarResizeHandleWidth = 9.0;
+const double kDefaultDeckHeight = 260.0;
+const double kMinDeckHeight = 180.0;
+const double kMaxDeckHeight = 440.0;
+
+enum MainWindowDeckTab { timeline, analysis, quality }
 
 class MainWindowStateModel {
   final int? playerId;
@@ -26,6 +32,9 @@ class MainWindowStateModel {
   final DateTime? pendingSeekAt;
   final Map<int, int> syncOffsets; // fileId -> offset in microseconds
   final double timelineControlsWidth;
+  final MainWindowDeckTab deckTab;
+  final double deckHeight;
+  final bool deckCollapsed;
   final bool loopRangeEnabled;
   final bool nativeLoopRangeSynced;
   final bool startupLoopRangeApplied;
@@ -48,6 +57,8 @@ class MainWindowStateModel {
   final Map<int, QuickMarkThumbnail> quickMarkThumbnails;
   final QuickMark? quickMarkDraft;
   final int? selectedQuickMarkId;
+  final AnalysisUiSelection? analysisSelection;
+  final int? selectedTrackFileId;
 
   const MainWindowStateModel({
     this.playerId,
@@ -62,6 +73,9 @@ class MainWindowStateModel {
     this.pendingSeekAt,
     this.syncOffsets = const {},
     this.timelineControlsWidth = kDefaultTimelineControlsWidth,
+    this.deckTab = MainWindowDeckTab.timeline,
+    this.deckHeight = kDefaultDeckHeight,
+    this.deckCollapsed = false,
     this.loopRangeEnabled = false,
     this.nativeLoopRangeSynced = false,
     this.startupLoopRangeApplied = false,
@@ -84,6 +98,8 @@ class MainWindowStateModel {
     this.quickMarkThumbnails = const {},
     this.quickMarkDraft,
     this.selectedQuickMarkId,
+    this.analysisSelection,
+    this.selectedTrackFileId,
   });
 
   MainWindowStateModel copyWith({
@@ -99,6 +115,9 @@ class MainWindowStateModel {
     Object? pendingSeekAt = _mainWindowStateUnset,
     Map<int, int>? syncOffsets,
     double? timelineControlsWidth,
+    MainWindowDeckTab? deckTab,
+    double? deckHeight,
+    bool? deckCollapsed,
     bool? loopRangeEnabled,
     bool? nativeLoopRangeSynced,
     bool? startupLoopRangeApplied,
@@ -121,6 +140,8 @@ class MainWindowStateModel {
     Map<int, QuickMarkThumbnail>? quickMarkThumbnails,
     Object? quickMarkDraft = _mainWindowStateUnset,
     Object? selectedQuickMarkId = _mainWindowStateUnset,
+    Object? analysisSelection = _mainWindowStateUnset,
+    Object? selectedTrackFileId = _mainWindowStateUnset,
   }) {
     return MainWindowStateModel(
       playerId: playerId == _mainWindowStateUnset
@@ -144,6 +165,9 @@ class MainWindowStateModel {
       syncOffsets: syncOffsets ?? this.syncOffsets,
       timelineControlsWidth:
           timelineControlsWidth ?? this.timelineControlsWidth,
+      deckTab: deckTab ?? this.deckTab,
+      deckHeight: deckHeight ?? this.deckHeight,
+      deckCollapsed: deckCollapsed ?? this.deckCollapsed,
       loopRangeEnabled: loopRangeEnabled ?? this.loopRangeEnabled,
       nativeLoopRangeSynced:
           nativeLoopRangeSynced ?? this.nativeLoopRangeSynced,
@@ -179,6 +203,12 @@ class MainWindowStateModel {
       selectedQuickMarkId: selectedQuickMarkId == _mainWindowStateUnset
           ? this.selectedQuickMarkId
           : selectedQuickMarkId as int?,
+      analysisSelection: analysisSelection == _mainWindowStateUnset
+          ? this.analysisSelection
+          : analysisSelection as AnalysisUiSelection?,
+      selectedTrackFileId: selectedTrackFileId == _mainWindowStateUnset
+          ? this.selectedTrackFileId
+          : selectedTrackFileId as int?,
     );
   }
 }
@@ -237,6 +267,8 @@ class MainWindowStateStore extends ChangeNotifier {
         quickMarkThumbnails: const {},
         quickMarkDraft: null,
         selectedQuickMarkId: null,
+        analysisSelection: null,
+        selectedTrackFileId: null,
         loopRangeEnabled: false,
         nativeLoopRangeSynced: false,
         startupLoopRangeApplied: false,
@@ -287,6 +319,22 @@ class MainWindowStateStore extends ChangeNotifier {
     _set(_value.copyWith(timelineControlsWidth: width));
   }
 
+  void setDeckTab(MainWindowDeckTab tab) {
+    if (_value.deckTab == tab) return;
+    _set(_value.copyWith(deckTab: tab));
+  }
+
+  void setDeckHeight(double height) {
+    final next = height.clamp(kMinDeckHeight, kMaxDeckHeight).toDouble();
+    if (_value.deckHeight == next) return;
+    _set(_value.copyWith(deckHeight: next));
+  }
+
+  void setDeckCollapsed(bool collapsed) {
+    if (_value.deckCollapsed == collapsed) return;
+    _set(_value.copyWith(deckCollapsed: collapsed));
+  }
+
   void setMarksSidebarWidth(double width) {
     final next = width
         .clamp(kMinMarksSidebarWidth, kMaxMarksSidebarWidth)
@@ -315,6 +363,18 @@ class MainWindowStateStore extends ChangeNotifier {
         isPlaying: playing,
         presentedFrameAnchors:
             presentedFrameAnchors ?? _value.presentedFrameAnchors,
+      ),
+    );
+  }
+
+  void setPresentedFrameAnchor(QuickMarkAnchor anchor) {
+    if (_value.presentedFrameAnchors[anchor.fileId] == anchor) return;
+    _set(
+      _value.copyWith(
+        presentedFrameAnchors: Map.unmodifiable({
+          ..._value.presentedFrameAnchors,
+          anchor.fileId: anchor,
+        }),
       ),
     );
   }
@@ -418,8 +478,55 @@ class MainWindowStateStore extends ChangeNotifier {
   }
 
   void setSelectedQuickMarkId(int? id) {
-    if (_value.selectedQuickMarkId == id) return;
-    _set(_value.copyWith(selectedQuickMarkId: id));
+    if (_value.selectedQuickMarkId == id &&
+        (id == null ||
+            (_value.analysisSelection == null &&
+                _value.selectedTrackFileId == null))) {
+      return;
+    }
+    _set(
+      _value.copyWith(
+        selectedQuickMarkId: id,
+        analysisSelection: id == null ? _value.analysisSelection : null,
+        selectedTrackFileId: id == null ? _value.selectedTrackFileId : null,
+      ),
+    );
+  }
+
+  void setAnalysisSelection(AnalysisUiSelection? selection) {
+    if (_value.analysisSelection?.identity == selection?.identity &&
+        (selection == null ||
+            (_value.selectedQuickMarkId == null &&
+                _value.selectedTrackFileId == null))) {
+      return;
+    }
+    _set(
+      _value.copyWith(
+        selectedQuickMarkId: selection == null
+            ? _value.selectedQuickMarkId
+            : null,
+        analysisSelection: selection,
+        selectedTrackFileId: selection == null
+            ? _value.selectedTrackFileId
+            : null,
+      ),
+    );
+  }
+
+  void setSelectedTrackFileId(int? fileId) {
+    if (_value.selectedTrackFileId == fileId &&
+        (fileId == null ||
+            (_value.selectedQuickMarkId == null &&
+                _value.analysisSelection == null))) {
+      return;
+    }
+    _set(
+      _value.copyWith(
+        selectedQuickMarkId: fileId == null ? _value.selectedQuickMarkId : null,
+        analysisSelection: fileId == null ? _value.analysisSelection : null,
+        selectedTrackFileId: fileId,
+      ),
+    );
   }
 }
 

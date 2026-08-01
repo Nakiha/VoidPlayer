@@ -4,15 +4,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/analysis/analysis_cache.dart';
+import 'package:void_player/analysis/analysis_ffi.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/analysis/analysis_overlay.dart';
+import 'package:void_player/analysis/analysis_quality_service.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
+import 'package:void_player/analysis/nalu_types.dart';
+import 'package:void_player/analysis/ui/analysis_ui_selection.dart';
+import 'package:void_player/analysis/ui/page/analysis_page_view.dart';
+import 'package:void_player/analysis/ui/testing/analysis_test_host.dart';
+import 'package:void_player/analysis/ui/workspace/analysis_workspace_models.dart';
+import 'package:void_player/analysis/ui/workspace/analysis_workspace_page.dart';
 import 'package:void_player/app_log.dart';
 import 'package:void_player/feedback/app_feedback.dart';
 import 'package:void_player/l10n/app_localizations.dart';
+import 'package:void_player/main_window/main_window_analysis_dock.dart';
+import 'package:void_player/main_window/main_window_deck.dart';
+import 'package:void_player/main_window/main_window_inspector.dart';
+import 'package:void_player/main_window/main_window_list_sidebar.dart';
 import 'package:void_player/main_window/main_window_media_sections.dart';
 import 'package:void_player/main_window/main_window_overlays.dart';
+import 'package:void_player/main_window/main_window_quality.dart';
 import 'package:void_player/main_window/main_window_scaffold.dart';
+import 'package:void_player/main_window/main_window_selection.dart';
 import 'package:void_player/main_window/main_window_state.dart';
 import 'package:void_player/main_window/main_window_view_handles.dart';
 import 'package:void_player/main_window/main_window_view_model.dart';
@@ -25,7 +39,11 @@ import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/viewport/display_geometry.dart';
 import 'package:void_player/viewport/viewport_display_state.dart';
 import 'package:void_player/widgets/analysis_overlay_controls.dart';
+import 'package:void_player/widgets/app_menu_combo.dart';
+import 'package:void_player/widgets/loop_range_bar.dart';
 import 'package:void_player/widgets/quick_mark_sidebar.dart';
+import 'package:void_player/widgets/segmented_widget.dart';
+import 'package:void_player/widgets/timeline_area.dart';
 import 'package:void_player/widgets/viewport_panel.dart';
 
 void main() {
@@ -72,6 +90,7 @@ void main() {
     (tester) async {
       final feedback = AppFeedbackController();
       addTearDown(feedback.dispose);
+      final handles = _handles();
       final mediaTrack = const TrackEntry(
         TrackInfo(
           fileId: 1,
@@ -93,7 +112,7 @@ void main() {
                 analysisOverlayControlsVisible: true,
                 tracks: [mediaTrack],
               ),
-              handles: _handles(),
+              handles: handles,
               actions: _noop,
             ),
           ),
@@ -101,15 +120,696 @@ void main() {
       );
 
       final viewportRect = tester.getRect(find.byType(ViewportPanel));
+      final chromeRect = tester.getRect(find.byType(PinnedPlaybackChrome));
+      final deckRect = tester.getRect(find.byType(MainWindowDeck));
       final stripRect = tester.getRect(find.byKey(analysisOverlayStripKey));
-      final sidebarRect = tester.getRect(find.byType(QuickMarkSidebar));
+      final sidebarRect = tester.getRect(find.byKey(mainWindowListSidebarKey));
 
       expect(stripRect.top, greaterThanOrEqualTo(viewportRect.bottom));
-      expect(stripRect.right, lessThanOrEqualTo(sidebarRect.left));
+      expect(chromeRect.top, greaterThanOrEqualTo(viewportRect.bottom));
+      expect(deckRect.top, greaterThanOrEqualTo(chromeRect.bottom));
+      expect(sidebarRect.right, lessThanOrEqualTo(stripRect.left));
       expect(sidebarRect.top, lessThanOrEqualTo(viewportRect.top));
       expect(sidebarRect.bottom, greaterThanOrEqualTo(stripRect.bottom));
+      expect(find.byKey(handles.analysisOverlayButtonKey), findsOneWidget);
+      expect(find.byKey(handles.controlsBarKey), findsOneWidget);
+      expect(find.byKey(handles.timelineSliderKey), findsOneWidget);
+      expect(find.byKey(handles.loopRangeBarKey), findsOneWidget);
+      expect(find.text('Timeline'), findsNothing);
+      expect(find.text('Analysis'), findsNothing);
     },
   );
+
+  testWidgets(
+    'analysis deck replaces the compact timeline and preserves playback',
+    (tester) async {
+      final feedback = AppFeedbackController();
+      addTearDown(feedback.dispose);
+      const mediaTrack = TrackEntry(
+        TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: 'track.mp4',
+          width: 1920,
+          height: 1080,
+        ),
+      );
+      final handles = _handles();
+
+      Widget build(
+        MainWindowDeckTab tab, {
+        double deckHeight = kDefaultDeckHeight,
+      }) => _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              tracks: const [mediaTrack],
+              deckTab: tab,
+              deckHeight: deckHeight,
+            ),
+            handles: handles,
+            actions: _noop,
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(build(MainWindowDeckTab.timeline));
+      final timelineViewport = tester.getRect(find.byType(ViewportPanel));
+      final timelineChrome = tester.getRect(find.byType(PinnedPlaybackChrome));
+      final timelineDeck = tester.getRect(find.byType(MainWindowDeck));
+      expect(find.byType(AnalysisWorkspacePage), findsNothing);
+
+      await tester.pumpWidget(build(MainWindowDeckTab.analysis));
+      await tester.pump();
+      final analysisViewport = tester.getRect(find.byType(ViewportPanel));
+      final analysisChrome = tester.getRect(find.byType(PinnedPlaybackChrome));
+      final analysisDeck = tester.getRect(find.byType(MainWindowDeck));
+      final chartShelf = tester.getRect(
+        find.byKey(mainWindowAnalysisChartShelfKey),
+      );
+      expect(timelineDeck.height, timelineTrackRowHeight * 2);
+      expect(analysisDeck.height, kDefaultDeckHeight);
+      expect(analysisViewport.height, lessThan(timelineViewport.height));
+      expect(analysisViewport.width, timelineViewport.width);
+      expect(analysisChrome.height, timelineChrome.height);
+      expect(analysisChrome.width, timelineChrome.width);
+      expect(chartShelf.width, analysisDeck.width);
+      expect(find.byType(AnalysisWorkspacePage), findsOneWidget);
+      expect(find.byKey(mainWindowAnalysisChartShelfKey), findsOneWidget);
+      expect(find.byKey(mainWindowAnalysisNaluSidebarKey), findsNothing);
+      expect(find.byType(LoopRangeBar), findsNothing);
+      expect(find.byType(TimelineArea), findsNothing);
+
+      await tester.pumpWidget(
+        build(MainWindowDeckTab.analysis, deckHeight: 320),
+      );
+      await tester.pump();
+      expect(tester.getSize(find.byType(MainWindowDeck)).height, 320);
+    },
+  );
+
+  testWidgets(
+    'analysis workspace exposes tool tabs and closes back to timeline',
+    (tester) async {
+      final feedback = AppFeedbackController();
+      addTearDown(feedback.dispose);
+      final selected = <MainWindowDeckTab>[];
+      const mediaTrack = TrackEntry(
+        TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: 'track.mp4',
+          width: 1920,
+          height: 1080,
+        ),
+      );
+
+      await tester.pumpWidget(
+        _localized(
+          AppFeedbackScope(
+            controller: feedback,
+            child: MainWindowScaffold(
+              model: _model(
+                settingsVisible: false,
+                tracks: const [mediaTrack],
+                deckTab: MainWindowDeckTab.analysis,
+              ),
+              handles: _handles(),
+              actions: _actionsWithDeck(onTabChanged: selected.add),
+            ),
+          ),
+        ),
+      );
+
+      final analysisTabs = tester.widget<SegmentedButton<int>>(
+        find
+            .ancestor(
+              of: find.byKey(const ValueKey('main-window-deck-tab-analysis')),
+              matching: find.byType(SegmentedButton<int>),
+            )
+            .first,
+      );
+      expect(analysisTabs.selected, {0});
+      expect(analysisTabs.onSelectionChanged, isNotNull);
+
+      await tester.tap(
+        find.byKey(const ValueKey('main-window-deck-tab-analysis')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('main-window-deck-tab-quality')),
+      );
+      await tester.tap(find.byKey(mainWindowDeckCollapseButtonKey));
+      expect(selected, [MainWindowDeckTab.quality, MainWindowDeckTab.timeline]);
+      expect(
+        find.byKey(const ValueKey('main-window-deck-tab-timeline')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('analysis sidebar switches the focused track', (tester) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+    const tracks = [
+      TrackEntry(
+        TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: 'first.mp4',
+          width: 1920,
+          height: 1080,
+        ),
+      ),
+      TrackEntry(
+        TrackInfo(
+          fileId: 2,
+          slot: 1,
+          path: 'second.mp4',
+          width: 1280,
+          height: 720,
+        ),
+      ),
+    ];
+    const entries = [
+      AnalysisWorkspaceEntry(
+        fileId: 1,
+        path: 'first.mp4',
+        fileName: 'first.mp4',
+        hash: null,
+        generationStatus: null,
+      ),
+      AnalysisWorkspaceEntry(
+        fileId: 2,
+        path: 'second.mp4',
+        fileName: 'second.mp4',
+        hash: null,
+        generationStatus: null,
+      ),
+    ];
+
+    await tester.pumpWidget(
+      _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              tracks: tracks,
+              analysisEntries: entries,
+              deckTab: MainWindowDeckTab.analysis,
+              marksSidebarVisible: true,
+            ),
+            handles: _handles(),
+            actions: _noop,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final selector = find.byKey(mainWindowAnalysisTrackSelectorKey);
+    expect(find.byKey(mainWindowListNaluTabKey), findsOneWidget);
+    expect(find.byKey(mainWindowAnalysisNaluSidebarKey), findsOneWidget);
+    expect(selector, findsOneWidget);
+    expect(find.text('1. first.mp4'), findsWidgets);
+
+    await tester.tap(selector);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2. second.mp4').last);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<AppMenuCombo<int>>(selector).value, 1);
+    expect(find.text('2. second.mp4'), findsWidgets);
+  });
+
+  testWidgets('top-level split mode drives the analysis deck split', (
+    tester,
+  ) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+    const tracks = [
+      TrackEntry(
+        TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: 'first.mp4',
+          width: 1920,
+          height: 1080,
+        ),
+      ),
+      TrackEntry(
+        TrackInfo(
+          fileId: 2,
+          slot: 1,
+          path: 'second.mp4',
+          width: 1280,
+          height: 720,
+        ),
+      ),
+      TrackEntry(
+        TrackInfo(
+          fileId: 3,
+          slot: 2,
+          path: 'third.mp4',
+          width: 640,
+          height: 360,
+        ),
+      ),
+    ];
+    const entries = [
+      AnalysisWorkspaceEntry(
+        fileId: 1,
+        path: 'first.mp4',
+        fileName: 'first.mp4',
+        hash: null,
+        generationStatus: null,
+      ),
+      AnalysisWorkspaceEntry(
+        fileId: 2,
+        path: 'second.mp4',
+        fileName: 'second.mp4',
+        hash: null,
+        generationStatus: null,
+      ),
+      AnalysisWorkspaceEntry(
+        fileId: 3,
+        path: 'third.mp4',
+        fileName: 'third.mp4',
+        hash: null,
+        generationStatus: null,
+      ),
+    ];
+
+    await tester.pumpWidget(
+      _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              tracks: tracks,
+              analysisEntries: entries,
+              deckTab: MainWindowDeckTab.analysis,
+              marksSidebarVisible: true,
+              viewMode: 1,
+            ),
+            handles: _handles(),
+            actions: _noop,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final viewModeSelector = find.byType(ViewModeSelector);
+    expect(viewModeSelector, findsOneWidget);
+    expect(tester.widget<ViewModeSelector>(viewModeSelector).currentMode, 1);
+    expect(find.byKey(mainWindowAnalysisHeaderTrackSelectorKey), findsNothing);
+
+    final firstCell = find.byKey(analysisWorkspaceSplitCellKey(1));
+    final secondCell = find.byKey(analysisWorkspaceSplitCellKey(2));
+    expect(firstCell, findsOneWidget);
+    expect(secondCell, findsOneWidget);
+    expect(find.byKey(analysisWorkspaceSplitCellKey(3)), findsNothing);
+    expect(find.byKey(analysisWorkspaceSplitDividerKey), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(analysisWorkspaceFocusedSplitCellKey),
+        matching: firstCell,
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(secondCell);
+    await tester.pump();
+    await tester.pump();
+
+    expect(firstCell, findsOneWidget);
+    expect(secondCell, findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(analysisWorkspaceFocusedSplitCellKey),
+        matching: secondCell,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<AppMenuCombo<int>>(
+            find.byKey(mainWindowAnalysisTrackSelectorKey),
+          )
+          .value,
+      1,
+    );
+  });
+
+  testWidgets('left sidebar follows analysis context and restores its tab', (
+    tester,
+  ) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+    const track = TrackEntry(
+      TrackInfo(
+        fileId: 1,
+        slot: 0,
+        path: 'track.mp4',
+        width: 1920,
+        height: 1080,
+      ),
+    );
+    const entry = AnalysisWorkspaceEntry(
+      fileId: 1,
+      path: 'track.mp4',
+      fileName: 'track.mp4',
+      hash: null,
+      generationStatus: null,
+    );
+
+    Widget build(MainWindowDeckTab tab) => _localized(
+      AppFeedbackScope(
+        controller: feedback,
+        child: MainWindowScaffold(
+          model: _model(
+            settingsVisible: false,
+            tracks: const [track],
+            analysisEntries: const [entry],
+            deckTab: tab,
+            marksSidebarVisible: true,
+          ),
+          handles: _handles(),
+          actions: _noop,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(build(MainWindowDeckTab.timeline));
+    await tester.tap(find.byKey(mainWindowListTracksTabKey));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('main-window-track-row-1')),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(build(MainWindowDeckTab.analysis));
+    await tester.pump();
+    expect(find.byKey(mainWindowAnalysisNaluSidebarKey), findsOneWidget);
+    expect(find.byKey(mainWindowAnalysisTrackSelectorKey), findsOneWidget);
+    expect(find.byKey(const ValueKey('main-window-track-row-1')), findsNothing);
+
+    await tester.pumpWidget(build(MainWindowDeckTab.timeline));
+    await tester.pump();
+    expect(find.byKey(mainWindowAnalysisNaluSidebarKey), findsNothing);
+    expect(
+      find.byKey(const ValueKey('main-window-track-row-1')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+    'quality deck analyzes proxies, seeks samples, and requests metric marks',
+    (tester) async {
+      final feedback = AppFeedbackController();
+      addTearDown(feedback.dispose);
+      final seeks = <(int, int)>[];
+      final markRequests = <MainWindowQualityMarkRequest>[];
+      final qualityDataSource = _FakeQualityDataSource();
+      const mediaTracks = [
+        TrackEntry(
+          TrackInfo(
+            fileId: 7,
+            slot: 0,
+            path: 'quality.mp4',
+            width: 1920,
+            height: 1080,
+          ),
+        ),
+        TrackEntry(
+          TrackInfo(
+            fileId: 8,
+            slot: 1,
+            path: 'quality-second.mp4',
+            width: 1280,
+            height: 720,
+          ),
+        ),
+      ];
+      const analysisEntries = [
+        AnalysisWorkspaceEntry(
+          fileId: 7,
+          path: 'quality.mp4',
+          fileName: 'quality.mp4',
+          hash: null,
+          generationStatus: null,
+        ),
+        AnalysisWorkspaceEntry(
+          fileId: 8,
+          path: 'quality-second.mp4',
+          fileName: 'quality-second.mp4',
+          hash: null,
+          generationStatus: null,
+        ),
+      ];
+
+      Widget build(MainWindowDeckTab deckTab) => _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              tracks: mediaTracks,
+              analysisEntries: analysisEntries,
+              deckTab: deckTab,
+              qualityDataSource: qualityDataSource,
+            ),
+            handles: _handles(),
+            actions: _actionsWithDeck(
+              onQualitySeekRequested: (fileId, ptsUs) {
+                seeks.add((fileId, ptsUs));
+              },
+              onQualityMarksRequested: (request) async {
+                markRequests.add(request);
+                return 1;
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(build(MainWindowDeckTab.quality));
+
+      expect(find.text('Quality'), findsOneWidget);
+      expect(find.textContaining('Experimental proxies'), findsOneWidget);
+      expect(find.byKey(mainWindowAnalysisNaluSidebarKey), findsNothing);
+      await tester.pump();
+      final qualitySelector = find.byKey(
+        mainWindowAnalysisHeaderTrackSelectorKey,
+      );
+      expect(qualitySelector, findsOneWidget);
+      expect(tester.widget<AppMenuCombo<int>>(qualitySelector).value, 0);
+      expect(find.byKey(mainWindowQualityCreateMarksButtonKey), findsNothing);
+      final analyzeControlSize = tester.getSize(
+        find.byKey(mainWindowQualityAnalyzeButtonKey),
+      );
+      expect(analyzeControlSize.width, lessThanOrEqualTo(32));
+      expect(analyzeControlSize.height, lessThanOrEqualTo(32));
+
+      await tester.tap(qualitySelector);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('2. quality-second.mp4').last);
+      await tester.pumpAndSettle();
+
+      final updatedQualitySelector = find.byKey(
+        mainWindowAnalysisHeaderTrackSelectorKey,
+      );
+      expect(updatedQualitySelector, findsOneWidget);
+      expect(tester.widget<AppMenuCombo<int>>(updatedQualitySelector).value, 1);
+
+      await tester.tap(find.byKey(mainWindowQualityAnalyzeButtonKey));
+      await tester.pump();
+
+      expect(find.byKey(mainWindowQualityChartKey), findsOneWidget);
+      expect(find.textContaining('3 samples'), findsOneWidget);
+      expect(find.byKey(mainWindowQualityCreateMarksButtonKey), findsOneWidget);
+      final createMarksControlSize = tester.getSize(
+        find.byKey(mainWindowQualityCreateMarksButtonKey),
+      );
+      expect(createMarksControlSize.width, lessThanOrEqualTo(32));
+      expect(createMarksControlSize.height, lessThanOrEqualTo(32));
+      expect(qualityDataSource.analyzeCalls, 1);
+
+      final blockingLegend = find.byKey(
+        const ValueKey('main-window-quality-metric-blockiness'),
+      );
+      final toolbarRect = tester.getRect(
+        find.byKey(mainWindowQualityToolbarKey),
+      );
+      final metricsRect = tester.getRect(
+        find.byKey(mainWindowQualityMetricsKey),
+      );
+      expect(toolbarRect.height, 32);
+      expect(
+        (metricsRect.center.dy - toolbarRect.center.dy).abs(),
+        lessThan(1),
+      );
+      expect(
+        tester.widget<Semantics>(blockingLegend).properties.toggled,
+        isTrue,
+      );
+      final blockingRect = tester.getRect(blockingLegend);
+      await tester.tapAt(
+        Offset(blockingRect.left + 10, blockingRect.center.dy),
+      );
+      await tester.pump();
+      expect(
+        tester.widget<Semantics>(blockingLegend).properties.toggled,
+        isFalse,
+      );
+      await tester.tapAt(
+        Offset(blockingRect.left + 40, blockingRect.center.dy),
+      );
+      await tester.pump();
+      expect(
+        tester.widget<Semantics>(blockingLegend).properties.toggled,
+        isTrue,
+      );
+
+      await tester.drag(
+        find.byKey(mainWindowQualityThresholdDragKey),
+        const Offset(0, 24),
+      );
+      await tester.pump();
+
+      final chartRect = tester.getRect(find.byKey(mainWindowQualityChartKey));
+      await tester.tapAt(Offset(chartRect.right - 14, chartRect.center.dy));
+      await tester.pump();
+      expect(seeks, [(8, 2000000)]);
+
+      await tester.tap(find.byKey(mainWindowQualityCreateMarksButtonKey));
+      await tester.pump();
+      expect(markRequests, hasLength(1));
+      expect(markRequests.single.fileId, 8);
+      expect(markRequests.single.metric, AnalysisQualityMetric.blockiness);
+      expect(markRequests.single.threshold, lessThan(0.3));
+
+      await tester.pumpWidget(build(MainWindowDeckTab.analysis));
+      await tester.pump();
+      expect(find.byKey(mainWindowQualityChartKey), findsNothing);
+
+      await tester.pumpWidget(build(MainWindowDeckTab.quality));
+      await tester.pump();
+      expect(find.byKey(mainWindowQualityChartKey), findsOneWidget);
+      expect(find.textContaining('3 samples'), findsOneWidget);
+      expect(qualityDataSource.analyzeCalls, 1);
+    },
+  );
+
+  testWidgets('analysis shelf and close expose bounded local actions', (
+    tester,
+  ) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+    const mediaTrack = TrackEntry(
+      TrackInfo(
+        fileId: 1,
+        slot: 0,
+        path: 'track.mp4',
+        width: 1920,
+        height: 1080,
+      ),
+    );
+    final tabs = <MainWindowDeckTab>[];
+    final heights = <double>[];
+
+    await tester.pumpWidget(
+      _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              tracks: const [mediaTrack],
+              deckTab: MainWindowDeckTab.analysis,
+            ),
+            handles: _handles(),
+            actions: _actionsWithDeck(
+              onTabChanged: tabs.add,
+              onHeightChanged: heights.add,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(mainWindowAnalysisChartShelfKey), findsOneWidget);
+    expect(find.byKey(mainWindowDeckResizeHandleKey), findsOneWidget);
+    final initialHeight = tester.getSize(find.byType(MainWindowDeck)).height;
+    expect(initialHeight, kDefaultDeckHeight);
+
+    await tester.drag(
+      find.byKey(mainWindowDeckResizeHandleKey),
+      const Offset(0, -80),
+    );
+    await tester.pump();
+    expect(
+      tester.getSize(find.byType(MainWindowDeck)).height,
+      closeTo(initialHeight + 80, 0.1),
+    );
+    expect(heights, isNotEmpty);
+
+    await tester.drag(
+      find.byKey(mainWindowDeckResizeHandleKey),
+      const Offset(0, 1000),
+    );
+    await tester.pump();
+    expect(tester.getSize(find.byType(MainWindowDeck)).height, kMinDeckHeight);
+
+    await tester.tap(find.byKey(mainWindowDeckCollapseButtonKey));
+    expect(tabs, [MainWindowDeckTab.timeline]);
+  });
+
+  testWidgets('timeline height follows track count and caps visible rows', (
+    tester,
+  ) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+
+    TrackEntry track(int fileId) => TrackEntry(
+      TrackInfo(
+        fileId: fileId,
+        slot: fileId - 1,
+        path: 'track-$fileId.mp4',
+        width: 1920,
+        height: 1080,
+      ),
+    );
+
+    Widget build(List<TrackEntry> tracks) => _localized(
+      AppFeedbackScope(
+        controller: feedback,
+        child: MainWindowScaffold(
+          model: _model(settingsVisible: false, tracks: tracks),
+          handles: _handles(),
+          actions: _noop,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(build([track(1)]));
+    expect(
+      tester.getSize(find.byType(MainWindowDeck)).height,
+      timelineTrackRowHeight * 2,
+    );
+
+    await tester.pumpWidget(
+      build([for (var fileId = 1; fileId <= 6; fileId++) track(fileId)]),
+    );
+    expect(
+      tester.getSize(find.byType(MainWindowDeck)).height,
+      timelineTrackRowHeight * 5,
+    );
+  });
 
   testWidgets('marks sidebar renders with list header actions', (tester) async {
     final feedback = AppFeedbackController();
@@ -133,6 +833,149 @@ void main() {
     expect(find.byTooltip('Select all marks'), findsOneWidget);
     expect(find.byTooltip('Cancel mark selection'), findsOneWidget);
     expect(find.byTooltip('Delete selected marks'), findsOneWidget);
+    final sidebarRect = tester.getRect(find.byKey(mainWindowListSidebarKey));
+    final viewportRect = tester.getRect(find.byType(ViewportPanel));
+    expect(sidebarRect.right, lessThanOrEqualTo(viewportRect.left));
+    expect(find.byKey(mainWindowInspectorKey), findsNothing);
+  });
+
+  testWidgets('track list selects a track from the left sidebar', (
+    tester,
+  ) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+    final selected = <int?>[];
+    const track = TrackEntry(
+      TrackInfo(
+        fileId: 17,
+        slot: 0,
+        path: r'C:\media\sample.mp4',
+        width: 1920,
+        height: 1080,
+        codecName: 'h264',
+      ),
+    );
+
+    await tester.pumpWidget(
+      _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              marksSidebarVisible: true,
+              tracks: const [track],
+            ),
+            handles: _handles(),
+            actions: _noopWithListActions(selected.add),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(mainWindowListTracksTabKey));
+    await tester.pump();
+    final row = find.byKey(const ValueKey('main-window-track-row-17'));
+    expect(
+      find.descendant(of: row, matching: find.text('sample.mp4')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: row, matching: find.text('1920 × 1080 · H264')),
+      findsOneWidget,
+    );
+
+    await tester.tap(row);
+    expect(selected, [17]);
+  });
+
+  testWidgets('track selection opens metadata in the right inspector', (
+    tester,
+  ) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+    const track = TrackInfo(
+      fileId: 17,
+      slot: 0,
+      path: r'C:\media\sample.mp4',
+      width: 1920,
+      height: 1080,
+      durationUs: 62500000,
+      bitRate: 4800000,
+      formatName: 'mov,mp4',
+      codecName: 'h264',
+      decoderName: 'd3d11va',
+    );
+
+    await tester.pumpWidget(
+      _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              tracks: const [TrackEntry(track)],
+              selection: const MainWindowTrackSelection(track),
+            ),
+            handles: _handles(),
+            actions: _noop,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(mainWindowInspectorKey), findsOneWidget);
+    expect(find.text('Track properties'), findsOneWidget);
+    expect(find.text('sample.mp4'), findsWidgets);
+    expect(find.text('mov,mp4'), findsOneWidget);
+    expect(find.text('4.80 Mbps'), findsOneWidget);
+    expect(find.byKey(mainWindowListSidebarKey), findsNothing);
+  });
+
+  testWidgets('analysis selection opens the shared right inspector', (
+    tester,
+  ) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+    var closed = false;
+    final selection = AnalysisNaluSelection(
+      fileId: 1,
+      codec: AnalysisCodec.h264,
+      naluIndex: 2,
+      nalu: NaluInfo(
+        offset: 24,
+        size: 16,
+        nalType: 7,
+        temporalId: 0,
+        layerId: 0,
+        flags: 0,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              selection: MainWindowAnalysisSelection(selection),
+            ),
+            handles: _handles(),
+            actions: _noopWithOverlayActions(
+              onCloseInspector: () => closed = true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(mainWindowInspectorKey), findsOneWidget);
+    expect(find.byKey(analysisNaluDetailPanelKey), findsOneWidget);
+    expect(find.byType(QuickMarkSidebar), findsNothing);
+
+    await tester.tap(find.byKey(mainWindowInspectorCloseKey));
+    expect(closed, isTrue);
   });
 
   testWidgets(
@@ -240,7 +1083,7 @@ void main() {
 
       final viewportRect = tester.getRect(find.byType(ViewportPanel));
       final sidebarRect = tester.getRect(find.byType(QuickMarkSidebar));
-      final timelineRect = tester.getRect(find.byType(MediaTimelineSection));
+      final timelineRect = tester.getRect(find.byType(MainWindowDeck));
       final devicePixelRatio = tester.view.devicePixelRatio;
       final reported = rects.last;
 
@@ -248,7 +1091,7 @@ void main() {
       expect(reported.top, (viewportRect.top * devicePixelRatio).round());
       expect(reported.width, (viewportRect.width * devicePixelRatio).round());
       expect(reported.height, (viewportRect.height * devicePixelRatio).round());
-      expect(viewportRect.right, lessThanOrEqualTo(sidebarRect.left));
+      expect(sidebarRect.right, lessThanOrEqualTo(viewportRect.left));
       expect(viewportRect.bottom, lessThanOrEqualTo(timelineRect.top));
     },
   );
@@ -481,10 +1324,10 @@ void main() {
     );
 
     final sidebar = find.byType(QuickMarkSidebar);
-    final splitterX = tester.getTopLeft(sidebar).dx - 4;
+    final splitterX = tester.getTopRight(sidebar).dx + 4;
     final splitterY = tester.getCenter(sidebar).dy;
     final gesture = await tester.startGesture(Offset(splitterX, splitterY));
-    await gesture.moveBy(const Offset(-24, 0));
+    await gesture.moveBy(const Offset(24, 0));
     await gesture.up();
     await tester.pump();
 
@@ -514,16 +1357,23 @@ MainWindowViewModel _model({
   int? textureId,
   ViewportDisplayState viewportState = const ViewportDisplayState.empty(),
   bool nativeCompositorActive = false,
+  int viewMode = 0,
   bool marksSidebarVisible = false,
   bool analysisOverlayControlsVisible = false,
   List<TrackEntry> tracks = const [],
   List<QuickMark> quickMarks = const [],
   int? selectedQuickMarkId,
   Map<int, TrackInfo> tracksByFileId = const {},
+  MainWindowDeckTab deckTab = MainWindowDeckTab.timeline,
+  double deckHeight = kDefaultDeckHeight,
+  bool deckCollapsed = false,
+  MainWindowSelection? selection,
+  AnalysisQualityDataSource? qualityDataSource,
+  List<AnalysisWorkspaceEntry> analysisEntries = const [],
 }) => MainWindowViewModel(
   session: MainWindowSessionVm.fromSession(const PlaybackSession.normal()),
   viewport: MainWindowViewportVm(
-    viewMode: 0,
+    viewMode: viewMode,
     viewModeEnabled: true,
     textureId: textureId,
     nativeCompositorActive: nativeCompositorActive,
@@ -561,8 +1411,6 @@ MainWindowViewModel _model({
         PlatformCapabilities.windows.sshRemoteMediaPlaybackCapability,
     nativeFilePickerCapability:
         PlatformCapabilities.windows.nativeFilePickerCapability,
-    externalAnalysisWindowsCapability:
-        PlatformCapabilities.windows.externalAnalysisWindowsCapability,
     analysisOverlaysCapability:
         PlatformCapabilities.windows.analysisOverlaysCapability,
     tracks: tracks,
@@ -584,6 +1432,17 @@ MainWindowViewModel _model({
     loopEndUs: 0,
     controlsWidth: 280,
   ),
+  deck: MainWindowDeckVm(
+    tab: deckTab,
+    height: deckHeight,
+    collapsed: deckCollapsed,
+    analysisEntries: ValueNotifier(analysisEntries),
+    analysisTestHosts: AnalysisTestHostRegistry(),
+    qualityDataSource:
+        qualityDataSource ?? const NativeAnalysisQualityService(),
+  ),
+  selection:
+      selection ?? _selectionForQuickMark(selectedQuickMarkId, quickMarks),
   overlays: MainWindowOverlayVm(
     dragging: false,
     mediaInfoVisible: false,
@@ -596,6 +1455,19 @@ MainWindowViewModel _model({
     fullScreenControlsVisible: false,
   ),
 );
+
+MainWindowSelection _selectionForQuickMark(
+  int? selectedQuickMarkId,
+  List<QuickMark> quickMarks,
+) {
+  if (selectedQuickMarkId == null) return const MainWindowNoSelection();
+  for (final mark in quickMarks) {
+    if (mark.id == selectedQuickMarkId) {
+      return MainWindowQuickMarkSelection(mark);
+    }
+  }
+  return const MainWindowNoSelection();
+}
 
 QuickMark _quickMark(int id, Rect rect, {int ptsUs = 0}) {
   return QuickMark(
@@ -665,6 +1537,11 @@ final _noop = MainWindowViewActions(
     onToggleTrackAudio: (_) {},
     onControlsWidthChanged: (_) {},
   ),
+  deck: MainWindowDeckActions(
+    onTabChanged: (_) {},
+    onHeightChanged: (_) {},
+    onCollapsedChanged: (_) {},
+  ),
   analysisOverlay: MainWindowAnalysisOverlayActions(
     onTypeChanged: (_) {},
     onOpacityChanged: (_) {},
@@ -683,6 +1560,145 @@ final _noop = MainWindowViewActions(
     onFullScreenControlsHoverChanged: (_) {},
   ),
 );
+
+MainWindowViewActions _actionsWithDeck({
+  ValueChanged<MainWindowDeckTab>? onTabChanged,
+  ValueChanged<double>? onHeightChanged,
+  ValueChanged<bool>? onCollapsedChanged,
+  void Function(int fileId, int trackPtsUs)? onQualitySeekRequested,
+  Future<int> Function(MainWindowQualityMarkRequest request)?
+  onQualityMarksRequested,
+}) {
+  return MainWindowViewActions(
+    drop: _noop.drop,
+    toolbar: _noop.toolbar,
+    viewport: _noop.viewport,
+    marks: _noop.marks,
+    mediaTimeline: _noop.mediaTimeline,
+    deck: MainWindowDeckActions(
+      onTabChanged: onTabChanged ?? _noop.deck.onTabChanged,
+      onHeightChanged: onHeightChanged ?? _noop.deck.onHeightChanged,
+      onCollapsedChanged: onCollapsedChanged ?? _noop.deck.onCollapsedChanged,
+      onQualitySeekRequested: onQualitySeekRequested,
+      onQualityMarksRequested: onQualityMarksRequested,
+    ),
+    analysisOverlay: _noop.analysisOverlay,
+    overlays: _noop.overlays,
+  );
+}
+
+class _FakeQualityDataSource
+    implements AnalysisQualityDataSource, AnalysisQualityFrameDataSource {
+  int analyzeCalls = 0;
+
+  @override
+  Future<AnalysisQualityReport> analyze(AnalysisQualityRequest request) async {
+    analyzeCalls++;
+    return const AnalysisQualityReport(
+      schemaVersion: 4,
+      metricVersion: '',
+      videoWidth: 1920,
+      videoHeight: 1080,
+      bitDepth: 8,
+      sampleIntervalUs: 1000000,
+      maxSamples: 600,
+      truncated: false,
+      unsupportedPixelFrames: 0,
+      distributions: {
+        AnalysisQualityMetric.blockiness: AnalysisQualityDistribution(
+          count: 3,
+          mean: 0.2,
+          p95: 0.3,
+          maximum: 0.4,
+        ),
+        AnalysisQualityMetric.banding: AnalysisQualityDistribution(
+          count: 3,
+          mean: 0.1,
+          p95: 0.2,
+          maximum: 0.25,
+        ),
+        AnalysisQualityMetric.blur: AnalysisQualityDistribution(
+          count: 3,
+          mean: 0.1,
+          p95: 0.2,
+          maximum: 0.25,
+        ),
+        AnalysisQualityMetric.noise: AnalysisQualityDistribution(
+          count: 3,
+          mean: 0.1,
+          p95: 0.2,
+          maximum: 0.25,
+        ),
+        AnalysisQualityMetric.flicker: AnalysisQualityDistribution(
+          count: 2,
+          mean: 0.1,
+          p95: 0.2,
+          maximum: 0.25,
+        ),
+      },
+      samples: [
+        AnalysisQualitySample(
+          sampleIndex: 0,
+          decodedFrameIndex: 0,
+          ptsUs: 0,
+          blockiness: 0.1,
+          banding: 0.1,
+          blur: 0.1,
+          noise: 0.1,
+          flicker: null,
+          averageQp: null,
+        ),
+        AnalysisQualitySample(
+          sampleIndex: 1,
+          decodedFrameIndex: 30,
+          ptsUs: 1000000,
+          blockiness: 0.2,
+          banding: 0.1,
+          blur: 0.1,
+          noise: 0.1,
+          flicker: 0.1,
+          averageQp: null,
+        ),
+        AnalysisQualitySample(
+          sampleIndex: 2,
+          decodedFrameIndex: 60,
+          ptsUs: 2000000,
+          blockiness: 0.4,
+          banding: 0.2,
+          blur: 0.2,
+          noise: 0.2,
+          flicker: 0.2,
+          averageQp: null,
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<Map<int, FrameInfo>> readCachedFrames(
+    String videoPath,
+    List<AnalysisQualitySample> samples,
+  ) async {
+    return {
+      for (final sample in samples)
+        sample.decodedFrameIndex: FrameInfo(
+          poc: sample.decodedFrameIndex,
+          temporalId: sample.sampleIndex % 2,
+          sliceType: sample.sampleIndex == 0 ? 2 : 1,
+          nalType: 1,
+          avgQp: 22 + sample.sampleIndex,
+          numRefL0: 0,
+          numRefL1: 0,
+          refPocsL0: const [],
+          refPocsL1: const [],
+          pts: sample.ptsUs,
+          dts: sample.ptsUs,
+          packetSize: 1000 + sample.sampleIndex * 250,
+          keyframe: sample.sampleIndex == 0 ? 1 : 0,
+        ),
+    };
+  }
+}
 
 MainWindowViewActions _actionsWithViewportRect(
   void Function(
@@ -717,6 +1733,7 @@ MainWindowViewActions _actionsWithViewportRect(
     ),
     marks: _noop.marks,
     mediaTimeline: _noop.mediaTimeline,
+    deck: _noop.deck,
     analysisOverlay: _noop.analysisOverlay,
     overlays: _noop.overlays,
   );
@@ -740,6 +1757,21 @@ MainWindowViewActions _noopWithMarkActions({
       onFocusVisibleMark: _noop.marks.onFocusVisibleMark,
     ),
     mediaTimeline: _noop.mediaTimeline,
+    deck: _noop.deck,
+    analysisOverlay: _noop.analysisOverlay,
+    overlays: _noop.overlays,
+  );
+}
+
+MainWindowViewActions _noopWithListActions(ValueChanged<int?> onTrackSelected) {
+  return MainWindowViewActions(
+    drop: _noop.drop,
+    toolbar: _noop.toolbar,
+    viewport: _noop.viewport,
+    marks: _noop.marks,
+    lists: MainWindowListActions(onTrackSelected: onTrackSelected),
+    mediaTimeline: _noop.mediaTimeline,
+    deck: _noop.deck,
     analysisOverlay: _noop.analysisOverlay,
     overlays: _noop.overlays,
   );
@@ -747,6 +1779,7 @@ MainWindowViewActions _noopWithMarkActions({
 
 MainWindowViewActions _noopWithOverlayActions({
   ValueChanged<double>? onMarksSidebarWidthChanged,
+  VoidCallback? onCloseInspector,
 }) {
   return MainWindowViewActions(
     drop: _noop.drop,
@@ -754,12 +1787,14 @@ MainWindowViewActions _noopWithOverlayActions({
     viewport: _noop.viewport,
     marks: _noop.marks,
     mediaTimeline: _noop.mediaTimeline,
+    deck: _noop.deck,
     analysisOverlay: _noop.analysisOverlay,
     overlays: MainWindowOverlayActions(
       onCloseMediaInfo: _noop.overlays.onCloseMediaInfo,
       onCloseProfiler: _noop.overlays.onCloseProfiler,
       onCloseSettings: _noop.overlays.onCloseSettings,
       onCloseMarksSidebar: _noop.overlays.onCloseMarksSidebar,
+      onCloseInspector: onCloseInspector,
       onMarksSidebarWidthChanged:
           onMarksSidebarWidthChanged ??
           _noop.overlays.onMarksSidebarWidthChanged,

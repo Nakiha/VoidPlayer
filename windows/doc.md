@@ -24,6 +24,8 @@ runner 使用 DComp 合成 shared renderer 输出的 D3D11 视频 target 与 Flu
   `DISPLAYCONFIG_SDR_WHITE_LEVEL` 的 Auto SDR/scRGB policy。
 - runner message pump 到 `ActionRegistry` 的独立应用快捷键 channel；原始按键仍进入
   Flutter 文本输入，Windows `HardwareKeyboard` 对已接管快捷键只去重、不重复执行。
+- Windows runner 构建同时生成并安装 `VoidPlayerCli.exe` 到 GUI 可执行文件旁；主窗口质量页
+  通过版本化 JSONL 协议读取进度、逐样本分数、事件候选和空间区域，并支持终止当前分析。
 
 runner 直接编译并链接 shared native renderer、FFmpeg、D3D11 与 DComp。构建强制要求
 patched Flutter local engine；普通 Flutter SDK

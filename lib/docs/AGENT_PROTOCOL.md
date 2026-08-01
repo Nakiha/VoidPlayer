@@ -1,7 +1,7 @@
 # Agent Protocol
 
 > 常驻 agent 控制通道。让 agent 在会话进行中读取人的裁决、查询会话状态、做基础播放控制,
-> 是 HITL 评审闭环里"裁决回流给 agent"的通路。传输层沿用 analysis IPC 的模式。
+> 是 HITL 评审闭环里"裁决回流给 agent"的通路。传输层使用本机 loopback socket。
 
 ## 启用
 
@@ -22,7 +22,7 @@ agent 启动播放器后轮询此文件,读取端口和 token 连接。窗口关
 
 ## 传输与握手
 
-行分隔 JSON(每行一个对象),与 analysis IPC 相同的 `BoundedLineSplitter` 限长保护。
+行分隔 JSON(每行一个对象),并由 `BoundedLineSplitter` 提供限长保护。
 连接后 5 秒内必须完成握手,否则断开:
 
 ```json

@@ -95,7 +95,7 @@ class MainWindowActionCoordinator {
       openMediaInfo: showMediaInfoOverlay,
       openStats: showProfilerOverlay,
       openMemory: showProfilerOverlay,
-      runAnalysis: analysisCoordinator.triggerAnalysis,
+      runAnalysis: analysisCoordinator.enterAnalysis,
     )..bind();
   }
 

@@ -53,8 +53,46 @@ TEST_CASE("analysis FFI exposes ABI version and struct sizes",
     REQUIRE(naki_analysis_sizeof_nalu_info_v2() == sizeof(NakiNaluInfoV2));
     REQUIRE(naki_analysis_sizeof_frame_bucket_v2() == sizeof(NakiFrameBucketV2));
     REQUIRE(naki_analysis_sizeof_overlay_state_v2() == sizeof(NakiOverlayStateV2));
+    REQUIRE(naki_analysis_sizeof_quality_summary() == sizeof(NakiQualitySummary));
+    REQUIRE(naki_analysis_sizeof_quality_sample() == sizeof(NakiQualitySample));
     REQUIRE(sizeof(NakiAnalysisSummaryV2) >
             sizeof(NakiAnalysisStructHeader) + sizeof(NakiAnalysisSummary) - 1);
+}
+
+TEST_CASE("analysis FFI exposes sampled quality reports",
+          "[analysis][ffi][quality]") {
+    namespace fs = std::filesystem;
+    const std::string video_path =
+        std::string(VIDEO_TEST_DIR) + "/h264_9s_1920x1080.mp4";
+    REQUIRE(fs::exists(video_path));
+
+    NakiQualityHandle handle =
+        naki_analysis_quality_analyze(video_path.c_str(), 1'000'000, 3);
+    REQUIRE(handle != nullptr);
+
+    NakiQualitySummary summary{};
+    REQUIRE(naki_analysis_quality_get_summary(handle, &summary) == 1);
+    REQUIRE(summary.schema_version == 4);
+    REQUIRE(summary.video_width == 1920);
+    REQUIRE(summary.video_height == 1080);
+    REQUIRE(summary.sample_interval_us == 1'000'000);
+    REQUIRE(summary.max_samples == 3);
+    REQUIRE(summary.sample_count == 3);
+    REQUIRE(summary.truncated == 1);
+
+    NakiQualitySample samples[3]{};
+    REQUIRE(naki_analysis_quality_get_samples(handle, 0, samples, 3) == 3);
+    REQUIRE(samples[0].sample_index == 0);
+    REQUIRE(samples[1].sample_index == 1);
+    REQUIRE(samples[1].pts_us >= samples[0].pts_us);
+    REQUIRE(samples[0].blockiness >= 0.0);
+    REQUIRE(samples[0].blockiness <= 1.0);
+
+    naki_analysis_quality_close(handle);
+    REQUIRE(naki_analysis_quality_get_summary(handle, &summary) == 0);
+    char message[128] = {};
+    REQUIRE(naki_analysis_last_error(message, sizeof(message)) ==
+            NAKI_ANALYSIS_ERR_CLOSED);
 }
 
 TEST_CASE("analysis FFI loads and clears overlay tracks",

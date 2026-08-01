@@ -27,9 +27,8 @@ surface export consumption, and final composition. Playback policy belongs in sh
   headroom.
 - macOS analysis FFI can build and answer basic handle/base-generation calls. The macOS dev/CI
   toolchain can also build `void_ffmpeg_analyzer`, generate VAC2 base + overlay VACHUNK through
-  portable `VoidPlayerCli`, and reopen the produced cache files. Runtime overlay activation through
-  the media header is enabled on macOS; external analysis windows and analysis UI/IPC remain
-  capability-gated.
+  portable `VoidPlayerCli`, and reopen the produced cache files. Runtime inline analysis and overlay
+  activation through the media header use the same in-process cache/FFI path as Windows.
 
 ## Hard Contract
 

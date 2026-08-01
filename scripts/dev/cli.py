@@ -22,13 +22,6 @@ from .flutter_toolchain import (
 )
 
 
-def _require_windows_command(command: str) -> None:
-    if sys.platform == "win32":
-        return
-    print(f"ERROR: dev.py {command} is only supported on Windows.")
-    sys.exit(1)
-
-
 def _cmd_agent(args) -> None:
     from .agent_client import cmd_agent as impl
 
@@ -37,13 +30,6 @@ def _cmd_agent(args) -> None:
 
 def _cmd_agent_smoke(args) -> None:
     from .agent_client import cmd_agent_smoke as impl
-
-    impl(args)
-
-
-def cmd_analysis_resize_stress(args) -> None:
-    _require_windows_command("analysis-resize-stress")
-    from .analysis_resize_stress import cmd_analysis_resize_stress as impl
 
     impl(args)
 
@@ -91,7 +77,6 @@ Examples:
   python dev.py toolchain bootstrap-flutter
   python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
   python dev.py mac-ui-test ui_tests/macos/native_facade_smoke.csv
-  python dev.py analysis-resize-stress
   python dev.py analysis-benchmark --build
   python dev.py analysis-overlay-benchmark --build
 """,
@@ -245,19 +230,6 @@ Examples:
     p_agent_smoke.add_argument("--log-level", type=str, default=None,
                                help="Log level, e.g. 'flutter=DEBUG'")
 
-    p_analysis_resize = sub.add_parser(
-        "analysis-resize-stress",
-        help="Launch standalone analysis and stress-resize its window",
-    )
-    p_analysis_resize.add_argument("--debug", action="store_true", help="Use Debug build")
-    p_analysis_resize.add_argument("--build", action="store_true", help="Build Flutter app before test")
-    p_analysis_resize.add_argument("--hash", type=str, default=None,
-                                   help="Analysis cache hash to open (default: pick a cached entry)")
-    p_analysis_resize.add_argument("--rounds", type=int, default=5,
-                                   help="Number of resize rounds")
-    p_analysis_resize.add_argument("--visible", action="store_true",
-                                   help="Show and focus the analysis window instead of silent mode")
-
     p_analysis_benchmark = sub.add_parser(
         "analysis-benchmark",
         help="Benchmark full-file VAC2 + VACHUNK generation for bundled samples",
@@ -332,7 +304,6 @@ def main() -> None:
         "mac-ui-test": cmd_mac_ui_test,
         "agent": _cmd_agent,
         "agent-smoke": _cmd_agent_smoke,
-        "analysis-resize-stress": cmd_analysis_resize_stress,
         "analysis-benchmark": cmd_analysis_benchmark,
         "analysis-overlay-benchmark": cmd_analysis_overlay_benchmark,
     }[args.command](args)

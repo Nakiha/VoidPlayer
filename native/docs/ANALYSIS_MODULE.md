@@ -153,8 +153,9 @@ parameter side-data/QP 汇总，但输入 open/probe/read/seek/interrupt 通过
 `void_video_decode_core`，不会反向依赖 renderer、Flutter 或平台 presentation。
 当前 CPU reference 明确不使用 `libswscale`。
 
-当前输出 `schemaVersion` 为 `4`，指标算法版本仍为
-`metricVersion: quality-demo-v3`。输出结构升级不改变指标数值，提供：
+当前 CLI 输出 `schemaVersion` 为 `5`，指标算法版本为
+`metricVersion: quality-demo-v5`。schema 与算法版本仍分开演进；当前两者恰好同为 v5。
+算法 v5 在 v4 整帧指标和实验性空间区域基础上提供：
 
 - packet size、frame type 和可用 QP 的分布统计；
 - `blockiness` proxy；
@@ -163,12 +164,22 @@ parameter side-data/QP 汇总，但输入 open/probe/read/seek/interrupt 通过
 - 基于低纹理块、截断高频残差并按 8-bit `sigma / 24` 归一化的 `noise` proxy；
 - 基于连续三帧 tile luma 二阶变化、带切镜过滤的 `flicker` temporal proxy；
 - 抽样帧空间指标时间线，以及全解码帧计算的 flicker 分布。
+- sampled frame 的 `spatialRegions`；当前仅 `banding` 输出基于 16×16 luma tile
+  聚类的候选区域，同时给出归一化矩形、像素矩形、区域分数、检测阈值和 tile 数。
+- 可选的 `quality-tile-v1` 证据流：五项指标使用同一约 64×64、边缘均衡的 decoded
+  luma 网格，逐 tile 输出 `[0, 1]` 局部分数。
 - 每项 CPU 指标的毫秒耗时分布；schema 中保留的 GPU timing 字段在当前
   CPU-only build 中标记为不可用。
 
 这些分数都标记为实验性 `proxy`：`banding` 当前不等同于 CAMBI，
 `blur` 和 `noise` 仍会受画面内容影响，`flicker` 会过滤明显切镜但不能消除所有运动
 和灯光变化干扰。当前没有融合成总质量分。
+`spatialRegions` 是辅助定位证据，不替代整帧分数；弱响应、少于四个相邻 tile 的
+孤立响应不会输出区域。banding region 使用 `banding-tile-cc-v2`：除了至少四个相邻
+tile，还要求横纵各跨至少两个 tile、包围盒填充率至少 0.5，以过滤单 tile 厚细条和
+稀疏连通噪声；每个区域输出 `tileSpan` 与 `fillRatio` 供下游审计。blockiness、blur、
+noise 和 flicker 虽不生成矩形候选，但可通过 tile 证据流提供真实局部分数；GUI 后续可
+自行选择热力图或基于 tile 的区域化呈现，不能把缺失区域伪造成整帧框。
 命令行入口：
 
 ```bash
@@ -177,21 +188,55 @@ VoidPlayerCli score-quality --input input.mp4 --backend cpu --json
 VoidPlayerCli score-quality --input input.mp4 --backend cpu --cpu-mode scalar --json
 VoidPlayerCli score-quality --input input.mp4 --backend cpu --decode-threads 32 --cpu-workers 96 --cpu-in-flight 48 --json
 VoidPlayerCli score-quality --input input.mp4 --sample-interval-ms 500 --max-samples 10 --json
+VoidPlayerCli score-quality --input input.mp4 --metrics banding,flicker --regions summary --json
+VoidPlayerCli score-quality --input input.mp4 --metrics blockiness,blur --regions none --jsonl
+VoidPlayerCli score-quality --input input.mp4 --events candidates --regions full --jsonl
+VoidPlayerCli score-quality --input input.mp4 --events none --jsonl
+VoidPlayerCli score-quality --input input.mp4 --tiles full --events none --jsonl
 VoidPlayerCli score-quality --input input.mp4 --json --summary-only
 VoidPlayerCli score-quality --input input.mp4 --jsonl
 ```
 
+`--metrics` 接受 `all` 或不重复的逗号分隔子集；CPU analyzer 只调度选中的空间指标，
+未选指标在 sample 中为 `null`，对应 distribution/timing 的 `available` 为 `false`。
+`--regions none|summary|full` 分别关闭区域计算、仅保留 report 级汇总、或同时输出逐帧
+矩形；默认 `full`。`--summary-only` 会把有效区域模式从 `full` 降为 `summary`，因此省略
+timeline 时仍保留区域数量、出现帧数、分数、面积和帧覆盖率分布。
+
+`--tiles none|full` 默认 `none`；`full` 仅支持 `--jsonl`，并在每个
+`qualityFrameSample` 后输出同 `sampleIndex` 的 `qualityTileSample`。四项空间 proxy
+在统一 tile 内重新计算；flicker 使用同网格的连续三帧局部亮度二阶变化。首两帧、切镜
+或网格不兼容时 flicker 明确为 `available: false` / `values: null`，不会用零分冒充观测。
+帧级 proxy 仍是权威汇总，不能假定它等于 tile 数组的算术平均。tile 协议和算法分别以
+`quality-tile-v1`、`quality-tile-metrics-v1` 独立版本化，正式 schema 为
+[quality-tile-v1.schema.json](quality-tile-v1.schema.json)。
+
+`--events none|candidates` 控制 JSONL 的 `qualityEvent`，默认 `candidates`。候选策略版本
+为 `quality-candidate-policy-v1`：banding 每个检测区域建立独立候选轨道，保留各自峰值帧
+的真实局部矩形，且只一对一合并时间连续并且区域 IoU 至少 0.10 的样本；同帧多个问题
+不会丢失或合成大框。其余指标使用视频内部的稳健相对异常阈值
+`max(P90, median + 3 * 1.4826 * MAD)`，至少需要五个有效样本。相对候选的 `region` 为
+`null`，下游只能生成时间标记，不能伪造成整帧矩形。所有事件均明确
+`calibrated: false`，不是绝对 pass/fail 判定。空间事件仅在 `--regions full` 下输出。
+正式 schema 为 [quality-event-v1.schema.json](quality-event-v1.schema.json)。
+
 `--json` 输出一个完整 report；`--json --summary-only` 省略 timeline，适合直接交给
 Agent 或存储批量摘要；`--jsonl` 首行输出不含内联 timeline 的 report，后续每行输出一个
-`qualityFrameSample`，适合长视频流式摄取。机器输出失败时返回非零退出码，并在 stdout
-输出 `qualityError` JSON envelope。CLI 的 native diagnostics 固定写入 stderr，因此
-stdout 在 `--json` 下是单个 JSON 对象，在 `--jsonl` 下是纯 JSON Lines。
+`qualityFrameSample`，适合长视频流式摄取。report 明确记录 `selectedMetrics` 以及请求/实际
+区域输出模式。机器输出失败时返回非零退出码，并在 stdout 输出 `qualityError` JSON
+envelope。CLI 的 native diagnostics 固定写入 stderr，因此 stdout 在 `--json` 下是单个
+JSON 对象，在 `--jsonl` 下是纯 JSON Lines。
 
-schema v4 保留 v3 的 `metrics`、`stream`、`timingsMs` 和 `timeline` 读取路径，同时增加：
+schema v5 保留 v4 的 `metrics`、`stream`、`timingsMs` 和 `timeline` 读取路径，同时增加：
+
+- `selectedMetrics` 与每项指标的 `selected`，让未选中的 `null` 与真实零分可区分；
+- `regionSummary`，即使 timeline 被省略也能消费空间证据；
+- `capabilities.requestedRegionOutput` / `effectiveRegionOutput`，避免静默降级；
 
 - `metricDefinitions`：每项指标的范围、方向、单位、实验状态和简述；
 - `execution`：请求/实际 backend、CPU dispatch、decode threads、worker 和队列深度；
 - `capabilities`：timeline 编码方式，以及是否支持绝对阈值或跨指标融合；
+- `capabilities.spatialRegionMetrics`：当前可输出局部区域的指标列表；
 - `sampling.maxSamples` / `sampling.truncated`：区分完整分析与因
   `--max-samples` 提前停止的 packet/frame/QP/flicker 前缀统计；
 - `warnings`：QP 缺失、unsupported layout、重复 PTS 等可操作提示；
@@ -200,7 +245,14 @@ schema v4 保留 v3 的 `metrics`、`stream`、`timingsMs` 和 `timeline` 读取
 - `timingSemantics`，明确并行 metric task 时间不能相加作为帧墙钟时间。
 
 正式 JSON Schema：
-[quality-output-v4.schema.json](quality-output-v4.schema.json)。
+[quality-output-v5.schema.json](quality-output-v5.schema.json)。旧版
+[quality-output-v4.schema.json](quality-output-v4.schema.json) 保留用于历史产物验证。
+
+CLI/GUI 的进程生命周期、JSONL 顺序、请求身份、缓存键、进度、取消和退出码由
+[QUALITY_PROCESS_PROTOCOL.md](QUALITY_PROCESS_PROTOCOL.md) 单独定义。生命周期当前为
+`protocolVersion: 1`，schema 为
+[quality-process-v1.schema.json](quality-process-v1.schema.json)；它与质量 payload v5
+和指标算法版本独立演进。
 
 `--backend auto` 是 CLI 默认值。当前 main 构建只启用 CPU/SIMD quality backend：
 `auto` 会在 `backendDiagnostic` 中记录 GPU backend 未编译并确定性回退 CPU；

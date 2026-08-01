@@ -228,8 +228,9 @@ Current shared renderer ownership is split as follows:
   reserved Windows presentation backend.
 - Metal/CVPixelBuffer/IOSurface target, VideoToolbox frame preservation, Metal
   package upload, and macOS capture: macOS presentation backend.
-- Analysis overlay raster/upload and future analysis IPC remain separate
-  subsystem concerns; they should not introduce another playback scheduler.
+- Analysis overlay raster/upload and inline analysis cache reads remain
+  separate subsystem concerns; they should not introduce another playback
+  scheduler.
 
 Present/render-loop command contexts may contain hooks whose names end in
 `_locked`. Those hooks require the caller to already hold `state_mutex_`.

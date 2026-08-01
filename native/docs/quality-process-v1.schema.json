@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voidplayer.local/schemas/quality-process-v1.schema.json",
+  "title": "VoidPlayer quality process lifecycle records v1",
+  "oneOf": [
+    {"$ref": "#/$defs/session"},
+    {"$ref": "#/$defs/progress"},
+    {"$ref": "#/$defs/complete"}
+  ],
+  "$defs": {
+    "requestId": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!-~]+$"},
+    "metricName": {
+      "enum": ["blockiness", "banding", "blur", "noise", "flicker"]
+    },
+    "inputIdentity": {
+      "type": "object",
+      "required": ["kind", "normalizedPath", "sizeBytes", "mtimeToken", "digest"],
+      "properties": {
+        "kind": {"const": "local-file-stat-v1"},
+        "normalizedPath": {"type": "string", "minLength": 1},
+        "sizeBytes": {"type": "integer", "minimum": 0},
+        "mtimeToken": {"type": "string", "pattern": "^-?[0-9]+$"},
+        "digest": {"type": "string", "pattern": "^fnv1a64:[0-9a-f]{16}$"}
+      },
+      "additionalProperties": false
+    },
+    "resultConfig": {
+      "type": "object",
+      "required": ["metricVersion", "metrics", "regionOutput", "events", "eventPolicyVersion", "sampleIntervalUs", "maxSamples"],
+      "properties": {
+        "metricVersion": {"type": "string", "minLength": 1},
+        "metrics": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/metricName"},
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "regionOutput": {"enum": ["none", "summary", "full"]},
+        "tileOutput": {"enum": ["none", "full"]},
+        "events": {"enum": ["none", "candidates"]},
+        "eventPolicyVersion": {"const": "quality-candidate-policy-v1"},
+        "sampleIntervalUs": {"type": "integer", "minimum": 0},
+        "maxSamples": {"type": ["integer", "null"], "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "executionConfig": {
+      "type": "object",
+      "required": ["backend", "cpuMode", "decodeThreads", "cpuWorkers", "cpuInFlight"],
+      "properties": {
+        "backend": {"enum": ["auto", "cpu", "wgpu"]},
+        "cpuMode": {"enum": ["auto", "scalar"]},
+        "decodeThreads": {"type": "integer", "minimum": 0},
+        "cpuWorkers": {"type": "integer", "minimum": 0},
+        "cpuInFlight": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "session": {
+      "type": "object",
+      "required": ["type", "protocolVersion", "requestId", "inputIdentity", "resultConfig", "executionConfig", "resultKey"],
+      "properties": {
+        "type": {"const": "qualitySession"},
+        "protocolVersion": {"const": 1},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "inputIdentity": {"$ref": "#/$defs/inputIdentity"},
+        "resultConfig": {"$ref": "#/$defs/resultConfig"},
+        "executionConfig": {"$ref": "#/$defs/executionConfig"},
+        "resultKey": {"type": "string", "pattern": "^fnv1a64:[0-9a-f]{16}$"}
+      },
+      "additionalProperties": false
+    },
+    "progress": {
+      "type": "object",
+      "required": ["type", "protocolVersion", "requestId", "sequence", "phase", "packetCount", "packetBytes", "decodedFrames", "sampledFrames", "ptsUs", "durationUs"],
+      "properties": {
+        "type": {"const": "qualityProgress"},
+        "protocolVersion": {"const": 1},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "sequence": {"type": "integer", "minimum": 0},
+        "phase": {"enum": ["opening", "decoding", "finalizing"]},
+        "packetCount": {"type": "integer", "minimum": 0},
+        "packetBytes": {"type": "integer", "minimum": 0},
+        "decodedFrames": {"type": "integer", "minimum": 0},
+        "sampledFrames": {"type": "integer", "minimum": 0},
+        "ptsUs": {"type": ["integer", "null"]},
+        "durationUs": {"type": ["integer", "null"], "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "complete": {
+      "type": "object",
+      "required": ["type", "protocolVersion", "requestId", "status", "reportRecords", "frameSampleRecords", "eventRecords"],
+      "properties": {
+        "type": {"const": "qualityComplete"},
+        "protocolVersion": {"const": 1},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "status": {"const": "success"},
+        "reportRecords": {"const": 1},
+        "frameSampleRecords": {"type": "integer", "minimum": 0},
+        "tileSampleRecords": {"type": "integer", "minimum": 0},
+        "eventRecords": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  }
+}

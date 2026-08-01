@@ -1,0 +1,30 @@
+# Analysis keeps NAL units in the left panel and a full-width chart deck below
+# the viewport; returning to timeline restores the compact timeline deck.
+@WINDOW,1280,720
+
+0.3,ADD_MEDIA,resources/video/av1_10s_1920x1080.webm
+2.5,ASSERT_TRACK_COUNT,1
+2.6,ASSERT_MAIN_WINDOW_DECK_TAB,timeline
+2.8,HOVER_CONTROLS_BAR_BUTTONS,12
+3.0,CAPTURE_VIEWPORT,deck_timeline
+3.1,ASSERT_CAPTURE_NOT_BLACK,deck_timeline,0.01,4.0
+
+3.2,RUN_ANALYSIS
+3.3,WAIT_ANALYSIS_LOADED,30000
+3.4,ASSERT_MAIN_WINDOW_DECK_TAB,analysis
+3.5,ASSERT_ANALYSIS_CODEC,av1
+3.6,TOGGLE_MARKS_SIDEBAR
+3.7,HOVER_CONTROLS_BAR_BUTTONS,12
+3.8,CAPTURE_VIEWPORT,analysis_docked
+3.9,ASSERT_CAPTURE_NOT_BLACK,analysis_docked,0.01,4.0
+3.95,CAPTURE_FLUTTER,analysis_docked_flutter,build/analysis_docked_flutter.png
+
+4.0,DRAG_MAIN_WINDOW_DECK,-80,12
+4.4,CAPTURE_VIEWPORT,analysis_shelf_resized
+4.5,ASSERT_CAPTURE_NOT_BLACK,analysis_shelf_resized,0.01,4.0
+4.7,CLICK_MAIN_WINDOW_DECK_TAB,timeline
+4.9,ASSERT_MAIN_WINDOW_DECK_TAB,timeline
+5.1,HOVER_CONTROLS_BAR_BUTTONS,12
+5.3,CAPTURE_VIEWPORT,deck_timeline_restored
+5.4,ASSERT_CAPTURE_NOT_BLACK,deck_timeline_restored,0.01,4.0
+6.0,QUIT,0

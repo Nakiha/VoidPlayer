@@ -243,7 +243,7 @@ class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 4),
                           // Type number
                           SizedBox(
                             width: 24,
@@ -257,7 +257,7 @@ class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 4),
                           // Type name
                           Expanded(
                             child: Text(
@@ -364,7 +364,7 @@ class AnalysisNaluDetailView extends StatelessWidget {
           const SizedBox(height: 4),
           ...rows.map(
             (r) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 1.5),
+              padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -394,7 +394,6 @@ class AnalysisNaluDetailView extends StatelessWidget {
                 section(l.analysisNaluDetail, items),
                 if (frameItems.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  const Divider(height: 1),
                   const SizedBox(height: 8),
                   section(l.analysisFrameInfo, frameItems),
                 ],

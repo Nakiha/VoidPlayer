@@ -40,9 +40,7 @@ class AnalysisPageView extends StatelessWidget {
               child: Container(
                 height: analysisHeaderHeight,
                 padding: analysisHeaderPadding,
-                decoration: BoxDecoration(
-                  border: Border(bottom: BorderSide(color: theme.dividerColor)),
-                ),
+                color: theme.colorScheme.surfaceContainerLowest,
                 child: Row(
                   children: [
                     SizedBox(
@@ -69,7 +67,7 @@ class AnalysisPageView extends StatelessWidget {
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  const dividerHitH = 10.0;
+                  const dividerHitH = 8.0;
                   final available = constraints.maxHeight.clamp(
                     0.0,
                     double.infinity,

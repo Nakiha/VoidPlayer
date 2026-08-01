@@ -298,7 +298,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   }
 }
 
-const double _analysisDeckSplitDividerWidth = 9.0;
+const double _analysisDeckSplitDividerWidth = 8.0;
 
 class _AnalysisDeckLayoutDelegate extends MultiChildLayoutDelegate {
   final List<int> fileIds;
@@ -383,20 +383,15 @@ class _AnalysisDeckCell extends StatelessWidget {
       label: entry.fileName,
       child: Listener(
         onPointerDown: splitView && visible ? (_) => onFocused() : null,
-        child: DecoratedBox(
+        child: ColoredBox(
           key: splitView && visible
               ? analysisWorkspaceSplitCellKey(entry.fileId)
               : null,
-          decoration: BoxDecoration(
-            border: splitView
-                ? Border.all(
-                    color: focused
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.outlineVariant,
-                    width: focused ? 2 : 1,
-                  )
-                : null,
-          ),
+          color: splitView
+              ? focused
+                    ? theme.colorScheme.surfaceContainerLowest
+                    : theme.colorScheme.surfaceContainerLow
+              : theme.colorScheme.surface,
           child: Column(
             children: [
               if (splitView)

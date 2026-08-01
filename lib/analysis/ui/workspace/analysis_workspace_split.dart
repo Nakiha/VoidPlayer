@@ -42,16 +42,7 @@ class AnalysisSplitView extends StatelessWidget {
             child: Row(
               children: [
                 for (var col = 0; col < columns; col++)
-                  Expanded(
-                    child: _splitCell(
-                      context,
-                      row * columns + col,
-                      row: row,
-                      col: col,
-                      rows: rows,
-                      columns: columns,
-                    ),
-                  ),
+                  Expanded(child: _splitCell(context, row * columns + col)),
               ],
             ),
           ),
@@ -59,38 +50,21 @@ class AnalysisSplitView extends StatelessWidget {
     );
   }
 
-  Widget _splitCell(
-    BuildContext context,
-    int index, {
-    required int row,
-    required int col,
-    required int rows,
-    required int columns,
-  }) {
+  Widget _splitCell(BuildContext context, int index) {
     if (index >= entries.length) return const SizedBox.shrink();
     final entry = entries[index];
-    final theme = Theme.of(context);
-    final divider = BorderSide(color: theme.colorScheme.outlineVariant);
     return AxTreeRegion(
       label: 'Analysis pane ${index + 1}',
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border(
-            right: col < columns - 1 ? divider : BorderSide.none,
-            bottom: row < rows - 1 ? divider : BorderSide.none,
-          ),
-        ),
-        child: AnalysisTrackPane(
-          entry: entry,
-          index: index,
-          selected: index == selectedIndex,
-          showModeToggle: index == 0,
-          splitView: splitView,
-          modeToggleEnabled: modeToggleEnabled,
-          onModeChanged: onModeChanged,
-          onSelected: () => onSelected(index),
-          child: contentBuilder(entry),
-        ),
+      child: AnalysisTrackPane(
+        entry: entry,
+        index: index,
+        selected: index == selectedIndex,
+        showModeToggle: index == 0,
+        splitView: splitView,
+        modeToggleEnabled: modeToggleEnabled,
+        onModeChanged: onModeChanged,
+        onSelected: () => onSelected(index),
+        child: contentBuilder(entry),
       ),
     );
   }
@@ -128,12 +102,9 @@ class AnalysisTrackPane extends StatelessWidget {
         Container(
           height: analysisHeaderHeight,
           padding: analysisHeaderPadding,
-          decoration: BoxDecoration(
-            color: selected
-                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.18)
-                : theme.colorScheme.surface.withValues(alpha: 0.18),
-            border: Border(bottom: BorderSide(color: theme.dividerColor)),
-          ),
+          color: selected
+              ? theme.colorScheme.primaryContainer.withValues(alpha: 0.18)
+              : theme.colorScheme.surfaceContainerLowest,
           child: Row(
             children: [
               if (showModeToggle) ...[
@@ -146,7 +117,7 @@ class AnalysisTrackPane extends StatelessWidget {
               ],
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: AnalysisTrackTitleButton(
                     entry: entry,
                     index: index,

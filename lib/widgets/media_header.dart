@@ -91,41 +91,35 @@ class _MediaHeaderBarWithCacheState extends State<_MediaHeaderBarWithCache> {
     if (widget.entries.isEmpty) return const SizedBox.shrink();
     return SizedBox(
       height: 32,
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: SizedBox(
-          height: 28,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Row(
-              children: [
-                for (int i = 0; i < widget.entries.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 4),
-                  Expanded(
-                    child: _MediaHeader(
-                      key: ValueKey('media-header-${widget.entries[i].fileId}'),
-                      slotIndex: i,
-                      entries: widget.entries,
-                      analysisDataSource: widget.analysisDataSource,
-                      analysisOverlayControlsVisible:
-                          widget.analysisOverlayControlsVisible,
-                      analysisOverlayButtonKey: i == 0
-                          ? widget.analysisOverlayButtonKey
-                          : null,
-                      showOverlayPanelButton:
-                          widget.analysisOverlayEnabled && i == 0,
-                      canRemoveTrack: widget.canRemoveTrack,
-                      canReorderTrack: widget.canReorderTrack,
-                      onAnalysisOverlayControlsToggle:
-                          widget.onAnalysisOverlayControlsToggle,
-                      onMediaSwapped: widget.onMediaSwapped,
-                      onRemoveClicked: widget.onRemoveClicked,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(
+          children: [
+            for (int i = 0; i < widget.entries.length; i++) ...[
+              if (i > 0) const SizedBox(width: 4),
+              Expanded(
+                child: _MediaHeader(
+                  key: ValueKey('media-header-${widget.entries[i].fileId}'),
+                  slotIndex: i,
+                  entries: widget.entries,
+                  analysisDataSource: widget.analysisDataSource,
+                  analysisOverlayControlsVisible:
+                      widget.analysisOverlayControlsVisible,
+                  analysisOverlayButtonKey: i == 0
+                      ? widget.analysisOverlayButtonKey
+                      : null,
+                  showOverlayPanelButton:
+                      widget.analysisOverlayEnabled && i == 0,
+                  canRemoveTrack: widget.canRemoveTrack,
+                  canReorderTrack: widget.canReorderTrack,
+                  onAnalysisOverlayControlsToggle:
+                      widget.onAnalysisOverlayControlsToggle,
+                  onMediaSwapped: widget.onMediaSwapped,
+                  onRemoveClicked: widget.onRemoveClicked,
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -170,7 +164,7 @@ class _MediaHeader extends StatelessWidget {
       explicitChildNodes: true,
       label: entry.fileName,
       child: Container(
-        height: 28,
+        height: 32,
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerHighest.withValues(
             alpha: 0.5,
@@ -204,8 +198,8 @@ class _MediaHeader extends StatelessWidget {
               ),
             ),
             SizedBox(
-              width: 28,
-              height: 28,
+              width: 32,
+              height: 32,
               child: IconButton(
                 key: mediaHeaderRemoveButtonKey(entry.fileId),
                 onPressed: canRemoveTrack
@@ -215,8 +209,8 @@ class _MediaHeader extends StatelessWidget {
                 tooltip: AppLocalizations.of(context)!.removeTrack,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints.tightFor(
-                  width: 28,
-                  height: 28,
+                  width: 32,
+                  height: 32,
                 ),
                 style: _removeTrackButtonStyle(theme.colorScheme, 6),
               ),
@@ -282,8 +276,8 @@ class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton> {
         ? AppLocalizations.of(context)!.analysisOverlayControlsHide
         : AppLocalizations.of(context)!.analysisOverlayControlsShow;
     return SizedBox(
-      width: 28,
-      height: 28,
+      width: 32,
+      height: 32,
       child: Semantics(
         button: true,
         enabled: widget.onPressed != null,
@@ -304,7 +298,7 @@ class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton> {
                     )
                   : const Icon(Icons.grid_on, size: 14),
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
               style: ButtonStyle(
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 shape: WidgetStatePropertyAll(
@@ -362,7 +356,7 @@ class _SourceComboBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return AppMenuCombo<int>(
-      height: 28,
+      height: 32,
       value: currentIndex,
       items: [for (var i = 0; i < entries.length; i++) i],
       labelFor: (i) => i < entries.length ? entries[i].fileName : '',

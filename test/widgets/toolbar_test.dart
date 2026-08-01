@@ -15,6 +15,7 @@ import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/track_manager.dart';
 import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/widgets/analysis_overlay_controls.dart';
+import 'package:void_player/widgets/app_menu_combo.dart';
 import 'package:void_player/widgets/controls_bar.dart';
 import 'package:void_player/widgets/media_header.dart';
 import 'package:void_player/widgets/segmented_widget.dart';
@@ -343,6 +344,47 @@ void main() {
 
     expect(toggleTaps, 1);
     expect(find.byKey(analysisOverlayControlBarKey), findsNothing);
+  });
+
+  testWidgets('media header source combo swaps the selected track', (
+    tester,
+  ) async {
+    final openedTrack = track();
+    final secondTrack = const TrackEntry(
+      TrackInfo(
+        fileId: 2,
+        slot: 1,
+        path: 'second.mp4',
+        width: 1920,
+        height: 1080,
+      ),
+    );
+    final swaps = <(int, int)>[];
+
+    await tester.pumpWidget(
+      _localized(
+        MediaHeaderBar(
+          entries: [openedTrack, secondTrack],
+          analysisDataSource: _FakeAnalysisToolbarDataSource(),
+          onMediaSwapped: (slot, target) => swaps.add((slot, target)),
+          onRemoveClicked: (_) {},
+        ),
+      ),
+    );
+
+    final firstHeader = find.byKey(const ValueKey('media-header-1'));
+    final combo = find.descendant(
+      of: firstHeader,
+      matching: find.byType(AppMenuCombo<int>),
+    );
+    expect(combo, findsOneWidget);
+
+    await tester.tap(combo);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('second.mp4').last);
+    await tester.pumpAndSettle();
+
+    expect(swaps, [(0, 1)]);
   });
 
   testWidgets('media header overlay target remains a named AXTree button', (

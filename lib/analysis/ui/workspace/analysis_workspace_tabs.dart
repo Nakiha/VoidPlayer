@@ -69,10 +69,7 @@ class AnalysisTabsHeader extends StatelessWidget {
       child: Container(
         height: analysisHeaderHeight,
         padding: analysisHeaderPadding,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.primaryContainer.withValues(alpha: 0.18),
-          border: Border(bottom: BorderSide(color: theme.dividerColor)),
-        ),
+        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.18),
         child: Row(
           children: [
             AnalysisWorkspaceModeToggle(
@@ -120,7 +117,7 @@ class AnalysisTrackTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       child: AnalysisTrackTitleButton(
         entry: entry,
         index: index,
@@ -168,7 +165,7 @@ class AnalysisTrackTitleButton extends StatelessWidget {
             child: Stack(
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
@@ -185,21 +182,6 @@ class AnalysisTrackTitleButton extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (selected)
-                  Positioned(
-                    left: 10,
-                    right: 10,
-                    bottom: 2,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withValues(
-                          alpha: 0.52,
-                        ),
-                        borderRadius: BorderRadius.circular(1),
-                      ),
-                      child: const SizedBox(height: 2),
-                    ),
-                  ),
               ],
             ),
           ),

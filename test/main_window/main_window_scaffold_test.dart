@@ -156,7 +156,10 @@ void main() {
       );
       final handles = _handles();
 
-      Widget build(MainWindowDeckTab tab) => _localized(
+      Widget build(
+        MainWindowDeckTab tab, {
+        double deckHeight = kDefaultDeckHeight,
+      }) => _localized(
         AppFeedbackScope(
           controller: feedback,
           child: MainWindowScaffold(
@@ -164,6 +167,7 @@ void main() {
               settingsVisible: false,
               tracks: const [mediaTrack],
               deckTab: tab,
+              deckHeight: deckHeight,
             ),
             handles: handles,
             actions: _noop,
@@ -185,11 +189,8 @@ void main() {
       final chartShelf = tester.getRect(
         find.byKey(mainWindowAnalysisChartShelfKey),
       );
-      final playbackAreaHeight =
-          timelineViewport.height + timelineChrome.height + timelineDeck.height;
-
       expect(timelineDeck.height, timelineTrackRowHeight * 2);
-      expect(analysisDeck.height, closeTo(playbackAreaHeight * 0.42, 0.1));
+      expect(analysisDeck.height, kDefaultDeckHeight);
       expect(analysisViewport.height, lessThan(timelineViewport.height));
       expect(analysisViewport.width, timelineViewport.width);
       expect(analysisChrome.height, timelineChrome.height);
@@ -200,6 +201,12 @@ void main() {
       expect(find.byKey(mainWindowAnalysisNaluSidebarKey), findsNothing);
       expect(find.byType(LoopRangeBar), findsNothing);
       expect(find.byType(TimelineArea), findsNothing);
+
+      await tester.pumpWidget(
+        build(MainWindowDeckTab.analysis, deckHeight: 320),
+      );
+      await tester.pump();
+      expect(tester.getSize(find.byType(MainWindowDeck)).height, 320);
     },
   );
 
@@ -738,11 +745,7 @@ void main() {
     expect(find.byKey(mainWindowAnalysisChartShelfKey), findsOneWidget);
     expect(find.byKey(mainWindowDeckResizeHandleKey), findsOneWidget);
     final initialHeight = tester.getSize(find.byType(MainWindowDeck)).height;
-    final availableHeight =
-        tester.getSize(find.byType(ViewportPanel)).height +
-        tester.getSize(find.byType(PinnedPlaybackChrome)).height +
-        initialHeight;
-    expect(initialHeight, closeTo(availableHeight * 0.42, 0.1));
+    expect(initialHeight, kDefaultDeckHeight);
 
     await tester.drag(
       find.byKey(mainWindowDeckResizeHandleKey),
@@ -760,10 +763,7 @@ void main() {
       const Offset(0, 1000),
     );
     await tester.pump();
-    expect(
-      tester.getSize(find.byType(MainWindowDeck)).height,
-      closeTo(availableHeight * 0.25, 0.1),
-    );
+    expect(tester.getSize(find.byType(MainWindowDeck)).height, kMinDeckHeight);
 
     await tester.tap(find.byKey(mainWindowDeckCollapseButtonKey));
     expect(tabs, [MainWindowDeckTab.timeline]);

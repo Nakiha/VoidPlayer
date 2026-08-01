@@ -355,8 +355,8 @@ bool read_local_input_identity(const std::string& input,
         '\\',
         '/');
     identity.size_bytes = static_cast<uint64_t>(size);
-    identity.mtime_token = std::to_string(
-        write_time.time_since_epoch().count());
+    identity.mtime_token = std::to_string(static_cast<long long>(
+        write_time.time_since_epoch().count()));
     const std::string canonical =
         "local-file-stat-v1\n" + identity.normalized_path + "\n" +
         std::to_string(identity.size_bytes) + "\n" + identity.mtime_token;

@@ -71,6 +71,11 @@ struct QualityVideoAnalyzerOptions {
     std::function<void(const QualityAnalysisProgress&)> progress_callback;
 };
 
+// Normalizes decoder output into the protocol order consumed by clients.
+// The stable sort preserves decode order for frames sharing a timestamp, then
+// sample_index is reassigned so it remains a contiguous timeline index.
+void normalize_quality_timeline_order(QualityReport& report);
+
 bool analyze_video_quality(const std::string& video_path,
                            const QualityVideoAnalyzerOptions& options,
                            QualityReport& report,

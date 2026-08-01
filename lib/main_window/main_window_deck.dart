@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../analysis/ui/page/analysis_page_state.dart';
@@ -21,8 +23,6 @@ const Key mainWindowDeckCollapseButtonKey = ValueKey(
 );
 const double _timelineChromeHeight = 32.0;
 const int _maxVisibleCompactTimelineTracks = 4;
-const double _defaultAnalysisDeckFraction = 0.42;
-const double _minAnalysisDeckFraction = 0.25;
 const double _maxAnalysisDeckFraction = 0.70;
 const double _analysisDeckResizeHandleHeight = 8.0;
 
@@ -47,9 +47,23 @@ class MainWindowDeck extends StatefulWidget {
 }
 
 class _MainWindowDeckState extends State<MainWindowDeck> {
-  double _analysisDeckFraction = _defaultAnalysisDeckFraction;
+  late double _analysisDeckHeight;
   final MainWindowQualitySession _qualitySession = MainWindowQualitySession();
   int _focusPublication = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _analysisDeckHeight = widget.model.deck.height;
+  }
+
+  @override
+  void didUpdateWidget(covariant MainWindowDeck oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.model.deck.height != widget.model.deck.height) {
+      _analysisDeckHeight = widget.model.deck.height;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -72,7 +86,7 @@ class _MainWindowDeckState extends State<MainWindowDeck> {
       );
     }
 
-    final deckHeight = widget.availableHeight * _analysisDeckFraction;
+    final deckHeight = _effectiveAnalysisDeckHeight();
     return SizedBox(
       height: deckHeight,
       child: Column(
@@ -242,12 +256,28 @@ class _MainWindowDeckState extends State<MainWindowDeck> {
   void _resizeAnalysisDeck(DragUpdateDetails details) {
     final availableHeight = widget.availableHeight;
     if (availableHeight <= 0) return;
-    final next = (_analysisDeckFraction - details.delta.dy / availableHeight)
-        .clamp(_minAnalysisDeckFraction, _maxAnalysisDeckFraction)
+    final maxHeight = math.min(
+      kMaxDeckHeight,
+      availableHeight * _maxAnalysisDeckFraction,
+    );
+    final minHeight = math.min(kMinDeckHeight, maxHeight);
+    final next = (_effectiveAnalysisDeckHeight() - details.delta.dy)
+        .clamp(minHeight, maxHeight)
         .toDouble();
-    if (next == _analysisDeckFraction) return;
-    setState(() => _analysisDeckFraction = next);
-    widget.actions.deck.onHeightChanged(availableHeight * next);
+    if (next == _analysisDeckHeight) return;
+    setState(() => _analysisDeckHeight = next);
+    widget.actions.deck.onHeightChanged(next);
+  }
+
+  double _effectiveAnalysisDeckHeight() {
+    final availableHeight = widget.availableHeight;
+    if (availableHeight <= 0) return 0;
+    final maxHeight = math.min(
+      kMaxDeckHeight,
+      availableHeight * _maxAnalysisDeckFraction,
+    );
+    final minHeight = math.min(kMinDeckHeight, maxHeight);
+    return _analysisDeckHeight.clamp(minHeight, maxHeight).toDouble();
   }
 }
 

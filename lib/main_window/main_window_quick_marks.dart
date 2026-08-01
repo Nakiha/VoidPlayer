@@ -1069,7 +1069,8 @@ List<QuickMark> _buildQualityEventMarks({
   required AnalysisQualityMetric metric,
   required AnalysisQualityReport report,
 }) {
-  final existingEventIds = <String>{};
+  final resultKey = report.resultKey!;
+  final existingEvents = <(String?, String)>{};
   for (final mark in existingMarks) {
     if (mark.fileId != fileId ||
         mark.origin != QuickMarkOrigin.metric ||
@@ -1077,11 +1078,18 @@ List<QuickMark> _buildQualityEventMarks({
       continue;
     }
     final eventId = mark.attributes['eventId'];
-    if (eventId is String) existingEventIds.add(eventId);
+    if (eventId is String) {
+      final existingResultKey = mark.attributes['resultKey'];
+      existingEvents.add((
+        existingResultKey is String ? existingResultKey : null,
+        eventId,
+      ));
+    }
   }
   final candidates = <QuickMark>[];
   for (final event in report.events) {
-    if (event.metric != metric || existingEventIds.contains(event.eventId)) {
+    if (event.metric != metric ||
+        existingEvents.contains((resultKey, event.eventId))) {
       continue;
     }
     final region = event.region;
@@ -1125,6 +1133,7 @@ List<QuickMark> _buildQualityEventMarks({
           'value': value,
           'threshold': event.threshold,
           'eventId': event.eventId,
+          'resultKey': resultKey,
           'classification': event.classification.name,
           'startPtsUs': event.startPtsUs,
           'endPtsUs': event.endPtsUs,
@@ -1140,7 +1149,7 @@ List<QuickMark> _buildQualityEventMarks({
         },
       ),
     );
-    existingEventIds.add(event.eventId);
+    existingEvents.add((resultKey, event.eventId));
   }
   return List.unmodifiable(candidates);
 }

@@ -240,9 +240,6 @@ class AnalysisPageController extends ChangeNotifier {
     final next = frameIdx != null && frameIdx >= 0 ? frameIdx : null;
     if (_playbackFrameIdx == next) return;
     _playbackFrameIdx = next;
-    if (next != null) {
-      _ensureFrameWindowForIndex(next);
-    }
     notifyListeners();
   }
 

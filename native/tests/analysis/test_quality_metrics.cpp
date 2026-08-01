@@ -69,6 +69,39 @@ TEST_CASE("quality video analyzer cancellation reaches media input",
                 QualityAnalysisPhase::Decoding) != phases.end());
 }
 
+TEST_CASE("quality timeline normalization reindexes samples after PTS sort",
+          "[analysis][quality][timeline]") {
+    using namespace vr::analysis::quality;
+    QualityReport report;
+    for (const auto [sample_index, decoded_frame_index, pts_us] :
+         std::array<std::array<int64_t, 3>, 4>{{
+             {{0, 10, 2'000}},
+             {{1, 11, 1'000}},
+             {{2, 12, 1'000}},
+             {{3, 13, 3'000}},
+         }}) {
+        FrameQualitySample sample;
+        sample.sample_index = static_cast<uint64_t>(sample_index);
+        sample.decoded_frame_index =
+            static_cast<uint64_t>(decoded_frame_index);
+        sample.pts_us = pts_us;
+        report.timeline.push_back(sample);
+    }
+
+    normalize_quality_timeline_order(report);
+
+    REQUIRE(report.timeline.size() == 4);
+    CHECK(report.timeline[0].pts_us == 1'000);
+    CHECK(report.timeline[0].decoded_frame_index == 11);
+    CHECK(report.timeline[1].pts_us == 1'000);
+    CHECK(report.timeline[1].decoded_frame_index == 12);
+    CHECK(report.timeline[2].pts_us == 2'000);
+    CHECK(report.timeline[3].pts_us == 3'000);
+    for (size_t index = 0; index < report.timeline.size(); ++index) {
+        CHECK(report.timeline[index].sample_index == index);
+    }
+}
+
 TEST_CASE("quality event aggregation emits only robust relative outliers",
           "[analysis][quality][event]") {
     using namespace vr::analysis::quality;

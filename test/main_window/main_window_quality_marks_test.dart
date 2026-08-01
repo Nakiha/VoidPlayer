@@ -62,6 +62,7 @@ void main() {
       'value': 0.62,
       'threshold': 0.5,
       'eventId': 'evt-spatial',
+      'resultKey': 'fnv1a64:abc123',
       'classification': 'spatialCandidate',
       'startPtsUs': 3000000,
       'endPtsUs': 5000000,
@@ -80,13 +81,17 @@ void main() {
     expect(relative.attributes['tileValue'], 0.9);
   });
 
-  test('CLI event marks dedupe by event id and ignore other metrics', () {
+  test('CLI event marks dedupe by report identity and event id', () {
     final existing = QuickMark(
       id: 3,
       anchor: const QuickMarkAnchor(fileId: 7, ptsUs: 4000000, dtsUs: 4000000),
       sourceRect: const Rect.fromLTWH(0.1, 0.2, 0.3, 0.4),
       origin: QuickMarkOrigin.metric,
-      attributes: const {'metric': 'banding', 'eventId': 'evt-spatial'},
+      attributes: const {
+        'metric': 'banding',
+        'eventId': 'evt-spatial',
+        'resultKey': 'fnv1a64:abc123',
+      },
     );
 
     final bandingMarks = buildQualityMetricMarks(
@@ -107,6 +112,34 @@ void main() {
       report: _eventReport,
     );
     expect(blockinessMarks, isEmpty);
+  });
+
+  test('CLI event ids may be reused by a different report', () {
+    final existing = QuickMark(
+      id: 3,
+      anchor: const QuickMarkAnchor(fileId: 7, ptsUs: 4000000, dtsUs: 4000000),
+      sourceRect: const Rect.fromLTWH(0.1, 0.2, 0.3, 0.4),
+      origin: QuickMarkOrigin.metric,
+      attributes: const {
+        'metric': 'banding',
+        'eventId': 'evt-spatial',
+        'resultKey': 'fnv1a64:older-report',
+      },
+    );
+
+    final marks = buildQualityMetricMarks(
+      existingMarks: [existing],
+      fileId: 7,
+      metric: AnalysisQualityMetric.banding,
+      threshold: 0.1,
+      report: _eventReport,
+    );
+
+    expect(marks, hasLength(2));
+    expect(
+      marks.map((mark) => mark.attributes['resultKey']),
+      everyElement(_eventReport.resultKey),
+    );
   });
 
   test('CLI event marks preserve multiple regions at the same timestamp', () {

@@ -351,6 +351,20 @@ uint32_t resolve_cpu_in_flight(uint32_t requested,
 
 }  // namespace
 
+void normalize_quality_timeline_order(QualityReport& report) {
+    std::stable_sort(
+        report.timeline.begin(),
+        report.timeline.end(),
+        [](const FrameQualitySample& left,
+           const FrameQualitySample& right) {
+            return left.pts_us < right.pts_us;
+        });
+    for (size_t index = 0; index < report.timeline.size(); ++index) {
+        report.timeline[index].sample_index =
+            static_cast<uint64_t>(index);
+    }
+}
+
 bool analyze_video_quality(const std::string& video_path,
                            const QualityVideoAnalyzerOptions& options,
                            QualityReport& report,
@@ -1292,13 +1306,7 @@ bool analyze_video_quality(const std::string& video_path,
         cleanup();
         return false;
     }
-    std::stable_sort(
-        report.timeline.begin(),
-        report.timeline.end(),
-        [](const FrameQualitySample& left,
-           const FrameQualitySample& right) {
-            return left.pts_us < right.pts_us;
-        });
+    normalize_quality_timeline_order(report);
 
     report.stream.packet_size_bytes =
         summarize_distribution(std::move(packet_sizes));

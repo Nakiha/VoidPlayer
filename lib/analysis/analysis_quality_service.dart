@@ -117,13 +117,19 @@ class NativeAnalysisQualityService
       'max_samples=${request.maxSamples}',
     );
     try {
+      // Isolate.run 要求闭包只捕获可跨 isolate 发送的对象；request 上挂着
+      // UI 传入的 onProgress/cancellationToken（捕获了 widget State 等不可发送
+      // 对象），因此这里必须先把原始参数提出来。
+      final videoPath = request.videoPath;
+      final sampleIntervalUs = request.sampleIntervalUs;
+      final maxSamples = request.maxSamples;
       final report = backend == 'cli'
           ? await _analyzeWithCli(request)
           : await Isolate.run(
               () => AnalysisQualityNative.analyzeSync(
-                request.videoPath,
-                sampleIntervalUs: request.sampleIntervalUs,
-                maxSamples: request.maxSamples,
+                videoPath,
+                sampleIntervalUs: sampleIntervalUs,
+                maxSamples: maxSamples,
               ),
             );
       _qualityLogger.info(
